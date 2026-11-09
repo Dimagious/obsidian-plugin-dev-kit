@@ -1,0 +1,24 @@
+{
+  "name": "obsidian-plugin-dev-kit",
+  "version": "0.0.0",
+  "description": "Build, lint, release, test and film Obsidian plugins from one shared dev dependency.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "author": "Dmitriy Yurkin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dimagious/obsidian-plugin-dev-kit.git"
+  },
+  "bin": {
+    "opdk": "./bin/opdk.js"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "files": [
+    "bin",
+    "src",
+    "skills"
+  ]
+}
