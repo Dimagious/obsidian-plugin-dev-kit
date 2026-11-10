@@ -367,6 +367,10 @@ describe("opdk build --vault --watch", () => {
         const settled = async (): Promise<void> => {
             await until(() => watching);
             await until(() => syncs >= 1);
+            // fs.watchFile takes its baseline stat on libuv's thread pool after registration. A write that lands
+            // before that stat becomes the baseline and is never seen as a change; on a busy CI runner this
+            // missed a write made right after the first sync. One poll interval lets every baseline settle.
+            await new Promise((resolve) => setTimeout(resolve, POLL_MS));
         };
         // Even when the test throws before `stop()`: end the watch and wait for it, so no watcher outlives the test.
         cleanups.push(async () => {
