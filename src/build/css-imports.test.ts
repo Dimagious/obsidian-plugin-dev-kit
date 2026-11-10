@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { inlineImports } from "./css-imports.js";
+import { CssImportError, inlineImports } from "./css-imports.js";
 
 const root = path.resolve("/styles");
 const at = (name: string): string => path.join(root, name);
@@ -76,6 +76,28 @@ describe("inlineImports", () => {
         expect(() => inlineImports(at("main.css"), reader({ "main.css": '@import "main.css";' }))).toThrow(
             "CSS import cycle",
         );
+    });
+
+    it("lists the files read before a failure on the error, for --watch to poll", () => {
+        const failure = (files: Record<string, string>): CssImportError => {
+            try {
+                inlineImports(at("main.css"), reader(files));
+            } catch (error) {
+                if (error instanceof CssImportError) {
+                    return error;
+                }
+                throw error;
+            }
+            throw new Error("expected inlineImports to fail");
+        };
+        // b.css is read completely before the broken a.css, so the list is "files read so far", not the import chain.
+        const missing = failure({ "main.css": '@import "b.css";@import "a.css";', "a.css": '@import "gone.css";', "b.css": "" });
+        expect(missing.files).toEqual([at("main.css"), at("b.css"), at("a.css")]);
+
+        const cycle = failure({ "main.css": '@import "a.css";', "a.css": '@import "main.css";' });
+        expect(cycle.files).toEqual([at("main.css"), at("a.css")]);
+
+        expect(failure({}).files).toEqual([]);
     });
 
     it("leaves URL imports for the browser", () => {

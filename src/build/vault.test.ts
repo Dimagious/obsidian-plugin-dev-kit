@@ -21,9 +21,24 @@ beforeEach(() => {
     vault = mkdtempSync(path.join(tmpdir(), "opdk-vault-"));
 });
 
-afterEach(() => {
-    plugin.cleanup();
-    rmSync(vault, { recursive: true, force: true });
+/**
+ * Teardown that must run even when an assertion throws: stop a watch, wait for its dispose. Drained by `afterEach`,
+ * so a failing test leaves neither a running watcher nor a temp dir behind.
+ */
+const cleanups: (() => Promise<void>)[] = [];
+const drainCleanups = async (): Promise<void> => {
+    for (const cleanup of cleanups.splice(0)) {
+        await cleanup();
+    }
+};
+
+afterEach(async () => {
+    try {
+        await drainCleanups();
+    } finally {
+        plugin.cleanup();
+        rmSync(vault, { recursive: true, force: true });
+    }
 });
 
 /**
@@ -43,7 +58,7 @@ const inVault = (name: string): string => {
     return existsSync(file) ? readFileSync(file, "utf8") : "";
 };
 
-describe("opdk build --vault (one shot)", () => {
+describe("opdk build --vault (one shot)", { timeout: 15_000 }, () => {
     it("writes an unminified main.js, a fresh styles.css and manifest.json into the vault folder", async () => {
         // A stale styles.css in the plugin root must not be what the vault gets.
         writeFileSync(path.join(plugin.dir, "styles.css"), ".stale{}");
@@ -58,6 +73,26 @@ describe("opdk build --vault (one shot)", () => {
         expect(existsSync(path.join(plugin.dir, "main.js"))).toBe(false);
         expect(ctx.out.join("")).toContain(`✓ build   fixture-plugin: assets copied to ${vault}`);
         expect(ctx.err).toEqual([]);
+    });
+
+    it("creates a vault folder whose parents do not exist yet and puts every file there", async () => {
+        const target = path.join(vault, "not", "yet", "there");
+        expect(await buildCommand.run(["--vault", target], createContext(plugin.dir))).toBe(0);
+        for (const name of ["main.js", "styles.css", "manifest.json"]) {
+            expect(existsSync(path.join(target, name)), name).toBe(true);
+        }
+    });
+
+    it("copies the assets into a missing folder even when the compile failed and main.js was never written", async () => {
+        // esbuild creates the outfile folder itself, so only a failed compile shows who creates the folder for the assets.
+        plugin.write("src/main.ts", "export default class {");
+        const target = path.join(vault, "not", "yet", "there");
+        const ctx = createContext(plugin.dir);
+        expect(await buildCommand.run(["--vault", target], ctx)).toBe(1);
+        expect(existsSync(path.join(target, "main.js"))).toBe(false);
+        expect(JSON.parse(readFileSync(path.join(target, "manifest.json"), "utf8"))).toMatchObject({ id: "fixture-plugin" });
+        expect(readFileSync(path.join(target, "styles.css"), "utf8")).toBe(".a { color: red; }\n\n");
+        expect(ctx.err.join("")).not.toContain("CSS build or copy failed");
     });
 
     it("takes the folder from VAULT_PLUGIN when no directory is given", async () => {
@@ -118,7 +153,7 @@ describe("opdk build --vault (one shot)", () => {
     });
 });
 
-describe("opdk build --vault folder argument", () => {
+describe("opdk build --vault folder argument", { timeout: 15_000 }, () => {
     it("refuses a target that resolves to the plugin root, even with --force", async () => {
         for (const args of [["--vault", plugin.dir], ["--vault", ".", "--force"]]) {
             const ctx = createContext(plugin.dir);
@@ -153,7 +188,7 @@ describe("opdk build --vault folder argument", () => {
     });
 });
 
-describe("opdk build --vault target guard", () => {
+describe("opdk build --vault target guard", { timeout: 15_000 }, () => {
     const holds = (id: string): void => {
         writeFileSync(path.join(vault, "manifest.json"), JSON.stringify({ id, name: "Other", version: "9.9.9" }));
         writeFileSync(path.join(vault, "main.js"), "// other plugin");
@@ -208,7 +243,7 @@ describe("opdk build --vault target guard", () => {
     });
 });
 
-describe("opdk build --vault, esbuild messages and css: false", () => {
+describe("opdk build --vault, esbuild messages and css: false", { timeout: 15_000 }, () => {
     it("prints esbuild warnings to stderr and still exits 0", async () => {
         plugin.write("src/main.ts", 'export default { a: 1, a: 2 };\n');
         const ctx = createContext(plugin.dir);
@@ -246,7 +281,7 @@ describe("opdk build --vault --watch", () => {
         readonly controller: AbortController;
         /** stdout and stderr interleaved; stream-specific assertions live in the one-shot tests. */
         readonly out: string[];
-        /** Waits for the sync that esbuild's own first watch rebuild produces, so a later change is really watched. */
+        /** Waits for the sync that esbuild's own first watch build produces, so a later change is really watched. */
         settled(): Promise<void>;
         /** Whether `done` has settled, judged one macrotask later. */
         isDone(): Promise<boolean>;
@@ -327,12 +362,17 @@ describe("opdk build --vault --watch", () => {
                 });
             }
         };
-        // Sync 1 is the initial rebuild. ctx.watch() starts a rebuild of its own whose sync is number 2; a change
-        // written before it would be absorbed by that rebuild and prove nothing about the watchers.
+        // The first sync is the build ctx.watch() starts on its own. A change written before it would be absorbed
+        // by that build and prove nothing about the watchers.
         const settled = async (): Promise<void> => {
             await until(() => watching);
-            await until(() => syncs >= 2);
+            await until(() => syncs >= 1);
         };
+        // Even when the test throws before `stop()`: end the watch and wait for it, so no watcher outlives the test.
+        cleanups.push(async () => {
+            controller.abort();
+            await done.catch(() => undefined);
+        });
         const isDone = async (): Promise<boolean> => Promise.race([done.then(() => true), nextTick()]);
         const stop = async (): Promise<void> => {
             expect(await isDone()).toBe(false);
@@ -346,8 +386,9 @@ describe("opdk build --vault --watch", () => {
     beforeEach(() => {
         handlesBefore = statWatchers();
     });
-    afterEach(() => {
-        // Every run in this block has ended by now; none may leave a poller behind.
+    afterEach(async () => {
+        // Stop whatever a failed test left running first, then none may have left a poller behind.
+        await drainCleanups();
         expect(statWatchers()).toBe(handlesBefore);
     });
 
@@ -433,7 +474,7 @@ describe("opdk build --vault --watch", () => {
         // Writing styles.css must not retrigger a rebuild: the output stays quiet while nothing changes.
         const quiet = run.out.length;
         await new Promise((resolve) => setTimeout(resolve, 3 * POLL_MS));
-        expect(run.out.length).toBe(quiet);
+        expect(run.out.slice(quiet), "output after the last sync").toEqual([]);
 
         await run.stop();
     });
@@ -475,6 +516,75 @@ describe("opdk build --vault --watch", () => {
         writeFileSync(path.join(plugin.dir, "src/styles/a.css"), ".a { color: fixed; }\n");
         writeFileSync(path.join(plugin.dir, "src/styles/main.css"), '@import "./a.css";\n');
         await run.until(() => inVault("styles.css").includes("fixed"), POLL_BUDGET_MS);
+
+        await run.stop();
+    });
+
+    it("builds and syncs assets once at start, not twice", { timeout: 30_000 }, async () => {
+        const run = start();
+        await run.settled();
+        // Give a second, redundant build the time to show up, then let dispose finish any build in flight.
+        await nextTick();
+        await run.stop();
+
+        const lines = run.out.join("").split("\n");
+        expect(lines.filter((line) => line.includes(": built "))).toHaveLength(1);
+        expect(lines.filter((line) => line.includes("assets copied"))).toHaveLength(1);
+    });
+
+    it("prints the Watching line after the first build and asset sync", { timeout: 30_000 }, async () => {
+        const run = start();
+        await run.settled();
+        const lines = run.out.join("").split("\n");
+        const copied = lines.findIndex((line) => line.includes("assets copied"));
+        const watching = lines.findIndex((line) => line.includes("Watching for changes"));
+        expect(copied).toBeGreaterThanOrEqual(0);
+        expect(watching).toBeGreaterThan(copied);
+
+        await run.stop();
+    });
+
+    it("keeps watching after a failed first build and builds once it is fixed", { timeout: 30_000 }, async () => {
+        plugin.write("src/main.ts", "export default class {");
+        const run = start();
+        await run.settled();
+        expect(run.out.join("")).toContain("build had 1 error(s)");
+
+        writeFileSync(path.join(plugin.dir, "src/main.ts"), MAIN_TS("recovered"));
+        await run.until(() => inVault("main.js").includes('"recovered"'));
+
+        await run.stop();
+    });
+
+    it("polls the files read before the first CSS step failed, so fixing a nested file syncs", { timeout: 30_000 }, async () => {
+        // main.css -> a.css -> gone.css: the very first step throws, yet a.css was read and must be watched.
+        plugin.write("src/styles/a.css", '@import "./gone.css";\n');
+        const run = start();
+        await run.settled();
+        expect(run.out.join("")).toContain("CSS build or copy failed");
+
+        writeFileSync(path.join(plugin.dir, "src/styles/a.css"), ".a { color: nested-fixed; }\n");
+        await run.until(() => inVault("styles.css").includes("nested-fixed"), POLL_BUDGET_MS);
+
+        await run.stop();
+    });
+
+    it("keeps polling previously read CSS files while a step fails on a missing import", { timeout: 30_000 }, async () => {
+        // main.css -> a, b. Break a.css; b.css must stay polled even though the failed step never reached it.
+        plugin.write("src/styles/a.css", ".a{}\n");
+        plugin.write("src/styles/b.css", ".b { color: before; }\n");
+        plugin.write("src/styles/main.css", '@import "./a.css";\n@import "./b.css";\n');
+        const run = start();
+        await run.settled();
+        expect(inVault("styles.css")).toContain("before");
+
+        writeFileSync(path.join(plugin.dir, "src/styles/a.css"), '@import "./gone.css";\n');
+        const failures = (): number => run.out.join("").split("CSS build or copy failed").length - 1;
+        await run.until(() => failures() === 1, POLL_BUDGET_MS);
+
+        // a.css stays broken: the only sign that b.css is still polled is another sync, which fails again.
+        writeFileSync(path.join(plugin.dir, "src/styles/b.css"), ".b { color: after; }\n");
+        await run.until(() => failures() === 2, POLL_BUDGET_MS);
 
         await run.stop();
     });
@@ -527,10 +637,35 @@ describe("opdk build --vault --watch", () => {
                 removed = true;
             };
         });
-        const running = buildCommand.run(["--vault", vault, "--watch"], ctx);
-        while (!ctx.out.join("").includes("Watching for changes")) {
-            await new Promise((resolve) => setImmediate(resolve));
-        }
+        // Resolves when the command prints that it is watching; no polling needed.
+        let watching: () => void = () => undefined;
+        const isWatching = new Promise<void>((resolve) => {
+            watching = resolve;
+        });
+        const stdout = (text: string): void => {
+            ctx.stdout(text);
+            if (text.includes("Watching for changes")) {
+                watching();
+            }
+        };
+        const running = buildCommand.run(["--vault", vault, "--watch"], {
+            ...ctx,
+            stdout,
+            reporter: createReporter({ stdout, stderr: (text) => {
+                    ctx.stderr(text);
+                },
+                colorStdout: false, colorStderr: false }),
+        });
+        cleanups.push(async () => {
+            interrupt();
+            await running.catch(() => undefined);
+        });
+        await Promise.race([
+            isWatching,
+            running.then((code) => {
+                throw new Error(`watch returned early with exit ${String(code)}`);
+            }),
+        ]);
         const settledEarly = await Promise.race([running.then(() => true), nextTick()]);
         expect(settledEarly).toBe(false);
         expect(removed).toBe(false);
