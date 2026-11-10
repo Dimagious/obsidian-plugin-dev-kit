@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, unwatchFile, watchFile } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, unwatchFile, watchFile, type Stats } from "node:fs";
 import path from "node:path";
 import { context } from "esbuild";
 import type { Reporter } from "../cli/reporter.js";
@@ -37,6 +37,8 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
     // The CSS files the last successful CSS step read; polled in watch mode so a new or removed import is tracked.
     const cssEntry = build.css === false ? undefined : path.resolve(cwd, build.css.entry);
     let cssInputs: readonly string[] = [];
+    // The import target the last failed CSS step could not find. Polled too, so creating it triggers a sync.
+    let cssMissing: string | undefined;
     const polled = new Set<string>();
 
     const rejection = checkVaultDirArgument(options.dir, vaultDir, cwd);
@@ -65,6 +67,7 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
                 const result = runCssStep(cwd, build.css, options);
                 if (result.status === "built") {
                     cssInputs = result.inputs;
+                    cssMissing = undefined;
                 }
             }
             mkdirSync(vaultDir, { recursive: true });
@@ -79,6 +82,7 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
                 // Poll what the step read before it failed, or fixing a broken nested file would never trigger a sync.
                 // Keep the previous inputs too: a file that was polled stays polled while a step fails.
                 cssInputs = [...new Set([...cssInputs, ...error.files])];
+                cssMissing = error.missing;
             }
             options.reporter.failure("build", `${id}: CSS build or copy failed: ${errorMessage(error)}`);
         }
@@ -88,24 +92,36 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
         options.onAssetsSynced?.();
     };
 
+    // fs.watchFile on a missing path calls the listener once, immediately, with zeroed stats for both curr and prev.
+    // That is not a change: syncing on it would run the CSS step again and print the same import error twice.
+    const onCssPoll = (curr: Stats, prev: Stats): void => {
+        if (curr.mtimeMs === 0 && prev.mtimeMs === 0) {
+            return;
+        }
+        syncAssets();
+    };
+
     // Poll the exact files the CSS step reads. A recursive fs.watch on the folder delivered nothing for 4-6 s
     // on macOS (FSEvents latency), and an outfile inside that folder would have retriggered it forever.
     // The entry stays polled even when the last CSS step failed, so fixing it triggers the next sync.
     const pollCssFiles = (): void => {
         const wanted = new Set(cssInputs);
+        if (cssMissing !== undefined) {
+            wanted.add(cssMissing);
+        }
         if (cssEntry !== undefined && existsSync(cssEntry)) {
             wanted.add(cssEntry);
         }
         for (const file of wanted) {
             if (!polled.has(file)) {
                 polled.add(file);
-                watchFile(file, { interval: POLL_INTERVAL_MS }, syncAssets);
+                watchFile(file, { interval: POLL_INTERVAL_MS }, onCssPoll);
             }
         }
         for (const file of polled) {
             if (!wanted.has(file)) {
                 polled.delete(file);
-                unwatchFile(file, syncAssets);
+                unwatchFile(file, onCssPoll);
             }
         }
     };
@@ -178,7 +194,7 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
     } finally {
         state.watching = false;
         for (const file of polled) {
-            unwatchFile(file, syncAssets);
+            unwatchFile(file, onCssPoll);
         }
         polled.clear();
         unwatchFile(manifestFile, syncAssets);
