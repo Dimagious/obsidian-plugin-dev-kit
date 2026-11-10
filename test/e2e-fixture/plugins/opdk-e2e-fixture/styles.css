@@ -1,0 +1,4 @@
+/* Present so the install step copies a styles.css too. */
+.opdk-e2e-fixture-marker {
+    outline: 0;
+}

@@ -4,6 +4,8 @@ export default defineConfig({
     test: {
         environment: "node",
         include: ["src/**/*.test.ts"],
+        // Fails the run when a test leaves an opdk-e2e-* folder in the temp directory.
+        globalSetup: ["src/test-support/leftovers-global-setup.ts"],
         coverage: {
             provider: "v8",
             include: ["src/**/*.ts"],
@@ -13,6 +15,7 @@ export default defineConfig({
                 // Only re-exports.
                 "src/index.ts",
                 "src/eslint/index.ts",
+                "src/e2e/index.ts",
                 // Type declarations only.
                 "src/**/*.d.ts",
                 // Binds the CLI to process.argv/stdout/exit code; covered by `npm run smoke`.

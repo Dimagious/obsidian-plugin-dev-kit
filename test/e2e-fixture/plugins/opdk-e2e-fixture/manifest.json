@@ -1,0 +1,9 @@
+{
+    "id": "opdk-e2e-fixture",
+    "name": "OPDK E2E Fixture",
+    "version": "0.0.0",
+    "minAppVersion": "1.5.0",
+    "description": "Test plugin of obsidian-plugin-dev-kit: its onload awaits before it registers a command and a settings tab.",
+    "author": "obsidian-plugin-dev-kit",
+    "isDesktopOnly": true
+}

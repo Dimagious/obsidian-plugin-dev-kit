@@ -14,5 +14,5 @@
     "allowJs": true,
     "checkJs": true
   },
-  "include": ["src", "bin", "vitest.config.ts", "eslint.config.js"]
+  "include": ["src", "bin", "test/e2e-fixture/e2e", "test/e2e-fixture/*.ts", "vitest.config.ts", "eslint.config.js"]
 }

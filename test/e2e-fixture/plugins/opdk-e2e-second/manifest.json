@@ -1,0 +1,9 @@
+{
+    "id": "opdk-e2e-second",
+    "name": "OPDK E2E Second",
+    "version": "0.0.0",
+    "minAppVersion": "1.5.0",
+    "description": "Second test plugin of obsidian-plugin-dev-kit, for the multi-plugin path.",
+    "author": "obsidian-plugin-dev-kit",
+    "isDesktopOnly": true
+}
