@@ -18,6 +18,8 @@ the version annotation, `window.confirm()` does not hang, `data.json` is seeded,
 `opdk-e2e-*` temp folder and no Obsidian process is left (`leftovers.ts`). The plugins are committed as built files so
 that no build step stands between a change in the kit and this run.
 
+`e2e/helpers.spec.ts` runs every helper of the `obsidian` fixture against these plugins and the vault's notes (`Properties.md` has properties, `Long.md` ends in a block that draws only when it scrolls into view). Both plugins are `isDesktopOnly: false` so that the mobile helper can load them.
+
 `npx playwright test -c test/e2e-fixture/playwright.config.ts --list` lists the specs without launching anything.
 
 ## Checking the failure artifacts

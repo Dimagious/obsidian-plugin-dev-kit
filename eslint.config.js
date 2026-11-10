@@ -33,7 +33,7 @@ export default defineConfig(
         files: ["test/e2e-fixture/plugins/**/main.js"],
         languageOptions: {
             sourceType: "commonjs",
-            globals: { module: "writable", require: "readonly", setTimeout: "readonly" },
+            globals: { module: "writable", require: "readonly", setTimeout: "readonly", IntersectionObserver: "readonly" },
         },
     },
 );
