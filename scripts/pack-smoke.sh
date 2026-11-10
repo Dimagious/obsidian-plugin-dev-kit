@@ -33,8 +33,15 @@ npx --no -- opdk --help
 echo "--- npx opdk --version"
 actual_version="$(npx --no -- opdk --version)"
 echo "$actual_version"
-if [ "$actual_version" != "$expected_version" ]; then
-    echo "smoke: opdk --version printed '$actual_version', expected '$expected_version'" >&2
+# The version, plus the short git commit the build embedded when the kit was built inside a checkout. In a checkout
+# the commit is required (a missing one means build-info broke); `-dirty` is allowed for uncommitted changes.
+if kit_commit="$(git -C "$root" rev-parse --short HEAD 2>/dev/null)" && [ -n "$kit_commit" ]; then
+    if [[ ! "$actual_version" =~ ^"$expected_version"\ \("$kit_commit"(-dirty)?\)$ ]]; then
+        echo "smoke: opdk --version printed '$actual_version', expected '$expected_version ($kit_commit)', optionally with -dirty after the commit" >&2
+        exit 1
+    fi
+elif [ "$actual_version" != "$expected_version" ]; then
+    echo "smoke: opdk --version printed '$actual_version', expected '$expected_version' (the kit is not in a git checkout)" >&2
     exit 1
 fi
 
@@ -42,8 +49,8 @@ echo "--- npx opdk --version with a broken manifest.json in the current folder"
 # The scan loads eslint-plugin-obsidianmd, which reads manifest.json when it is imported; no other command may.
 printf '{bad json' > manifest.json
 broken_output="$(npx --no -- opdk --version 2>&1)"
-if [ "$broken_output" != "$expected_version" ]; then
-    echo "smoke: opdk --version with a broken manifest.json printed '$broken_output', expected only '$expected_version'" >&2
+if [ "$broken_output" != "$actual_version" ]; then
+    echo "smoke: opdk --version with a broken manifest.json printed '$broken_output', expected only '$actual_version'" >&2
     exit 1
 fi
 

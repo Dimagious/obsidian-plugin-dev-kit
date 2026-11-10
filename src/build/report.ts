@@ -19,6 +19,6 @@ export async function printMessages(
     ctx.reporter.rawStderr(formatted.join(""));
 }
 
-export function formatKb(bytes: number): string {
-    return `${(bytes / 1024).toFixed(1)} KB`;
+export function formatKib(bytes: number): string {
+    return `${(bytes / 1024).toFixed(1)} KiB`;
 }

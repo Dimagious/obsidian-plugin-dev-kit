@@ -37,7 +37,7 @@ import { defineConfig } from "obsidian-plugin-dev-kit";
 export default defineConfig({ build: { loader: { ".png": "dataurl" } } });
 ```
 
-If the CSS entry does not exist, `opdk build` says "no src/styles/main.css, keeping styles.css as is" and keeps a hand-written `styles.css` (Dashy's script failed with ENOENT here). Watch survives a compile error or a broken CSS `@import` and recovers when the file is fixed or a missing `@import` target is created. A missing `@import` or an import cycle in CSS is an error naming the files.
+If the CSS entry does not exist (Dashy's script failed with ENOENT here), `opdk build` prints a `·` line "no src/styles/main.css, keeping styles.css as is" (once per `--watch` run) and keeps a hand-written `styles.css`; with no `styles.css` either it prints `!` and the plugin ships no stylesheet. A plugin with only a hand-written `styles.css` can set `css: false` to skip the step. Watch survives a compile error or a broken CSS `@import` and recovers when the file is fixed or a missing `@import` target is created. A missing `@import` or an import cycle in CSS is an error naming the files.
 
 ## The mobile-bundle failure
 
@@ -68,12 +68,12 @@ How to read it:
 | Before | After |
 |---|---|
 | `"build": "npm run build:css && esbuild src/main.ts --bundle ... && node scripts/assert-bundle.cjs"` (Dashy) | `"build": "opdk build"` |
-| `"build": "esbuild src/main.ts --bundle ... --loader:.png=dataurl ..."` (Garmy) | `"build": "opdk build"` plus `build: { loader: { ".png": "dataurl" } }` in `opdk.config.mjs`; no `src/styles` is fine |
+| `"build": "esbuild src/main.ts --bundle ... --loader:.png=dataurl ..."` (Garmy) | `"build": "opdk build"` plus `build: { loader: { ".png": "dataurl" } }` in `opdk.config.mjs`; no `src/styles` is fine; with a hand-written `styles.css` you can add `css: false` |
 | `"build:vault": "node scripts/build-vault.cjs"` / `"dev:vault": "... --watch"` | `"build:vault": "opdk build --vault"`, `"dev:vault": "opdk build --vault --watch"` |
 | `"build:css": "node scripts/build-css.cjs"` | `"build:css": "opdk build-css"` |
 
 3. Delete `scripts/assert-bundle.cjs`, `scripts/build-css.cjs` and `scripts/build-vault.cjs` only when nothing else requires them. Run `grep -rn "assert-bundle\|build-css\|build-vault" scripts/ package.json` first. Dashy's `scripts/preview.cjs` requires `build-css.cjs` (`npm run preview`, `preview:watch`) and the kit exports no programmatic CSS build, so keep `build-css.cjs` while another script requires it, or change that script to spawn `opdk build-css`.
 4. Differences to expect: the build minifies by default (only Garmy lacks `--minify` today: set `minify: false` or check the output first), platform is always `browser` (Snipsy used `node`), and Snipsy needs no `snipsidian` hardcoded in a script because the id is read from `manifest.json`. Snipsy's vault build used to copy the root `styles.css`; the kit rebuilds it from `src/styles` on every sync, so do not hand-edit the root file during `dev:vault`.
 5. Snipsy: its current `main.js` fails the bundle check today (`LOG_TOKENS`, `LOG_STREAM`, `emitWarning`, from `--platform=node` plus `yaml`). With the kit it passes because the platform becomes `browser`, which swaps in yaml's browser build. That is a runtime change: smoke-test the migrated Snipsy on a phone. Dashy's and Garmy's bundles pass the check today.
-6. If a plugin script still calls esbuild directly (Dashy's `scripts/preview.cjs`), keep its `esbuild` devDependency at the version the kit pins (0.28.2); drop it once no script needs it.
+6. If a plugin script still calls esbuild directly (Dashy's `scripts/preview.cjs`), keep its `esbuild` devDependency at the version the kit pins (0.28.2); drop the `esbuild` devDependency once no script calls it directly (`opdk build` brings its own).
 7. Run `opdk build` and test the plugin in Obsidian before releasing.

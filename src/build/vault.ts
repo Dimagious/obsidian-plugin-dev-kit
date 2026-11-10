@@ -39,6 +39,8 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
     let cssInputs: readonly string[] = [];
     // The import target the last failed CSS step could not find. Polled too, so creating it triggers a sync.
     let cssMissing: string | undefined;
+    // A plugin with a hand-written stylesheet has no CSS entry on every sync; say so on the first one only.
+    let noEntryAnnounced = false;
     const polled = new Set<string>();
 
     const rejection = checkVaultDirArgument(options.dir, vaultDir, cwd);
@@ -64,10 +66,13 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
             // Copying it stale is silent and shipped a vault missing the styles of two
             // whole blocks: the TypeScript was fresh, the CSS was three commits old.
             if (build.css !== false) {
-                const result = runCssStep(cwd, build.css, options);
+                const result = runCssStep(cwd, build.css, options, !noEntryAnnounced);
                 if (result.status === "built") {
                     cssInputs = result.inputs;
                     cssMissing = undefined;
+                    noEntryAnnounced = false;
+                } else {
+                    noEntryAnnounced = true;
                 }
             }
             mkdirSync(vaultDir, { recursive: true });
@@ -185,7 +190,13 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
         pollCssFiles();
         watchFile(manifestFile, { interval: POLL_INTERVAL_MS }, syncAssets);
         if (build.css !== false && cssEntry !== undefined && !existsSync(cssEntry)) {
-            options.reporter.warn("build", `${id}: no ${build.css.entry}, CSS not watched`);
+            // Same rule as the CSS step: a hand-written stylesheet is a normal setup, no stylesheet at all is not.
+            const message = `${id}: no ${build.css.entry}, CSS not watched`;
+            if (existsSync(path.resolve(cwd, build.css.outfile))) {
+                options.reporter.info("build", message);
+            } else {
+                options.reporter.warn("build", message);
+            }
         }
         await ctx.watch();
         await firstBuild;

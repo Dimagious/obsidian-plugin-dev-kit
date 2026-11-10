@@ -122,6 +122,15 @@ describe("opdk build --vault (one shot)", { timeout: 15_000 }, () => {
         );
     });
 
+    it("warns and copies no stylesheet when there is neither a CSS entry nor a styles.css", async () => {
+        plugin.write("opdk.config.mjs", 'export default { build: { css: { entry: "src/nope.css" } } };\n');
+        const ctx = createContext(plugin.dir);
+        expect(await buildCommand.run(["--vault", vault], ctx)).toBe(0);
+        expect(ctx.out.join("")).toContain("! css     no src/nope.css and no styles.css, the plugin ships no stylesheet");
+        expect(existsSync(path.join(vault, "styles.css"))).toBe(false);
+        expect(inVault("main.js")).toContain("first");
+    });
+
     it("copies a hand-written styles.css when the plugin has no CSS entry", async () => {
         plugin.write("opdk.config.mjs", 'export default { build: { css: { entry: "src/nope.css" } } };\n');
         plugin.write("styles.css", ".hand{}");
@@ -451,16 +460,44 @@ describe("opdk build --vault --watch", () => {
         await run.stop();
     });
 
-    it("says once that CSS is not watched when the entry is missing at start", { timeout: 30_000 }, async () => {
+    it("says once, with a `·`, that CSS is not watched when the entry is missing but styles.css exists", { timeout: 30_000 }, async () => {
         rmSync(path.join(plugin.dir, "src/styles"), { recursive: true });
         plugin.write("styles.css", ".root{}");
         const run = start();
         await run.settled();
 
         const lines = run.out.join("").split("\n").filter((line) => line.includes("CSS not watched"));
-        expect(lines).toEqual(["! build   fixture-plugin: no src/styles/main.css, CSS not watched"]);
+        expect(lines).toEqual(["· build   fixture-plugin: no src/styles/main.css, CSS not watched"]);
         // The manifest is the only polled file.
         expect(statWatchers()).toBe(handlesBefore + 1);
+
+        await run.stop();
+    });
+
+    it("warns with a `!` that CSS is not watched when there is no entry and no styles.css", { timeout: 30_000 }, async () => {
+        rmSync(path.join(plugin.dir, "src/styles"), { recursive: true });
+        const run = start();
+        await run.settled();
+
+        const lines = run.out.join("").split("\n").filter((line) => line.includes("CSS not watched"));
+        expect(lines).toEqual(["! build   fixture-plugin: no src/styles/main.css, CSS not watched"]);
+
+        await run.stop();
+    });
+
+    it("mentions the hand-written styles.css once, not on every sync", { timeout: 30_000 }, async () => {
+        rmSync(path.join(plugin.dir, "src/styles"), { recursive: true });
+        plugin.write("styles.css", ".root{}");
+        const run = start();
+        await run.settled();
+        const copies = (): number => run.out.join("").split("assets copied").length - 1;
+        const before = copies();
+        // A manifest change triggers a second sync.
+        writeFileSync(path.join(plugin.dir, "manifest.json"), JSON.stringify({ id: "fixture-plugin", name: "Fixture", version: "1.0.1" }));
+        await run.until(() => copies() > before, POLL_BUDGET_MS);
+
+        const lines = run.out.join("").split("\n").filter((line) => line.includes("keeping styles.css as is"));
+        expect(lines).toEqual(["· css     no src/styles/main.css, keeping styles.css as is"]);
 
         await run.stop();
     });
