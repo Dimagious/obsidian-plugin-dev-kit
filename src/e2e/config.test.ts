@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildObsidianConfig, defineObsidianConfig } from "./config.js";
 
@@ -41,6 +42,29 @@ describe("buildObsidianConfig", () => {
             baseURL: "http://x",
             trace: "retain-on-failure",
         });
+    });
+});
+
+describe("buildObsidianConfig: global setup", () => {
+    function kitSetup(config: ReturnType<typeof buildObsidianConfig>): string {
+        const first = Array.isArray(config.globalSetup) ? config.globalSetup[0] : config.globalSetup;
+        expect(first).toBeDefined();
+        return first ?? "";
+    }
+
+    it("registers the kit's Electron check, an absolute path to global-setup next to the config", () => {
+        const file = kitSetup(buildObsidianConfig({}, {}));
+        expect(path.isAbsolute(file)).toBe(true);
+        expect(path.basename(file, path.extname(file))).toBe("global-setup");
+    });
+
+    it("runs the plugin's own global setup after it, string or list", () => {
+        expect(buildObsidianConfig({ globalSetup: "./leftovers.ts" }, {}).globalSetup).toEqual([kitSetup(buildObsidianConfig({}, {})), "./leftovers.ts"]);
+        expect(buildObsidianConfig({ globalSetup: ["./a.ts", "./b.ts"] }, {}).globalSetup).toEqual([
+            kitSetup(buildObsidianConfig({}, {})),
+            "./a.ts",
+            "./b.ts",
+        ]);
     });
 });
 

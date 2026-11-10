@@ -6,6 +6,7 @@ import { planComposition } from "./ime.js";
 import { deviceMetrics, isReloadRejection, type MobileOptions } from "./mobile.js";
 import {
     applyTheme,
+    areSidebarsCollapsed,
     closeSettingsModal,
     editorTextChanged,
     enabledPluginIds,
@@ -37,6 +38,7 @@ import {
     runCommandById,
     runWithApp,
     scrollThroughElement,
+    setSidebarsCollapsed,
     switchMobileEmulation,
 } from "./page-scripts.js";
 import { settingsNotOpenedMessage, settingsTabNotFoundMessage } from "./settings.js";
@@ -354,6 +356,19 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
         await openFile(target, { mode: "preview" });
     }
 
+    /** Collapses or expands both side panels and waits until they are in that state (they animate). */
+    async function setSidebars(collapsed: boolean): Promise<void> {
+        const verb = collapsed ? "collapseSidebars" : "expandSidebars";
+        if (!(await win.evaluate(setSidebarsCollapsed, collapsed))) {
+            throw new Error(`${verb}(): this Obsidian has no workspace.leftSplit / rightSplit with collapse() and expand(). The helper was verified on Obsidian 1.14.5.`);
+        }
+        try {
+            await win.waitForFunction(areSidebarsCollapsed, collapsed, { polling: 50, timeout: timeouts.ui });
+        } catch (error) {
+            throw new Error(`The side panels were not ${collapsed ? "collapsed" : "expanded"} ${String(timeouts.ui)} ms after ${verb}(). Raise timeouts.helpers.ui if the window is slow.`, { cause: error });
+        }
+    }
+
     /**
      * Switches the emulation and waits for the reload it causes. `emulateMobile()` reloads the window, so the call
      * that starts it never returns; that rejection is the only one accepted. The flag set before the call tells the
@@ -481,6 +496,8 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
             hideProperties: () => win.evaluate(hideNoteProperties),
             scrollThrough,
             readingView,
+            collapseSidebars: () => setSidebars(true),
+            expandSidebars: () => setSidebars(false),
             mobile,
             desktop,
             evaluate,

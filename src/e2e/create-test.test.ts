@@ -83,7 +83,7 @@ describe("createObsidianTest", () => {
         });
         expect(Object.keys(helpers ?? {}).sort()).toEqual(
             [
-                "clearNotices", "closeSettings", "desktop", "editor", "evaluate", "hideProperties", "mobile", "openCommandPalette", "openFile",
+                "clearNotices", "closeSettings", "collapseSidebars", "desktop", "editor", "evaluate", "expandSidebars", "hideProperties", "mobile", "openCommandPalette", "openFile",
                 "openSettings", "press", "readingView", "replace", "runCommand", "runCommandFromPalette", "scrollThrough", "setTheme",
                 "waitForMetadataCache",
             ].sort(),
