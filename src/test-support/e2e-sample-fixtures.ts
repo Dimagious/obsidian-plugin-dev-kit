@@ -13,7 +13,7 @@ export const { test, expect, onlyWhen } = createObsidianTest({
     obsidianPath: "/Applications/Obsidian.app/Contents/Resources/app.asar",
     electronArgs: ["--use-mock-keychain"],
     version: "1.14.5",
-    timeouts: { launch: 60_000, ready: 45_000, close: 5_000 },
+    timeouts: { launch: 60_000, ready: 45_000, close: 5_000, helpers: { metadataCache: 90_000, ui: 15_000 } },
     staleBuildCheck: true,
     sweepAfterHours: 4,
 });

@@ -21,6 +21,26 @@ export interface TimeoutOptions {
     readonly ready?: number;
     /** How long `app.close()` may take before the process tree is killed. Default 5000. */
     readonly close?: number;
+    /** How long each kind of wait inside the `obsidian` helpers may take. */
+    readonly helpers?: HelperTimeouts;
+}
+
+/**
+ * Time budgets of the waits inside the `obsidian` helpers, in milliseconds. Each wait that runs out fails with a
+ * message that names the wait and this option. Keep them below the Playwright test timeout (60000 in the preset),
+ * or the test is killed before the helper can explain what it waited for.
+ */
+export interface HelperTimeouts {
+    /** A plugin's settings tab to register (`openSettings(tab)`). Default 15000: Garmy's cold start needed a few seconds. */
+    readonly settings?: number;
+    /** Every markdown file to have its metadata cached (`waitForMetadataCache()`). Default 45000: Dashy's big vault took up to a minute. */
+    readonly metadataCache?: number;
+    /** CodeMirror to leave a composition and to show the composed text (`editor().compose()`). Default 5000. */
+    readonly compose?: number;
+    /** The body to get the class of the theme (`setTheme()`). Default 5000. */
+    readonly theme?: number;
+    /** A dialog, the palette, the editor or a view to appear or go away (`openCommandPalette()`, `openFile()`, `editor().type()`, `closeSettings()` and others). Default 10000. */
+    readonly ui?: number;
 }
 
 /** Options of `createObsidianTest`. */
@@ -47,6 +67,7 @@ export interface ObsidianTestOptions {
 }
 
 export const DEFAULT_TIMEOUTS = { launch: 45_000, ready: 30_000, close: 5_000 } as const;
+export const DEFAULT_HELPER_TIMEOUTS = { settings: 15_000, metadataCache: 45_000, compose: 5_000, theme: 5_000, ui: 10_000 } as const;
 export const DEFAULT_SWEEP_HOURS = 2;
 
 /** `ObsidianTestOptions` with defaults applied, paths absolute and env overrides folded in. */
@@ -61,7 +82,8 @@ export interface ResolvedOptions {
     readonly obsidianPath: string | undefined;
     readonly electronArgs: readonly string[];
     readonly expectedVersion: string | null;
-    readonly timeouts: Required<TimeoutOptions>;
+    readonly timeouts: Required<Omit<TimeoutOptions, "helpers">>;
+    readonly helperTimeouts: Required<HelperTimeouts>;
     readonly staleBuildCheck: boolean;
     readonly sweepAfterHours: number | false;
 }
@@ -78,7 +100,8 @@ const OPTION_KEYS = [
     "staleBuildCheck",
     "sweepAfterHours",
 ];
-const TIMEOUT_KEYS = ["launch", "ready", "close"];
+const TIMEOUT_KEYS = ["launch", "ready", "close", "helpers"];
+const HELPER_TIMEOUT_KEYS = ["settings", "metadataCache", "compose", "theme", "ui"];
 const SOURCE = "createObsidianTest";
 
 export interface ResolveContext {
@@ -111,6 +134,7 @@ export function resolveOptions(value: unknown, context: ResolveContext): Resolve
         electronArgs: resolveElectronArgs(value),
         expectedVersion: resolveVersion(value, env),
         timeouts: resolveTimeouts(value),
+        helperTimeouts: resolveHelperTimeouts(value),
         staleBuildCheck: resolveStaleCheck(value, env),
         sweepAfterHours: resolveSweep(value),
     };
@@ -212,13 +236,13 @@ function resolveVersion(options: Record<string, unknown>, env: ResolveContext["e
     return chosen;
 }
 
-function resolveTimeouts(options: Record<string, unknown>): Required<TimeoutOptions> {
+function resolveTimeouts(options: Record<string, unknown>): Required<Omit<TimeoutOptions, "helpers">> {
     const value = own(options, "timeouts");
     if (value === undefined) {
         return { ...DEFAULT_TIMEOUTS };
     }
     if (!isRecord(value)) {
-        throw new Error(`${SOURCE}: "timeouts" must be an object { launch, ready, close }.`);
+        throw new Error(`${SOURCE}: "timeouts" must be an object { launch, ready, close, helpers }.`);
     }
     for (const key of Object.keys(value)) {
         if (!TIMEOUT_KEYS.includes(key)) {
@@ -230,6 +254,25 @@ function resolveTimeouts(options: Record<string, unknown>): Required<TimeoutOpti
         ready: own(value, "ready") === undefined ? DEFAULT_TIMEOUTS.ready : positiveInteger(value, "ready", "timeouts.ready"),
         close: own(value, "close") === undefined ? DEFAULT_TIMEOUTS.close : positiveInteger(value, "close", "timeouts.close"),
     };
+}
+
+function resolveHelperTimeouts(options: Record<string, unknown>): Required<HelperTimeouts> {
+    const timeouts = own(options, "timeouts");
+    const value = isRecord(timeouts) ? own(timeouts, "helpers") : undefined;
+    if (value === undefined) {
+        return { ...DEFAULT_HELPER_TIMEOUTS };
+    }
+    if (!isRecord(value)) {
+        throw new Error(`${SOURCE}: "timeouts.helpers" must be an object { ${HELPER_TIMEOUT_KEYS.join(", ")} }.`);
+    }
+    for (const key of Object.keys(value)) {
+        if (!HELPER_TIMEOUT_KEYS.includes(key)) {
+            throw new Error(`${SOURCE}: unknown key "timeouts.helpers.${key}". Known keys: ${HELPER_TIMEOUT_KEYS.join(", ")}.`);
+        }
+    }
+    const pick = (key: keyof HelperTimeouts): number =>
+        own(value, key) === undefined ? DEFAULT_HELPER_TIMEOUTS[key] : positiveInteger(value, key, `timeouts.helpers.${key}`);
+    return { settings: pick("settings"), metadataCache: pick("metadataCache"), compose: pick("compose"), theme: pick("theme"), ui: pick("ui") };
 }
 
 function resolveStaleCheck(options: Record<string, unknown>, env: ResolveContext["env"]): boolean {

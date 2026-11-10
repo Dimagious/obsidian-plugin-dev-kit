@@ -1,4 +1,4 @@
-import type { ElectronApplication, Page } from "@playwright/test";
+import type { CDPSession, ElectronApplication, Page } from "@playwright/test";
 import { readinessState, readRunningVersion } from "../e2e/page-scripts.js";
 import type { ProcessIo } from "../e2e/process-tree.js";
 
@@ -200,4 +200,145 @@ export function createFakeObsidian(behavior: FakeObsidianBehavior = {}): FakeObs
         },
     };
     return fake;
+}
+
+type Handler = (arg: unknown, options?: unknown) => unknown;
+
+export interface FakeHelperWindow {
+    readonly win: Page;
+    /** Everything that happened, in order, as short strings. */
+    readonly log: string[];
+    /** The CDP commands sent, in order. */
+    readonly cdp: { method: string; params: unknown }[];
+    /** Answers `win.evaluate(fn, arg)` for exactly this page function. A throw becomes a rejection. */
+    onEvaluate(fn: unknown, handler: Handler): void;
+    /** Answers `win.waitForFunction(fn, arg, options)` for exactly this page function. */
+    onWait(fn: unknown, handler: Handler): void;
+    /** Makes `waitFor` on this selector reject, as when the element never appears; with `state`, only for that state. */
+    failWaitFor(selector: string, state?: string): void;
+    /** What `win.isClosed()` answers. */
+    closed: boolean;
+    /** How many windows the app has (`win.context().pages()`); 1 unless a test opens a popout. */
+    windows: number;
+    /**
+     * The waits that were started without an explicit timeout (`waitFor`, `click`, `fill`, `pressSequentially`,
+     * `waitForFunction`), as short strings. Playwright's defaults for them reach the test timeout or never end, so a
+     * helper must always give one; a test that runs a helper can assert this stays empty.
+     */
+    readonly unbounded: string[];
+    /** The explicit timeout each wait started with, in order, as `what` (method and selector) and `timeout`. */
+    readonly timeouts: { what: string; timeout: number }[];
+}
+
+/**
+ * A stand-in for the Obsidian window as the `obsidian` helpers use it. Like `createFakeObsidian`, it answers
+ * `evaluate` and `waitForFunction` by the identity of the page function, so a helper that asks the wrong question
+ * (or a renamed function) fails here instead of silently getting an answer.
+ */
+export function createFakeHelperWindow(): FakeHelperWindow {
+    const log: string[] = [];
+    const cdp: { method: string; params: unknown }[] = [];
+    const evaluators = new Map<unknown, Handler>();
+    const waiters = new Map<unknown, Handler>();
+    const failing = new Set<string>();
+    const unbounded: string[] = [];
+    const timeouts: { what: string; timeout: number }[] = [];
+    const fake: FakeHelperWindow = {
+        win: undefined as unknown as Page,
+        log,
+        cdp,
+        onEvaluate: (fn, handler) => {
+            evaluators.set(fn, handler);
+        },
+        onWait: (fn, handler) => {
+            waiters.set(fn, handler);
+        },
+        failWaitFor: (selector, state) => {
+            failing.add(state === undefined ? selector : `${selector}|${state}`);
+        },
+        closed: false,
+        windows: 1,
+        unbounded,
+        timeouts,
+    };
+    const checkTimeout = (what: string, options: { timeout?: number } | undefined): void => {
+        if (typeof options?.timeout !== "number" || options.timeout <= 0) {
+            unbounded.push(what);
+        } else {
+            timeouts.push({ what, timeout: options.timeout });
+        }
+    };
+    const answer = (table: Map<unknown, Handler>, kind: string, fn: unknown, arg: unknown, options?: unknown): Promise<unknown> => {
+        if (kind === "waitForFunction") {
+            checkTimeout(`waitForFunction:${(fn as { name?: string }).name ?? "?"}`, options as { timeout?: number } | undefined);
+        }
+        const handler = table.get(fn);
+        if (handler === undefined) {
+            return Promise.reject(new Error(`createFakeHelperWindow: ${kind} was called with a page function the fake does not know. Teach the fake about it.`));
+        }
+        try {
+            return Promise.resolve(handler(arg, options));
+        } catch (error) {
+            return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+        }
+    };
+    const locator = (selector: string, options?: { hasText?: string }): object => {
+        const described = options?.hasText === undefined ? selector : `${selector}[hasText=${options.hasText}]`;
+        log.push(`locator:${described}`);
+        const self = {
+            first: () => self,
+            waitFor: (o?: { state?: string; timeout?: number }) => {
+                checkTimeout(`waitFor:${described}`, o);
+                const state = o?.state ?? "visible";
+                log.push(`waitFor:${described}:${state}`);
+                return failing.has(selector) || failing.has(`${selector}|${state}`) ? Promise.reject(new Error(`Timeout waiting for ${selector}`)) : Promise.resolve();
+            },
+            fill: (text: string, o?: { timeout?: number }) => {
+                checkTimeout(`fill:${described}`, o);
+                log.push(`fill:${described}:${text}`);
+                return Promise.resolve();
+            },
+            click: (o?: { timeout?: number }) => {
+                checkTimeout(`click:${described}`, o);
+                log.push(`click:${described}`);
+                return Promise.resolve();
+            },
+            pressSequentially: (text: string, o?: { delay?: number; timeout?: number }) => {
+                checkTimeout(`pressSequentially:${described}`, o);
+                log.push(`pressSequentially:${described}:${text}:${String(o?.delay)}`);
+                return Promise.resolve();
+            },
+        };
+        return self;
+    };
+    const session = {
+        send: (method: string, params?: unknown) => {
+            cdp.push({ method, params });
+            return Promise.resolve();
+        },
+        detach: () => {
+            log.push("cdp.detach");
+            return Promise.resolve();
+        },
+    };
+    const page = {
+        evaluate: (fn: unknown, arg?: unknown) => answer(evaluators, "evaluate", fn, arg),
+        waitForFunction: (fn: unknown, arg?: unknown, options?: unknown) => answer(waiters, "waitForFunction", fn, arg, options),
+        locator,
+        keyboard: {
+            press: (keys: string) => {
+                log.push(`press:${keys}`);
+                return Promise.resolve();
+            },
+        },
+        context: () => ({
+            pages: () => Array.from({ length: fake.windows }, () => page),
+            newCDPSession: () => {
+                log.push("newCDPSession");
+                return Promise.resolve(session as unknown as CDPSession);
+            },
+        }),
+        isClosed: () => fake.closed,
+    };
+    return Object.assign(fake, { win: page as unknown as Page });
 }

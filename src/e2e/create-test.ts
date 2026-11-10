@@ -13,6 +13,8 @@ import {
 import { sweepAtWorkerStart } from "./cleanup.js";
 import { createElectronProbe } from "./electron-binary.js";
 import { createFixtureFunctions } from "./fixtures.js";
+import { createHelpers } from "./helpers/create-helpers.js";
+import type { ObsidianHelpers } from "./helpers/types.js";
 import { gateSkipReason, isGateOpen } from "./gate.js";
 import { resolveOptions, type ObsidianTestOptions } from "./options.js";
 import { createProcessIo } from "./process-tree.js";
@@ -27,6 +29,8 @@ export interface ObsidianFixtures {
     app: ElectronApplication;
     /** The per-test copy of the seed vault. */
     vault: VaultHandle;
+    /** Helpers for settings, commands, files, the editor, themes, mobile and fakes, bound to this window. */
+    obsidian: ObsidianHelpers;
 }
 
 /** Internal: the one fixture the three above are views of, so setup and teardown happen in one place. */
@@ -101,6 +105,11 @@ export function createObsidianTest(options: ObsidianTestOptions): ObsidianTestKi
         },
         vault: async ({ opdkSession }, use) => {
             await use(opdkSession.vault);
+        },
+        obsidian: async ({ win }, use) => {
+            const kit = createHelpers(win, { readyTimeoutMs: resolved.timeouts.ready, timeouts: resolved.helperTimeouts });
+            await use(kit.helpers);
+            await kit.dispose();
         },
     });
     // The one cast: `extend` returns a type that also lists the internal fixtures, and TestType is invariant in its
