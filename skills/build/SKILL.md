@@ -37,7 +37,7 @@ import { defineConfig } from "obsidian-plugin-dev-kit";
 export default defineConfig({ build: { loader: { ".png": "dataurl" } } });
 ```
 
-If the CSS entry does not exist, `opdk build` says "no src/styles/main.css, keeping styles.css as is" and keeps a hand-written `styles.css` (Dashy's script failed with ENOENT here). Watch survives a compile error and recovers when the file is fixed. A missing `@import` or an import cycle in CSS is an error naming the files.
+If the CSS entry does not exist, `opdk build` says "no src/styles/main.css, keeping styles.css as is" and keeps a hand-written `styles.css` (Dashy's script failed with ENOENT here). Watch survives a compile error or a broken CSS `@import` and recovers when the file is fixed. A missing `@import` or an import cycle in CSS is an error naming the files.
 
 ## The mobile-bundle failure
 
