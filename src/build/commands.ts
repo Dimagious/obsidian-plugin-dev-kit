@@ -89,7 +89,8 @@ export const buildCssCommand: Command = {
             ctx.reporter.info("css", 'disabled by "build.css: false" in opdk.config.mjs, nothing to do');
             return 0;
         }
-        if (runCssStep(ctx.cwd, css, ctx).status === "no-entry") {
+        // The failure below says it all, so the step stays quiet about the missing entry.
+        if (runCssStep(ctx.cwd, css, ctx, false).status === "no-entry") {
             ctx.reporter.failure("css", `nothing was built. Create ${css.entry}, or set "build.css.entry" in opdk.config.mjs.`);
             return 1;
         }

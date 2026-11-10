@@ -27,7 +27,7 @@ Show
 
 Sleep 500ms
 Type "opdk build" Enter
-Sleep 4s
+Wait+Screen /Node-only references/
 Type "ls main.js styles.css" Enter
 Sleep 3s
 

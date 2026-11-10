@@ -54,7 +54,7 @@ describe("opdk build", () => {
         const out = ctx.out.join("");
         expect(out).toContain("· build   fixture-plugin: bundling src/main.ts");
         expect(out).toContain("✓ css     src/styles/main.css -> styles.css (2 files, 4 lines)");
-        expect(out).toMatch(/✓ build {3}fixture-plugin: main\.js \d+\.\d KB/);
+        expect(out).toMatch(/✓ build {3}fixture-plugin: main\.js \d+\.\d KiB/);
         expect(out).toContain("✓ bundle  main.js is free of Node-only references");
         expect(ctx.err).toEqual([]);
     });
@@ -99,7 +99,15 @@ describe("opdk build", () => {
         const ctx = createContext(plugin.dir);
         expect(await buildCommand.run([], ctx)).toBe(0);
         expect(read("styles.css")).toBe(".hand-written{}");
-        expect(ctx.out.join("")).toContain("! css     no src/nope/main.css, keeping styles.css as is");
+        expect(ctx.out.join("")).toContain("· css     no src/nope/main.css, keeping styles.css as is");
+        expect(ctx.out.join("")).not.toContain("! css");
+    });
+
+    it("warns when there is neither a CSS entry nor a styles.css", async () => {
+        plugin.write("opdk.config.mjs", 'export default { build: { css: { entry: "src/nope/main.css" } } };\n');
+        const ctx = createContext(plugin.dir);
+        expect(await buildCommand.run([], ctx)).toBe(0);
+        expect(ctx.out.join("")).toContain("! css     no src/nope/main.css and no styles.css, the plugin ships no stylesheet");
     });
 
     it("skips the CSS step with build.css: false", async () => {
@@ -255,7 +263,7 @@ describe("opdk assert-bundle", () => {
         plugin.write("main.js", "module.exports = {};");
         const ctx = createContext(plugin.dir);
         expect(await assertBundleCommand.run([], ctx)).toBe(0);
-        expect(ctx.out.join("")).toContain("✓ bundle  main.js is free of Node-only references (0.0 KB)");
+        expect(ctx.out.join("")).toContain("✓ bundle  main.js is free of Node-only references (0.0 KiB)");
     });
 
     it("prints the absolute path for a file outside the plugin folder", async () => {
@@ -308,6 +316,8 @@ describe("opdk build-css", () => {
         const ctx = createContext(plugin.dir);
         expect(await buildCssCommand.run([], ctx)).toBe(1);
         expect(ctx.err.join("")).toContain("Create css/nope.css");
+        // The failure is the only message: no `· css` line claims styles.css is kept.
+        expect(ctx.out.join("")).toBe("");
     });
 
     it("does nothing when css is disabled", async () => {

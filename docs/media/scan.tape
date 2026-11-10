@@ -23,12 +23,18 @@ Type `printf '{"compilerOptions":{"target":"ES2020","lib":["ES2020","DOM"],"modu
 Type `printf 'export function later(): void {\n    window.setTimeout(() => undefined, 100);\n}\n' > src/main.ts` Enter
 Type `printf '.hello { color: tomato; }\n' > styles.css` Enter
 Type "git init -q && git add -A" Enter
+# `Wait+Screen` only sees the top of the terminal, so clear it once the setup commands ran, then wait for the marker
+# (the typed line has a quote the output lacks).
+Type `clear; echo RE""ADY` Enter
+Wait+Screen@120s /READY/
 Type "clear" Enter
+Sleep 1s
 Show
 
 Sleep 500ms
 Type "opdk scan" Enter
-Sleep 12s
+Wait+Screen@60s /0 findings in 4 tracked files/
+Sleep 1s
 Type 'echo "exit code: $?"' Enter
 Sleep 3s
 

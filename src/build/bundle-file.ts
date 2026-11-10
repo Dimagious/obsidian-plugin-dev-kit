@@ -3,7 +3,7 @@ import path from "node:path";
 import type { CommandContext } from "../cli/types.js";
 import type { Manifest } from "../config/types.js";
 import { findNodeOnlyReferences } from "./bundle-check.js";
-import { formatKb } from "./report.js";
+import { formatKib } from "./report.js";
 
 /** Runs the Node-only check on a built file and prints the result. Returns the exit code. */
 export function checkBundleFile(file: string, manifest: Manifest, ctx: CommandContext): number {
@@ -27,6 +27,6 @@ export function checkBundleFile(file: string, manifest: Manifest, ctx: CommandCo
         });
         return 1;
     }
-    ctx.reporter.success("bundle", `${name} is free of Node-only references (${formatKb(Buffer.byteLength(code))})`);
+    ctx.reporter.success("bundle", `${name} is free of Node-only references (${formatKib(Buffer.byteLength(code))})`);
     return 0;
 }

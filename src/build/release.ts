@@ -6,7 +6,7 @@ import type { Manifest } from "../config/types.js";
 import { checkBundleFile } from "./bundle-file.js";
 import { runCssStep } from "./css-step.js";
 import { toEsbuildOptions, type ResolvedBuild } from "./options.js";
-import { formatKb, isBuildFailure, printMessages } from "./report.js";
+import { formatKib, isBuildFailure, printMessages } from "./report.js";
 
 /** `opdk build`: CSS, then the bundle, then the Node-only check. Returns the exit code. */
 export async function runReleaseBuild(manifest: Manifest, build: ResolvedBuild, ctx: CommandContext): Promise<number> {
@@ -33,6 +33,6 @@ export async function runReleaseBuild(manifest: Manifest, build: ResolvedBuild, 
     }
 
     const outfile = path.resolve(ctx.cwd, build.outfile);
-    ctx.reporter.success("build", `${id}: ${build.outfile} ${formatKb(statSync(outfile).size)}`);
+    ctx.reporter.success("build", `${id}: ${build.outfile} ${formatKib(statSync(outfile).size)}`);
     return checkBundleFile(outfile, manifest, ctx);
 }

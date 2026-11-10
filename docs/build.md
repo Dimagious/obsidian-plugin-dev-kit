@@ -14,7 +14,7 @@ The kit fixes the platform to `browser`, and the check fails the build if Node-o
 
 The plugin id comes from `manifest.json`, the settings from the optional `opdk.config.mjs`. In order:
 
-1. **CSS.** If the CSS entry (`src/styles/main.css`) exists, its `@import` lines are inlined into `styles.css`. If it does not exist, the step prints a `!` warning and a hand-written `styles.css` stays as it is. With `css: false` the step does not run. A missing `@import` target or an import cycle stops the whole build with exit 1, and the message names the files.
+1. **CSS.** If the CSS entry (`src/styles/main.css`) exists, its `@import` lines are inlined into `styles.css`. If it does not exist and a root `styles.css` does, the step prints a `·` line and the hand-written `styles.css` stays as it is. With no `styles.css` either it prints a `!` warning, because the plugin then ships no stylesheet. A plugin that only has a hand-written `styles.css` can set `css: false` to skip the step entirely. A missing `@import` target or an import cycle stops the whole build with exit 1, and the message names the files.
 2. **Bundle.** esbuild bundles the entry (`src/main.ts`) into `main.js`: platform `browser`, format `cjs`, a footer that makes `module.exports` the plugin class, minified. A compile error is printed in esbuild's layout, followed by `build failed with N error(s)`, and the build exits 1.
 3. **Bundle check.** `main.js` is searched for Node-only code. A finding prints `cannot run on mobile`, one line per finding, and exits 1. The bundle stays on disk. Nothing is checked for a desktop-only plugin.
 4. **Done.** Exit 0 with `main.js` and `styles.css` in place.
@@ -33,7 +33,7 @@ With `--watch` the build then keeps running:
 - The CSS entry, every file it imports and `manifest.json` are polled every 300 ms (a recursive `fs.watch` was seconds late on macOS). A change repeats step 4. Imports added or removed while it runs are tracked.
 - A compile error is printed and the watch keeps going; fix the file and the next build recovers.
 - The same holds for CSS. When a step fails on a broken `@import`, the files it had read stay polled, so fixing any of them triggers the next sync, and so does creating a missing `@import` target.
-- If the CSS entry does not exist when the watch starts, it prints `no <entry>, CSS not watched` once and polls only `manifest.json`; esbuild still watches the sources.
+- If the CSS entry does not exist when the watch starts, it prints `no <entry>, CSS not watched` once and polls only `manifest.json`; esbuild still watches the sources. The line starts with `·` when a root `styles.css` exists and with `!` when there is none. The `·` line about the kept `styles.css` is printed on the first sync only, not on every one.
 - `opdk.config.mjs` is read once at start. After editing it, restart the watch.
 - Ctrl+C stops the watchers and exits 0.
 
@@ -135,8 +135,8 @@ A clean build (the plugin id comes from `manifest.json`):
 $ opdk build
 ✓ css     src/styles/main.css -> styles.css (2 files, 4 lines)
 · build   hello-plugin: bundling src/main.ts
-✓ build   hello-plugin: main.js 0.6 KB
-✓ bundle  main.js is free of Node-only references (0.6 KB)
+✓ build   hello-plugin: main.js 0.6 KiB
+✓ bundle  main.js is free of Node-only references (0.6 KiB)
 ```
 
 `✓` is a step that passed, `✗` a step that failed, `·` progress and `!` a warning. Failures and esbuild's own messages go to stderr; the `✓ · !` lines go to stdout. In a terminal the lines are coloured (green, red, yellow, dim); piped into a file you get the same text without escape codes. Colour rules, in order: a non-empty `NO_COLOR` turns it off; `FORCE_COLOR` turns it on for any value except `0` and `false` (an empty value counts), even on a pipe or with `TERM=dumb`; `TERM=dumb` turns it off; `GITHUB_ACTIONS=true` turns it on, since the Actions log viewer renders it; otherwise colour needs a terminal. The format is for people: do not parse it in scripts, use the exit code.
@@ -151,7 +151,7 @@ The source reads `process.env.HOME`, which does not exist on a phone:
 $ opdk build
 ✓ css     src/styles/main.css -> styles.css (1 file, 2 lines)
 · build   hello-plugin: bundling src/main.ts
-✓ build   hello-plugin: main.js 0.8 KB
+✓ build   hello-plugin: main.js 0.8 KiB
 ✗ bundle  main.js cannot run on mobile:
             - a `process` reference: "process.env"
           Check the esbuild platform: an Obsidian plugin bundles as `browser`.

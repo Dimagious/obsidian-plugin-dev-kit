@@ -2,13 +2,13 @@ import { builtinCommands } from "./commands.js";
 import { createProcessReporter } from "./process-reporter.js";
 import { createRegistry } from "./registry.js";
 import { runCli } from "./run.js";
-import { readKitVersion } from "./version.js";
+import { describeKitVersion } from "./version.js";
 
 /** Binds the CLI to the real process. Called by bin/opdk.js; returns the exit code. */
 export function main(argv: readonly string[]): Promise<number> {
     return runCli(argv, {
         registry: createRegistry(builtinCommands),
-        version: readKitVersion(import.meta.url),
+        version: describeKitVersion(import.meta.url),
         ctx: {
             cwd: process.cwd(),
             env: process.env,

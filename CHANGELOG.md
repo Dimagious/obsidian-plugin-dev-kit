@@ -34,6 +34,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- `opdk --version` (and the first line of `--help`) prints the git commit the kit was built from when it is known, for example `0.0.0 (3613c4f)`, so a plugin that pins a commit can tell builds apart. `npm run build` writes it to `dist/build-info.json` (`scripts/write-build-info.mjs`). It comes from git in a checkout (with `-dirty` after uncommitted changes) and from `scripts/archive-commit` in the `git archive` tarball npm downloads for a GitHub install; with neither, only the version is printed.
+- Sizes in the build output are labelled `KiB` instead of `KB`; the number is unchanged (bytes / 1024).
+- A missing CSS entry with a root `styles.css` present is a `·` line, not a `!` warning, and in `--vault --watch` it is printed on the first sync only. With no `styles.css` either it stays a `!` and says the plugin ships no stylesheet.
 - `engines.node` is `^22.13.0 || >=24` (was `>=22.12`): ESLint 10 and `eslint-plugin-obsidianmd` 0.5.1, which the scan loads, require it. CONTRIBUTING and README say so.
 
 Differences from the scripts the plugins have today, per plugin. Anything not listed behaves as before.
@@ -41,7 +44,7 @@ Differences from the scripts the plugins have today, per plugin. Anything not li
 - Dashy (`build`, `assert-bundle.cjs`, `build-css.cjs`, `build-vault.cjs`):
   - A missing `@import` is an error that names the importing file (Dashy printed a warning and left the `@import` in the output), and an import cycle is an error (Dashy overflowed the stack). The warning for `@import` of a URL is gone; URL imports stay in place for the browser.
   - A missing CSS entry makes `opdk build` skip the CSS step and keep `styles.css` (`build-css.cjs` died with ENOENT). `opdk build-css` exits 1 with a message that names the entry.
-  - The bundle size line is in kilobytes with one decimal (`0.6 KB`), computed from the byte length; Dashy rounded the UTF-16 string length.
+  - The bundle size line is in KiB with one decimal (`0.6 KiB`), computed from the byte length; Dashy rounded the UTF-16 string length.
   - `--vault` and `--watch` are flags of `opdk build` instead of separate scripts. A vault build prints `built` first and `assets copied` after it, `--watch` survives an initial compile error and recovers when the file is fixed, and with `build.css: false` it copies a `styles.css` from the plugin root if there is one.
 - Snipsy (`build`, `scripts/build-css.cjs`, `scripts/build-vault.cjs`):
   - Its `build-css.cjs` is Dashy's file (only the comments differ), so the CSS differences listed for Dashy apply to Snipsy's `npm run build` too.

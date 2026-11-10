@@ -43,13 +43,13 @@ describe("reporter in plain mode", () => {
     it("prints results to stdout with the step padded to a fixed column", () => {
         const { out, err, reporter } = capture({ stdout: false, stderr: false });
         reporter.success("css", "a -> b (2 files, 4 lines)");
-        reporter.success("bundle", "main.js is free of Node-only references (0.6 KB)");
+        reporter.success("bundle", "main.js is free of Node-only references (0.6 KiB)");
         reporter.info("build", "hello: bundling src/main.ts");
         reporter.warn("css", "no src/styles/main.css, keeping styles.css as is");
         expect(out.join("")).toBe(
             [
                 "✓ css     a -> b (2 files, 4 lines)",
-                "✓ bundle  main.js is free of Node-only references (0.6 KB)",
+                "✓ bundle  main.js is free of Node-only references (0.6 KiB)",
                 "· build   hello: bundling src/main.ts",
                 "! css     no src/styles/main.css, keeping styles.css as is",
                 "",
