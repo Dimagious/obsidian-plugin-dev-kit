@@ -20,12 +20,23 @@ tarball="$(npm pack --loglevel=error --pack-destination "$tmp" | tail -n 1)"
 # `opdk scan` on the ESLint the plugins run.
 eslint_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies.eslint")"
 typescript_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies.typescript")"
+# The version of Playwright the e2e step below installs.
+playwright_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies['@playwright/test']")"
 
 mkdir "$tmp/project"
 cd "$tmp/project"
 npm init -y >/dev/null
 npm install --no-audit --no-fund --loglevel=error "eslint@$eslint_version" "typescript@$typescript_version"
 npm install --no-audit --no-fund --loglevel=error "$tmp/$tarball"
+
+# Playwright and Electron are optional peers: installing the kit must not bring them. Everything up to the e2e step
+# below runs without them, which is the proof that the CLI, the build and the scanner never load Playwright.
+for optional_peer in node_modules/@playwright/test node_modules/electron; do
+    if [ -e "$optional_peer" ]; then
+        echo "smoke: $optional_peer exists before the e2e step; the kit's optional peers must not be installed with it" >&2
+        exit 1
+    fi
+done
 
 echo "--- npx opdk --help"
 npx --no -- opdk --help
@@ -152,6 +163,22 @@ node --input-type=module -e "
 import { obsidianPlugin } from 'obsidian-plugin-dev-kit/eslint';
 const config = obsidianPlugin({ rootDir: process.cwd() });
 if (!Array.isArray(config) || config.length === 0) throw new Error('obsidianPlugin() returned no config');
+"
+
+echo "--- import obsidian-plugin-dev-kit/e2e (Playwright installed only now: nothing above needed it)"
+# The e2e subpath is the only part of the kit that loads Playwright. Playwright is an optional peer, so a plugin
+# that uses e2e installs it itself; the version here is the one the kit is developed against.
+npm install --no-audit --no-fund --loglevel=error "@playwright/test@$playwright_version"
+node --input-type=module -e "
+import { createObsidianTest, defineObsidianConfig } from 'obsidian-plugin-dev-kit/e2e';
+const kit = createObsidianTest({ seedVault: 'e2e/vault' });
+if (typeof kit.test !== 'function' || typeof kit.expect !== 'function' || typeof kit.onlyWhen !== 'function') {
+    throw new Error('createObsidianTest did not return { test, expect, onlyWhen }');
+}
+let rejected = false;
+try { createObsidianTest({}); } catch (error) { rejected = /seedVault/.test(String(error)); }
+if (!rejected) throw new Error('createObsidianTest accepted options without seedVault');
+if (defineObsidianConfig().workers !== 1) throw new Error('defineObsidianConfig did not set workers: 1');
 "
 
 echo "smoke: ok"

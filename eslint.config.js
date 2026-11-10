@@ -3,7 +3,8 @@ import { defineConfig } from "eslint/config";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-    { ignores: ["dist/", "coverage/"] },
+    // .claude/ holds local agent notes and research scripts, never shipped (listed in .git/info/exclude).
+    { ignores: ["dist/", "coverage/", ".claude/"] },
     eslint.configs.recommended,
     {
         files: ["**/*.ts"],
@@ -25,6 +26,14 @@ export default defineConfig(
         extends: [tseslint.configs.disableTypeChecked],
         languageOptions: {
             globals: { console: "readonly", process: "readonly", URL: "readonly" },
+        },
+    },
+    {
+        // The kit e2e fixture plugins are committed build output (no build step), plain CommonJS that Obsidian loads.
+        files: ["test/e2e-fixture/plugins/**/main.js"],
+        languageOptions: {
+            sourceType: "commonjs",
+            globals: { module: "writable", require: "readonly", setTimeout: "readonly" },
         },
     },
 );

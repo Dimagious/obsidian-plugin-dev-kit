@@ -21,6 +21,10 @@
     "./eslint": {
       "types": "./dist/eslint/index.d.ts",
       "default": "./dist/eslint/index.js"
+    },
+    "./e2e": {
+      "types": "./dist/e2e/index.d.ts",
+      "default": "./dist/e2e/index.js"
     }
   },
   "engines": {
@@ -37,6 +41,7 @@
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run --coverage",
     "smoke": "bash scripts/pack-smoke.sh",
+    "e2e:smoke": "playwright test -c test/e2e-fixture/playwright.config.ts",
     "prepare": "npm run build",
     "docs:media": "vhs docs/media/build.tape && vhs docs/media/build-check-fails.tape && vhs docs/media/scan.tape && vhs docs/media/scan-fails.tape"
   },
@@ -48,13 +53,25 @@
     "typescript-eslint": "8.72.2"
   },
   "peerDependencies": {
+    "@playwright/test": "^1.62.0",
+    "electron": ">=39.0.0",
     "eslint": "^9.19.0 || ^10.0.0",
     "typescript": ">=4.8.4 <6.1.0"
   },
+  "peerDependenciesMeta": {
+    "@playwright/test": {
+      "optional": true
+    },
+    "electron": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.65.0",
     "@types/node": "22.20.5",
     "@vitest/coverage-v8": "5.1.0",
+    "electron": "44.10.2",
     "eslint": "10.14.0",
     "typescript": "6.0.3",
     "vitest": "5.1.0"

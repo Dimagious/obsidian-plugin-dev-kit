@@ -19,6 +19,12 @@ npm run typecheck && npm run lint && npm test && npm run build && npm run smoke
 
 All five must pass before you open a pull request; CI runs the same commands.
 
+## Testing
+
+- Unit tests (`npm test`) are deterministic, need no network and open no windows. A test that touches the file system works in a temp directory it creates and removes.
+- Tests that create `opdk-e2e-*` folders (the e2e module) put them under `testTmpRoot()` from `src/test-support/test-tmp.ts`. The vitest global setup gives every run its own root, so two runs on one machine do not blame each other, and fails the run if a folder is left in it. That failure is printed by vitest as `error during close` **after** the `Tests N passed` line and the process exits non-zero: a green summary followed by that error is a failed run.
+- `npm run e2e:smoke` starts the real Obsidian on `test/e2e-fixture/`. It opens windows, so it is run by hand before a release (`env -u VAULT_PLUGIN npm run e2e:smoke`), never from `npm test` or CI.
+
 ## Branches
 
 `main` is protected: changes land only through pull requests with green checks, and nobody force-pushes to it.
