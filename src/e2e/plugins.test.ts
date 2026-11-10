@@ -126,7 +126,7 @@ describe("assertBuildFresh", () => {
         touch(path.join(plugin.dir, "main.js"), 60);
         expect(() => {
             assertBuildFresh(readPluginSource(plugin.dir));
-        }).toThrow(/Stale build: main\.js of "my-plugin" .* is older than src\/util\/late\.ts .*opdk build.*staleBuildCheck: false/s);
+        }).toThrow(/Stale build: main\.js of "my-plugin" .* is older than src\/util\/late\.ts .*opdk build.*plugins option.*OPDK_E2E_ALLOW_STALE_BUILD=1/s);
     });
 
     it("ignores a newer test file", () => {

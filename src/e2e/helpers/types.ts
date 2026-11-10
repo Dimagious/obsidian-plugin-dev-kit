@@ -130,6 +130,26 @@ export interface ObsidianHelpers {
     desktop(): Promise<void>;
 
     /**
+     * Runs `fn(app, arg)` in the page, where `app` is `window.app`, and returns its result (a promise is awaited). The
+     * generics let a spec annotate `app` with Obsidian's own type without the kit depending on the `obsidian` package:
+     *
+     *     import type { App } from "obsidian";
+     *     const count = await obsidian.evaluate((app: App, folder: string) => app.vault.getFiles().filter((f) => f.path.startsWith(folder)).length, "Notes/");
+     *
+     * `fn` is serialised as source text and rebuilt in the page, so it cannot close over variables of the test or use
+     * imports; pass what it needs as `arg`. `arg` and the result must be serialisable (as for `page.evaluate`): a
+     * `TFile` or a DOM node does not survive, return the fields you need. An exception thrown by `fn` fails the test.
+     * Fails with its own message when `window.app` is missing or `fn` cannot be rebuilt (a method shorthand such as
+     * `{ run() {} }.run` is not a function expression).
+     */
+    // `App` appears once on purpose: it is the caller's statement about the type of `window.app`, as for `page.evaluate`.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
+    evaluate<R, App = unknown>(fn: (app: App) => R | Promise<R>): Promise<R>;
+    /** The same with an `arg`: a function that declares a second parameter must be given it. */
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
+    evaluate<R, A, App = unknown>(fn: (app: App, arg: A) => R | Promise<R>, arg: A): Promise<R>;
+
+    /**
      * Replaces `pluginId`'s property at `propertyPath` (dotted for nested ones) on the live plugin instance. `impl` is
      * a factory: it runs once in the page with `arg` and returns the function that becomes the property, so it can
      * keep state between calls in its closure:
@@ -142,5 +162,7 @@ export interface ObsidianHelpers {
      * delays belong in the function `impl` returns. Fails when the plugin is not loaded, the property does not exist
      * or `impl` does not return a function.
      */
-    replace<A = undefined>(pluginId: string, propertyPath: string, impl: PageFactory<A>, arg?: A): Promise<FakeHandle>;
+    replace(pluginId: string, propertyPath: string, impl: PageFactory<undefined>): Promise<FakeHandle>;
+    /** The same with an `arg`: a factory that declares a parameter must be given it. */
+    replace<A>(pluginId: string, propertyPath: string, impl: PageFactory<A>, arg: A): Promise<FakeHandle>;
 }

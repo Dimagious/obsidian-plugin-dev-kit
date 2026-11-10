@@ -353,6 +353,32 @@ export async function scrollThroughElement(selector: string): Promise<boolean> {
     return true;
 }
 
+// --- evaluate ----------------------------------------------------------------------------------------------
+
+export type RunWithAppResult = { ok: true; value: unknown } | { ok: false; reason: string };
+
+/**
+ * Rebuilds `source` (the text of a function) and calls it with `window.app` and `arg`; the result is awaited. The
+ * function crossed the process boundary as source text, so it is rebuilt with an indirect eval. A refusal comes back
+ * as a reason; an exception thrown by the function itself is not caught here and reaches the test as it is.
+ */
+export async function runWithApp(args: { source: string; arg?: unknown }): Promise<RunWithAppResult> {
+    const { app } = globalThis as unknown as PageGlobals;
+    if (app === undefined) {
+        return { ok: false, reason: "window.app is not defined yet" };
+    }
+    let fn: unknown;
+    try {
+        fn = (0, eval)(`(${args.source})`);
+    } catch (error) {
+        return { ok: false, reason: `the function could not be rebuilt in the page: ${error instanceof Error ? error.message : String(error)}` };
+    }
+    if (typeof fn !== "function") {
+        return { ok: false, reason: "the argument is not a function; pass an arrow function or a function expression" };
+    }
+    return { ok: true, value: await (fn as (app: unknown, arg: unknown) => unknown)(app, args.arg) };
+}
+
 // --- fakes -------------------------------------------------------------------------------------------------
 
 export type InstallFakeResult = { ok: true } | { ok: false; reason: string };

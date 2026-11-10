@@ -12,7 +12,7 @@ Safety: `VAULT_PLUGIN` (the dev vault of `opdk build --vault`) is removed from O
 ## Set up a plugin
 
 1. devDependencies: `@playwright/test` (`^1.62.0`), `electron` (`>=39.0.0`) and the kit pinned to an exact tag. Electron downloads its binary on first use (about 100 MB): run `npx electron --version` once; in CI cache the download (`ELECTRON_CACHE`) and run that command before the tests.
-2. A seed vault, for example `e2e/vault/` with `.obsidian/core-plugins.json` containing `["file-explorer", "command-palette"]` (the palette helpers need it) and a note.
+2. A seed vault (any path, set in `seedVault`), for example `e2e/vault/` with `.obsidian/core-plugins.json` containing `["file-explorer", "command-palette"]` (the palette helpers need it) and a note.
 3. `e2e/fixtures.ts`:
 
 ```ts
@@ -23,7 +23,18 @@ export const { test, expect, onlyWhen } = createObsidianTest({ seedVault: "e2e/v
 
 4. `playwright.config.ts`: `import { defineObsidianConfig } from "obsidian-plugin-dev-kit/e2e"; export default defineObsidianConfig();`
 5. Script: `"e2e": "npm run build && playwright test"`. Build first: a `main.js` older than the newest file under `src/` is refused as a stale build (compared by modification time; a test file is one whose name ends in `.test.<ext>` or `.spec.<ext>`; every other file under `src/` counts).
-6. A spec:
+6. Typecheck the specs with `e2e/tsconfig.json` (the root one usually includes only `src/`, and may lack DOM, which `win.evaluate` callbacks reading `document` need):
+
+```json
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "lib": ["ES2020", "DOM", "DOM.Iterable"], "types": ["node"] },
+  "include": ["./**/*.ts", "../playwright.config.ts"]
+}
+```
+
+and `"typecheck": "tsc -p tsconfig.json --noEmit && tsc -p e2e/tsconfig.json --noEmit"` in `package.json`.
+7. A spec:
 
 ```ts
 import { expect, test } from "./fixtures.js";
@@ -41,7 +52,7 @@ test("the command writes into the note", async ({ obsidian }) => {
 
 ## Options of `createObsidianTest` (unknown keys fail naming them)
 
-`seedVault` (required, env `OPDK_E2E_VAULT`), `plugins` (`[{ dir }]`, default the plugin in the current directory), `data` (`data.json` per plugin id, replaces a seeded one), `window` (`{ width, height }`), `obsidianPath` (`app.asar`, env `OBSIDIAN_PATH`; required off macOS), `electronArgs` (not `--user-data-dir`), `version` (explicit `x.y.z`, env `OBSIDIAN_VERSION`; fails the test on another version), `timeouts` (`launch` 45000, `ready` 30000, `close` 5000, `helpers.{settings 15000, metadataCache 45000, compose 5000, theme 5000, ui 10000}`), `staleBuildCheck` (default true; env `OPDK_E2E_ALLOW_STALE_BUILD=1` for one run), `sweepAfterHours` (default 2, `false` disables).
+`seedVault` (required, env `OPDK_E2E_VAULT`), `plugins` (`[{ dir, staleBuildCheck? }]`, default the plugin in the current directory), `data` (`data.json` per plugin id, replaces a seeded one), `window` (`{ width, height }`), `obsidianPath` (`app.asar`, env `OBSIDIAN_PATH`; required off macOS), `electronArgs` (not `--user-data-dir`), `version` (explicit `x.y.z`, env `OBSIDIAN_VERSION`; fails the test on another version), `timeouts` (`launch` 45000, `ready` 30000, `close` 5000, `helpers.{settings 15000, metadataCache 45000, compose 5000, theme 5000, ui 10000}`), `staleBuildCheck` (default true, applies to the plugin in the current directory only; another `plugins` entry is checked only with its own `staleBuildCheck: true`, and an entry's value wins over the top-level one; env `OPDK_E2E_ALLOW_STALE_BUILD=1` turns every check off for one run), `sweepAfterHours` (default 2, `false` disables).
 
 ## Helpers (`obsidian`)
 
@@ -51,6 +62,14 @@ test("the command writes into the note", async ({ obsidian }) => {
 - IME: `editor().compose(text, { chunking: "word" | "character" })`. It always commits; leaving a composition uncommitted needs a raw CDP session (`win.context().newCDPSession(win)`).
 - Appearance and state: `setTheme({ mode, theme? })`, `waitForMetadataCache()`, `clearNotices()`, `hideProperties()`, `scrollThrough(selector?)` (stays at the bottom; do not expect it to scroll back).
 - Mobile: `mobile({ width, height, scale })` (default 390 x 844 at 2), `desktop()`. It reloads the window; another width reloads again. A plugin with `isDesktopOnly: true` does not load on mobile and the wait fails naming it.
+- Page code: `evaluate(fn, arg?)` runs `fn(app, arg)` in the page with `app` = `window.app`; type it with a type-only `import type { App } from "obsidian"` (the kit does not depend on `obsidian`). `fn` is serialised as source text: no closures, no imports, pass values in `arg`; `arg` and the result must be serialisable (return fields, not a `TFile`).
+
+```ts
+import type { App } from "obsidian";
+
+const count = await obsidian.evaluate((app: App, folder: string) => app.vault.getMarkdownFiles().filter((file) => file.path.startsWith(folder)).length, "Notes/");
+```
+
 - Fakes: `replace(pluginId, "path.to.fn", factory, arg?)` returns `{ calls(), restore() }`. The factory runs in the page: it cannot close over test variables or use imports. A variable the factory itself reads fails `replace()` with a message naming it (`the replacement factory threw: X is not defined`). A variable read inside the function it returns fails only when the plugin calls it, inside the plugin's own error handling, so put every value in `arg`. After a window reload `calls()` and `restore()` fail, unless `restore()` ran before it (then `calls()` returns the cached record).
 
 ```ts
@@ -62,6 +81,8 @@ await obsidian.runCommand("my-plugin:sync");
 expect(await fake.calls()).toEqual([["/items"]]);
 await fake.restore();
 ```
+
+The session fixture runs with its own timeout, so Playwright counts its time in a separate slot and the reported test duration covers the test body only; the launch time is in the annotation `obsidian-launch-ms`.
 
 Do not add `waitForTimeout` sleeps: every helper waits on state. If a wait is too short for a slow machine, raise the matching `timeouts` entry (the failure message names it) and keep the helper budgets below the 60 s test timeout.
 
@@ -79,7 +100,8 @@ Teardown runs on pass, failure, timeout and setup errors: trace stopped, Obsidia
 
 ## Common failures
 
-- `Stale build: main.js of "<id>" ... is older than <file>`: run `opdk build`.
+- `Stale build: main.js of "<id>" ... is older than <file>`: run `opdk build` in that plugin's folder. To skip the check for one plugin, set `staleBuildCheck: false` on its `plugins` entry; `OPDK_E2E_ALLOW_STALE_BUILD=1` skips it for all plugins in one run.
+- `npm ci` fails with `Permission denied (publickey)` in CI: the lockfile records the kit as `git+ssh://`. Rewrite the URL for one command with `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf GIT_CONFIG_VALUE_0=ssh://git@github.com/ npm ci`; on a CI runner `git config --global url."https://github.com/".insteadOf ssh://git@github.com/` before `npm ci` does the same. Or write the dependency as `git+https://...`. (A public repository installs without it.)
 - `Electron is installed ... but its binary is not downloaded yet`: `npx electron --version` once.
 - `plugin still loading: <id>`: its `onload()` is slow or stuck. `plugin not loaded: <id>`: it never started; check `manifest.json` and `main.js`. Raise `timeouts.ready` only for a slow `onload()`.
 - `The "Trust author and enable plugins" dialog is open`: the kit's trust flag did not apply on this Obsidian version. Report it with the version. Never click the dialog in a spec.
@@ -95,8 +117,9 @@ Teardown runs on pass, failure, timeout and setup errors: trace stopped, Obsidia
 3. Replace `playwright.config.ts` with `defineObsidianConfig()` plus only what is the plugin's own (`globalSetup`, other `testDir`).
 4. Swap the plugin's helpers for `obsidian.*`: settings opener, palette and command runner, typing and reading the editor, IME loop, theme and metadata waits, notice removal, lazy-block scroll, the `emulateMobile` block, fake clients (`replace`).
 5. Replace `--grep-invert` and env `test.skip` with `onlyWhen`. `DASHY_VAULT` becomes `OPDK_E2E_VAULT`.
-6. Expect these differences: no sleeps (a spec that relied on them may now fail naming a loading plugin); no Escape or `setEnable` on the trust dialog; cleanup failures are now failing tests; `editor().text()` throws without an editor (Snipsy returned `""`); `openFile` does not collapse side splits; Snipsy's asar-version fallback is dropped; `compose()` always commits.
-7. Run the specs, fix each difference, list the changes in the plugin's CHANGELOG.
+6. Grep the plugin for callers of the old setup script (`e2e-setup.sh`, Garmy's `scripts/capture.mjs`, `package.json` scripts, CI) and replace them with `opdk build`. Delete plugin folders committed or generated in the seed vault (`<seed>/.obsidian/plugins/<id>`; the kit's install overwrites them) and their `.gitignore` line; the seed's `community-plugins.json` is optional.
+7. Expect these differences: `onlyWhen` needs the variable to be exactly `1` (old `test.skip(!process.env.X)` gates took any non-empty value); no sleeps (a spec that relied on them may now fail naming a loading plugin); no Escape or `setEnable` on the trust dialog; cleanup failures are now failing tests; `editor().text()` throws without an editor (Snipsy returned `""`); `openFile` does not collapse side splits; Snipsy's asar-version fallback is dropped; `compose()` always commits.
+8. Run the specs, fix each difference, list the changes in the plugin's CHANGELOG.
 
 ## Limits today
 

@@ -16,7 +16,7 @@ describe("resolveOptions: defaults", () => {
         expect(resolved.expectedVersion).toBeNull();
         expect(resolved.timeouts).toEqual({ launch: 45_000, ready: 30_000, close: 5_000 });
         expect(resolved.helperTimeouts).toEqual({ settings: 15_000, metadataCache: 45_000, compose: 5_000, theme: 5_000, ui: 10_000 });
-        expect(resolved.staleBuildCheck).toBe(true);
+        expect(resolved.staleCheckDirs).toEqual(["/work/plugin"]);
         expect(resolved.sweepAfterHours).toBe(2);
     });
 });
@@ -46,12 +46,46 @@ describe("resolveOptions: values", () => {
         expect(resolved.expectedVersion).toBe("1.14.5");
         expect(resolved.timeouts).toEqual({ launch: 45_000, ready: 90_000, close: 5_000 });
         expect(resolved.helperTimeouts).toEqual({ settings: 15_000, metadataCache: 120_000, compose: 5_000, theme: 5_000, ui: 20_000 });
-        expect(resolved.staleBuildCheck).toBe(false);
+        expect(resolved.staleCheckDirs).toEqual([]);
         expect(resolved.sweepAfterHours).toBe(6);
     });
 
     it("lets sweepAfterHours be switched off", () => {
         expect(resolveOptions({ ...base, sweepAfterHours: false }, context).sweepAfterHours).toBe(false);
+    });
+});
+
+describe("resolveOptions: stale build check per plugin", () => {
+    const plugins = (extra: object[]): object => ({ ...base, plugins: extra });
+
+    it("checks the plugin in the current directory and leaves the others alone by default", () => {
+        const resolved = resolveOptions(plugins([{ dir: "." }, { dir: "../dependency" }]), context);
+        expect(resolved.staleCheckDirs).toEqual(["/work/plugin"]);
+    });
+
+    it("recognises the current directory however it is spelled", () => {
+        expect(resolveOptions(plugins([{ dir: "../dependency" }, { dir: "./" }]), context).staleCheckDirs).toEqual(["/work/plugin"]);
+    });
+
+    it("checks a dependency plugin that asks for it", () => {
+        const resolved = resolveOptions(plugins([{ dir: "." }, { dir: "../dependency", staleBuildCheck: true }]), context);
+        expect(resolved.staleCheckDirs).toEqual(["/work/plugin", "/work/dependency"]);
+    });
+
+    it("lets the top-level option turn off the current plugin only", () => {
+        const options = { ...plugins([{ dir: "." }, { dir: "../dependency", staleBuildCheck: true }]), staleBuildCheck: false };
+        expect(resolveOptions(options, context).staleCheckDirs).toEqual(["/work/dependency"]);
+    });
+
+    it("lets an entry switch the check off for the current plugin and on again over a false top level", () => {
+        expect(resolveOptions(plugins([{ dir: ".", staleBuildCheck: false }]), context).staleCheckDirs).toEqual([]);
+        expect(resolveOptions({ ...plugins([{ dir: ".", staleBuildCheck: true }]), staleBuildCheck: false }, context).staleCheckDirs).toEqual([
+            "/work/plugin",
+        ]);
+    });
+
+    it("does not check a plugin set that does not include the current directory", () => {
+        expect(resolveOptions(plugins([{ dir: "../a" }, { dir: "../b" }]), context).staleCheckDirs).toEqual([]);
     });
 });
 
@@ -73,11 +107,16 @@ describe("resolveOptions: env overrides", () => {
     });
 
     it("OPDK_E2E_ALLOW_STALE_BUILD=1 switches the stale check off", () => {
-        expect(resolveOptions(base, { cwd: "/p", env: { OPDK_E2E_ALLOW_STALE_BUILD: "1" } }).staleBuildCheck).toBe(false);
+        expect(resolveOptions(base, { cwd: "/p", env: { OPDK_E2E_ALLOW_STALE_BUILD: "1" } }).staleCheckDirs).toEqual([]);
     });
 
     it("OPDK_E2E_ALLOW_STALE_BUILD=0 does not", () => {
-        expect(resolveOptions(base, { cwd: "/p", env: { OPDK_E2E_ALLOW_STALE_BUILD: "0" } }).staleBuildCheck).toBe(true);
+        expect(resolveOptions(base, { cwd: "/p", env: { OPDK_E2E_ALLOW_STALE_BUILD: "0" } }).staleCheckDirs).toEqual(["/p"]);
+    });
+
+    it("OPDK_E2E_ALLOW_STALE_BUILD=1 also wins over a plugin that asks for the check", () => {
+        const options = { ...base, plugins: [{ dir: ".", staleBuildCheck: true }] };
+        expect(resolveOptions(options, { cwd: "/p", env: { OPDK_E2E_ALLOW_STALE_BUILD: "1" } }).staleCheckDirs).toEqual([]);
     });
 
     it("rejects a channel alias in OBSIDIAN_VERSION and names the variable", () => {
@@ -115,6 +154,8 @@ describe("resolveOptions: errors name the key", () => {
         fail({ ...base, plugins: ["."] }, '"plugins[0]" must be an object');
         fail({ ...base, plugins: [{ dir: "" }] }, '"plugins[0]" must be an object');
         fail({ ...base, plugins: [{ dir: "." }, { dir: "/work/plugin" }] }, /lists \/work\/plugin twice/);
+        fail({ ...base, plugins: [{ dir: ".", staleBuildCheck: "no" }] }, '"plugins[0].staleBuildCheck" must be a boolean');
+        fail({ ...base, plugins: [{ dir: ".", stale: false }] }, 'unknown key "plugins[0].stale"');
     });
 
     it("rejects bad data", () => {

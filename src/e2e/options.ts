@@ -5,6 +5,13 @@ import { isExplicitVersion, normalizeVersion } from "./version.js";
 export interface PluginOption {
     /** Plugin folder holding the built `main.js` and `manifest.json` (and `styles.css` when the plugin has one). Relative to the directory `playwright test` runs in. */
     readonly dir: string;
+    /**
+     * Overrides the top-level `staleBuildCheck` for this plugin. Default: the plugin in the current directory follows
+     * the top-level option, every other plugin is not checked. A dependency plugin built in a sibling repository is
+     * usually older than that repository's latest source change, and only its owner knows whether it needs a rebuild.
+     * Set `true` to check one. `OPDK_E2E_ALLOW_STALE_BUILD=1` still turns every check off.
+     */
+    readonly staleBuildCheck?: boolean;
 }
 
 /** Size of the Obsidian window, in points. */
@@ -60,7 +67,11 @@ export interface ObsidianTestOptions {
     /** Fail the test when the running Obsidian is not this `x.y.z`. Overridden by the env var `OBSIDIAN_VERSION`. */
     readonly version?: string;
     readonly timeouts?: TimeoutOptions;
-    /** Refuse a plugin whose `main.js` is older than its newest source file. Default `true`. The env var `OPDK_E2E_ALLOW_STALE_BUILD=1` turns it off for one run. */
+    /**
+     * Refuse the plugin in the current directory when its `main.js` is older than its newest source file. Default
+     * `true`. Other entries of `plugins` are not checked unless they set `staleBuildCheck: true` themselves; an entry's
+     * own value wins over this one. The env var `OPDK_E2E_ALLOW_STALE_BUILD=1` turns every check off for one run.
+     */
     readonly staleBuildCheck?: boolean;
     /** Remove `opdk-e2e-*` temp folders older than this many hours when a worker starts. `false` disables it. Default 2. */
     readonly sweepAfterHours?: number | false;
@@ -84,7 +95,8 @@ export interface ResolvedOptions {
     readonly expectedVersion: string | null;
     readonly timeouts: Required<Omit<TimeoutOptions, "helpers">>;
     readonly helperTimeouts: Required<HelperTimeouts>;
-    readonly staleBuildCheck: boolean;
+    /** Absolute folders of the plugins whose build is checked for staleness; empty when `OPDK_E2E_ALLOW_STALE_BUILD=1`. */
+    readonly staleCheckDirs: readonly string[];
     readonly sweepAfterHours: number | false;
 }
 
@@ -100,6 +112,7 @@ const OPTION_KEYS = [
     "staleBuildCheck",
     "sweepAfterHours",
 ];
+const PLUGIN_KEYS = ["dir", "staleBuildCheck"];
 const TIMEOUT_KEYS = ["launch", "ready", "close", "helpers"];
 const HELPER_TIMEOUT_KEYS = ["settings", "metadataCache", "compose", "theme", "ui"];
 const SOURCE = "createObsidianTest";
@@ -124,10 +137,11 @@ export function resolveOptions(value: unknown, context: ResolveContext): Resolve
     const seedFromOption = requireString(value, "seedVault");
     const envVault = env.OPDK_E2E_VAULT;
     const seedVault = path.resolve(cwd, envVault !== undefined && envVault !== "" ? envVault : seedFromOption);
+    const plugins = resolvePlugins(value, cwd);
     return {
         cwd,
         seedVault,
-        pluginDirs: resolvePlugins(value, cwd),
+        pluginDirs: plugins.map((plugin) => plugin.dir),
         data: resolveData(value),
         window: resolveWindow(value),
         obsidianPath: optionalString(value, "obsidianPath"),
@@ -135,30 +149,45 @@ export function resolveOptions(value: unknown, context: ResolveContext): Resolve
         expectedVersion: resolveVersion(value, env),
         timeouts: resolveTimeouts(value),
         helperTimeouts: resolveHelperTimeouts(value),
-        staleBuildCheck: resolveStaleCheck(value, env),
+        staleCheckDirs: resolveStaleCheckDirs(value, plugins, cwd, env),
         sweepAfterHours: resolveSweep(value),
     };
 }
 
-function resolvePlugins(options: Record<string, unknown>, cwd: string): string[] {
+interface ResolvedPlugin {
+    readonly dir: string;
+    /** The entry's own `staleBuildCheck`, when it set one. */
+    readonly staleBuildCheck: boolean | undefined;
+}
+
+function resolvePlugins(options: Record<string, unknown>, cwd: string): ResolvedPlugin[] {
     const value = own(options, "plugins");
     if (value === undefined) {
-        return [cwd];
+        return [{ dir: cwd, staleBuildCheck: undefined }];
     }
     if (!Array.isArray(value) || value.length === 0) {
-        throw new Error(`${SOURCE}: "plugins" must be a non-empty array of { dir }.`);
+        throw new Error(`${SOURCE}: "plugins" must be a non-empty array of { dir, staleBuildCheck? }.`);
     }
-    const dirs = value.map((item: unknown, index) => {
+    const plugins = value.map((item: unknown, index): ResolvedPlugin => {
         if (!isRecord(item) || typeof item.dir !== "string" || item.dir === "") {
             throw new Error(`${SOURCE}: "plugins[${String(index)}]" must be an object { dir: "<plugin folder>" }.`);
         }
-        return path.resolve(cwd, item.dir);
+        for (const key of Object.keys(item)) {
+            if (!PLUGIN_KEYS.includes(key)) {
+                throw new Error(`${SOURCE}: unknown key "plugins[${String(index)}].${key}". Known keys: ${PLUGIN_KEYS.join(", ")}.`);
+            }
+        }
+        const check = own(item, "staleBuildCheck");
+        if (check !== undefined && typeof check !== "boolean") {
+            throw new Error(`${SOURCE}: "plugins[${String(index)}].staleBuildCheck" must be a boolean.`);
+        }
+        return { dir: path.resolve(cwd, item.dir), staleBuildCheck: check };
     });
-    const duplicate = dirs.find((dir, index) => dirs.indexOf(dir) !== index);
+    const duplicate = plugins.find((plugin, index) => plugins.findIndex((other) => other.dir === plugin.dir) !== index);
     if (duplicate !== undefined) {
-        throw new Error(`${SOURCE}: "plugins" lists ${duplicate} twice.`);
+        throw new Error(`${SOURCE}: "plugins" lists ${duplicate.dir} twice.`);
     }
-    return dirs;
+    return plugins;
 }
 
 function resolveData(options: Record<string, unknown>): Record<string, Record<string, unknown>> {
@@ -275,15 +304,25 @@ function resolveHelperTimeouts(options: Record<string, unknown>): Required<Helpe
     return { settings: pick("settings"), metadataCache: pick("metadataCache"), compose: pick("compose"), theme: pick("theme"), ui: pick("ui") };
 }
 
-function resolveStaleCheck(options: Record<string, unknown>, env: ResolveContext["env"]): boolean {
+/**
+ * Which plugins get the staleness check. The plugin in the current directory follows the top-level option (default
+ * on); the others are checked only when they ask for it. An entry's own value always wins.
+ */
+function resolveStaleCheckDirs(
+    options: Record<string, unknown>,
+    plugins: readonly ResolvedPlugin[],
+    cwd: string,
+    env: ResolveContext["env"],
+): string[] {
     const value = own(options, "staleBuildCheck");
     if (value !== undefined && typeof value !== "boolean") {
         throw new Error(`${SOURCE}: "staleBuildCheck" must be a boolean.`);
     }
     if (env.OPDK_E2E_ALLOW_STALE_BUILD === "1") {
-        return false;
+        return [];
     }
-    return value ?? true;
+    const global = value ?? true;
+    return plugins.filter((plugin) => plugin.staleBuildCheck ?? (plugin.dir === cwd && global)).map((plugin) => plugin.dir);
 }
 
 function resolveSweep(options: Record<string, unknown>): number | false {

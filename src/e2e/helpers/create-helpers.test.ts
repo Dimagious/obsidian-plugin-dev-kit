@@ -32,6 +32,7 @@ import {
     removeFake,
     removeNotices,
     runCommandById,
+    runWithApp,
     scrollThroughElement,
     switchMobileEmulation,
 } from "./page-scripts.js";
@@ -809,5 +810,45 @@ describe("replace", () => {
         const handle = await helpers.replace("p", "t", () => () => 1);
         await expect(handle.calls()).rejects.toThrow("window was reloaded since replace()");
         await expect(handle.restore()).rejects.toThrow("window was reloaded since replace()");
+    });
+});
+
+describe("evaluate", () => {
+    it("sends the function as source text with its argument and returns the value", async () => {
+        const { fake, helpers } = setUp();
+        let sent: unknown;
+        fake.onEvaluate(runWithApp, (arg) => {
+            sent = arg;
+            return { ok: true, value: 7 };
+        });
+        const count: number = await helpers.evaluate((app: { n: number }, extra: number) => app.n + extra, 4);
+        expect(count).toBe(7);
+        expect(sent).toEqual({ source: "(app, extra) => app.n + extra", arg: 4 });
+    });
+
+    it("works without an argument and returns what the promise resolves to", async () => {
+        const { fake, helpers } = setUp();
+        let sent: unknown;
+        fake.onEvaluate(runWithApp, (arg) => {
+            sent = arg;
+            return { ok: true, value: "done" };
+        });
+        const value: string = await helpers.evaluate((): Promise<string> => Promise.resolve("done"));
+        expect(value).toBe("done");
+        expect(sent).toEqual({ source: '() => Promise.resolve("done")', arg: undefined });
+    });
+
+    it("fails with the reason from the page and says how to pass variables", async () => {
+        const { fake, helpers } = setUp();
+        fake.onEvaluate(runWithApp, () => ({ ok: false, reason: "window.app is not defined yet" }));
+        await expect(helpers.evaluate(() => 1)).rejects.toThrow(/evaluate\(\): window\.app is not defined yet\..*second argument/);
+    });
+
+    it("lets an exception from the page through", async () => {
+        const { fake, helpers } = setUp();
+        fake.onEvaluate(runWithApp, () => {
+            throw new Error("boom in page");
+        });
+        await expect(helpers.evaluate(() => 1)).rejects.toThrow("boom in page");
     });
 });
