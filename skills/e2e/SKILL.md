@@ -52,7 +52,7 @@ test("the command writes into the note", async ({ obsidian }) => {
 
 ## Options of `createObsidianTest` (unknown keys fail naming them)
 
-`seedVault` (required, env `OPDK_E2E_VAULT`), `plugins` (`[{ dir, staleBuildCheck? }]`, default the plugin in the current directory), `data` (`data.json` per plugin id, replaces a seeded one), `window` (`{ width, height }`), `obsidianPath` (`app.asar`, env `OBSIDIAN_PATH`; required off macOS), `electronArgs` (not `--user-data-dir`), `version` (explicit `x.y.z`, env `OBSIDIAN_VERSION`; fails the test on another version), `timeouts` (`launch` 45000, `ready` 30000, `close` 5000, `helpers.{settings 15000, metadataCache 45000, compose 5000, theme 5000, ui 10000}`), `staleBuildCheck` (default true, applies to the plugin in the current directory only; another `plugins` entry is checked only with its own `staleBuildCheck: true`, and an entry's value wins over the top-level one; env `OPDK_E2E_ALLOW_STALE_BUILD=1` turns every check off for one run), `sweepAfterHours` (default 2, `false` disables).
+`seedVault` (required, env `OPDK_E2E_VAULT`), `plugins` (`[{ dir, staleBuildCheck? }]`, default the plugin in the current directory), `data` (`data.json` per plugin id, replaces a seeded one), `window` (`{ width, height }`), `obsidianPath` (`app.asar`, env `OBSIDIAN_PATH`; required off macOS), `electronArgs` (not `--user-data-dir`), `version` (explicit `x.y.z`, env `OBSIDIAN_VERSION`; fails the test on another version), `timeouts` (`launch` 45000, `ready` 30000, `close` 5000, `trace` 60000, `helpers.{settings 15000, metadataCache 45000, compose 5000, theme 5000, ui 10000}`), `staleBuildCheck` (default true, applies to the plugin in the current directory only; another `plugins` entry is checked only with its own `staleBuildCheck: true`, and an entry's value wins over the top-level one; env `OPDK_E2E_ALLOW_STALE_BUILD=1` turns every check off for one run), `sweepAfterHours` (default 2, `false` disables).
 
 ## Helpers (`obsidian`)
 
@@ -61,7 +61,7 @@ test("the command writes into the note", async ({ obsidian }) => {
 - Files and editor: `openFile(path, { mode: "source" | "live" | "preview" })`, `readingView(path?)`, `editor().type / text / clear / setCursor / selection`. `text()` and `clear()` throw `There is no active editor` without a note open in source or live mode. `text()` reads `getValue()`, not the DOM.
 - IME: `editor().compose(text, { chunking: "word" | "character" })`. It always commits; leaving a composition uncommitted needs a raw CDP session (`win.context().newCDPSession(win)`).
 - Appearance and state: `setTheme({ mode, theme? })`, `waitForMetadataCache()`, `clearNotices()`, `hideProperties()`, `scrollThrough(selector?)` (stays at the bottom; do not expect it to scroll back).
-- Mobile: `mobile({ width, height, scale })` (default 390 x 844 at 2), `desktop()`. It reloads the window; another width reloads again. A plugin with `isDesktopOnly: true` does not load on mobile and the wait fails naming it.
+- Mobile: `mobile({ width, height, scale })` (default 390 x 844 at 2), `desktop()`. It reloads the window; another width reloads again. A plugin with `isDesktopOnly: true` does not load on mobile and the wait fails naming it. Screenshot size follows the display (1x or 2x), and `scale` does not change it: use `win.screenshot({ scale: "css" })` for pictures of a fixed size.
 - Page code: `evaluate(fn, arg?)` runs `fn(app, arg)` in the page with `app` = `window.app`; type it with a type-only `import type { App } from "obsidian"` (the kit does not depend on `obsidian`). `fn` is serialised as source text: no closures, no imports, pass values in `arg`; `arg` and the result must be serialisable (return fields, not a `TFile`).
 
 ```ts
@@ -96,13 +96,14 @@ Do not add `waitForTimeout` sleeps: every helper waits on state. If a wait is to
 
 ## Cleanup
 
-Teardown runs on pass, failure, timeout and setup errors: trace stopped, Obsidian closed (bounded by `timeouts.close`), the process tree ended, folders removed with retries. A folder or process that survives fails the test naming it. `opdk-e2e-*` temp folders older than `sweepAfterHours` are swept when a worker starts. After a run, `ls $TMPDIR | grep opdk-e2e` should print nothing.
+Teardown runs on pass, failure, timeout and setup errors: trace stopped (bounded by `timeouts.trace`), Obsidian closed (bounded by `timeouts.close`), the process tree ended, folders removed with retries. A folder or process that survives fails the test naming it. `opdk-e2e-*` temp folders older than `sweepAfterHours` are swept when a worker starts. After a run, `ls $TMPDIR | grep opdk-e2e` should print nothing.
 
 ## Common failures
 
 - `Stale build: main.js of "<id>" ... is older than <file>`: run `opdk build` in that plugin's folder. To skip the check for one plugin, set `staleBuildCheck: false` on its `plugins` entry; `OPDK_E2E_ALLOW_STALE_BUILD=1` skips it for all plugins in one run.
 - `npm ci` fails with `Permission denied (publickey)` in CI: the lockfile records the kit as `git+ssh://`. Rewrite the URL for one command with `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf GIT_CONFIG_VALUE_0=ssh://git@github.com/ npm ci`; on a CI runner `git config --global url."https://github.com/".insteadOf ssh://git@github.com/` before `npm ci` does the same. Or write the dependency as `git+https://...`. (A public repository installs without it.)
 - `Electron is installed ... but its binary is not downloaded yet`: `npx electron --version` once.
+- `Stopping the Obsidian trace took longer than N ms (timeouts.trace)`: a long traced test; raise `timeouts.trace`.
 - `plugin still loading: <id>`: its `onload()` is slow or stuck. `plugin not loaded: <id>`: it never started; check `manifest.json` and `main.js`. Raise `timeouts.ready` only for a slow `onload()`.
 - `The "Trust author and enable plugins" dialog is open`: the kit's trust flag did not apply on this Obsidian version. Report it with the version. Never click the dialog in a spec.
 - `Cannot verify OBSIDIAN_VERSION=...`: the renderer did not answer the version request, so the pinned version could not be checked; the installed version may be right.

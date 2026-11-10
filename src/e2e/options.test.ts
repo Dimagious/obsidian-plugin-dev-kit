@@ -14,7 +14,7 @@ describe("resolveOptions: defaults", () => {
         expect(resolved.window).toBeUndefined();
         expect(resolved.electronArgs).toEqual([]);
         expect(resolved.expectedVersion).toBeNull();
-        expect(resolved.timeouts).toEqual({ launch: 45_000, ready: 30_000, close: 5_000 });
+        expect(resolved.timeouts).toEqual({ launch: 45_000, ready: 30_000, close: 5_000, trace: 60_000 });
         expect(resolved.helperTimeouts).toEqual({ settings: 15_000, metadataCache: 45_000, compose: 5_000, theme: 5_000, ui: 10_000 });
         expect(resolved.staleCheckDirs).toEqual(["/work/plugin"]);
         expect(resolved.sweepAfterHours).toBe(2);
@@ -44,7 +44,7 @@ describe("resolveOptions: values", () => {
         expect(resolved.obsidianPath).toBe("/x/app.asar");
         expect(resolved.electronArgs).toEqual(["--use-mock-keychain"]);
         expect(resolved.expectedVersion).toBe("1.14.5");
-        expect(resolved.timeouts).toEqual({ launch: 45_000, ready: 90_000, close: 5_000 });
+        expect(resolved.timeouts).toEqual({ launch: 45_000, ready: 90_000, close: 5_000, trace: 60_000 });
         expect(resolved.helperTimeouts).toEqual({ settings: 15_000, metadataCache: 120_000, compose: 5_000, theme: 5_000, ui: 20_000 });
         expect(resolved.staleCheckDirs).toEqual([]);
         expect(resolved.sweepAfterHours).toBe(6);
@@ -190,6 +190,8 @@ describe("resolveOptions: errors name the key", () => {
         fail({ ...base, timeouts: { boot: 5 } }, 'unknown key "timeouts.boot"');
         fail({ ...base, timeouts: { ready: -1 } }, '"timeouts.ready" is required and must be a positive integer');
         fail({ ...base, timeouts: { launch: "5" } }, '"timeouts.launch"');
+        fail({ ...base, timeouts: { trace: 0 } }, '"timeouts.trace" is required and must be a positive integer');
+        fail({ ...base, timeouts: { trace: "60" } }, '"timeouts.trace"');
         fail({ ...base, timeouts: { helpers: 5 } }, '"timeouts.helpers" must be an object');
         fail({ ...base, timeouts: { helpers: { metadata: 5 } } }, 'unknown key "timeouts.helpers.metadata"');
         fail({ ...base, timeouts: { helpers: { metadataCache: 0 } } }, '"timeouts.helpers.metadataCache" is required and must be a positive integer');

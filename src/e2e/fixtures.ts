@@ -33,7 +33,7 @@ export interface RecordingOptions {
 }
 
 /**
- * Time on top of `launch + ready + 3 * close` that the session fixture may take: the process-tree kill (up to two
+ * Time on top of `launch + ready + trace + 2 * close` that the session fixture may take: the process-tree kill (up to two
  * 3 s polls, about 6 s), folder removal with retries (about 1 s per folder, two folders) and slack.
  */
 export const FIXTURE_TIMEOUT_MARGIN_MS = 20_000;
@@ -42,12 +42,12 @@ export const FIXTURE_TIMEOUT_MARGIN_MS = 20_000;
  * The fixture's own time limit. Setup and teardown of a fixture share this one slot, and by default it is the test
  * timeout (60 s). The kit's budgets (launch 45 s + ready 30 s) are longer than that, so without a limit of its own
  * Playwright could abandon the setup while it was still waiting for Obsidian, and nothing would run the cleanup.
- * With a hung Obsidian the teardown can spend `close` three times: stopping the trace, closing the app and
- * finishing the video are each bounded by it. The kit's own timeouts therefore always fire first, `startSession`
+ * With a hung Obsidian the teardown can spend `trace` once (stopping the trace) and `close` twice (closing the app
+ * and finishing the video). The kit's own timeouts therefore always fire first, `startSession`
  * tears down what it created, and the test fails with the kit's message.
  */
 export function sessionFixtureTimeout(timeouts: ResolvedOptions["timeouts"] = DEFAULT_TIMEOUTS): number {
-    return timeouts.launch + timeouts.ready + 3 * timeouts.close + FIXTURE_TIMEOUT_MARGIN_MS;
+    return timeouts.launch + timeouts.ready + timeouts.trace + 2 * timeouts.close + FIXTURE_TIMEOUT_MARGIN_MS;
 }
 
 function describe(error: unknown): string {

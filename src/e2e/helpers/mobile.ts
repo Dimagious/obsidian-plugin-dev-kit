@@ -6,7 +6,7 @@ export interface MobileOptions {
     width?: number;
     /** CSS pixels. Default 844. */
     height?: number;
-    /** Device pixel ratio: a screenshot is `width * scale` pixels wide. Default 2. */
+    /** Device pixel ratio: sets the page's scale. `win.screenshot()` still uses the display's ratio unless called with `{ scale: "css" }`. Default 2. */
     scale?: number;
 }
 
