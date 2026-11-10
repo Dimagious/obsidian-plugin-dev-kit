@@ -20,8 +20,18 @@ function newEslint(cwd: string, typeAware: boolean): ESLint {
     });
 }
 
-function isOutsideProject(result: ESLint.LintResult): boolean {
-    return result.messages.some((message) => message.message.includes(PROJECT_SERVICE_MESSAGE));
+/**
+ * TypeScript's TS18003: the tsconfig's `include` matches no file at all. On Linux the project service
+ * reports this instead of `PROJECT_SERVICE_MESSAGE` for a file next to such a tsconfig (seen on GitHub
+ * Actions, not on macOS), and the file is just as much outside every project.
+ */
+export const NO_INPUTS_MESSAGE = "No inputs were found in config file";
+
+/** True when typescript-eslint could not place the file in any tsconfig project, so it must be linted without types. */
+export function isOutsideProject(result: ESLint.LintResult): boolean {
+    return result.messages.some(
+        (message) => message.message.includes(PROJECT_SERVICE_MESSAGE) || message.message.includes(NO_INPUTS_MESSAGE),
+    );
 }
 
 /** `ESLint.LintResult[]` as findings: one per message, errors and warnings alike (both lower the score). */

@@ -1,7 +1,7 @@
 import { ESLint } from "eslint";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPluginFixture, type PluginFixture } from "../test-support/plugin-fixture.js";
-import { PROJECT_SERVICE_MESSAGE, runScannerLint, toFindings } from "./lint.js";
+import { isOutsideProject, NO_INPUTS_MESSAGE, PROJECT_SERVICE_MESSAGE, runScannerLint, toFindings } from "./lint.js";
 import { createScannerConfig } from "./scanner-config.js";
 
 // Real ESLint, git and esbuild runs: they miss the 5 s default when suites share the machine. Per file, so the global default stays.
@@ -64,6 +64,7 @@ describe("runScannerLint", () => {
     });
 
     it("keeps no-implied-eval on for a TypeScript file linted without type information", async () => {
+        plugin.write("src/main.ts", "export const a = 1;\n");
         plugin.write("site/page.ts", 'setTimeout("alert(1)", 1);\n');
         const outcome = await runScannerLint(plugin.dir, ["site/page.ts"]);
         expect(outcome.untyped, JSON.stringify(outcome)).toBe(1);
@@ -96,7 +97,18 @@ describe("runScannerLint", () => {
         expect(outcome.linted).toBe(1);
     });
 
+    it("lints a file without type information when the tsconfig's include matches nothing (TS18003 on Linux)", async () => {
+        plugin.write("site/page.ts", "document.body.append('x');\n");
+        const outcome = await runScannerLint(plugin.dir, ["site/page.ts"]);
+        expect(outcome.untyped, JSON.stringify(outcome)).toBe(1);
+        expect(outcome.findings.some((finding) => finding.rule === "parse-error"), JSON.stringify(outcome)).toBe(false);
+        expect(outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`)).toContain(
+            "site/page.ts:1 obsidianmd/prefer-active-doc",
+        );
+    });
+
     it("pins typescript-eslint's wording for a file outside the project", async () => {
+        plugin.write("src/main.ts", "export const a = 1;\n");
         plugin.write("site/page.js", "export const a = 1;\n");
         const eslint = new ESLint({
             cwd: plugin.dir,
@@ -108,6 +120,21 @@ describe("runScannerLint", () => {
             result?.messages.some((message) => message.message.includes(PROJECT_SERVICE_MESSAGE)),
             JSON.stringify(result?.messages),
         ).toBe(true);
+    });
+});
+
+describe("isOutsideProject", () => {
+    const resultWith = (message: string): ESLint.LintResult => ({ filePath: "/p/site/page.ts", messages: [{ ruleId: null, line: 1, message }] }) as ESLint.LintResult;
+
+    it("recognises both ways typescript-eslint says a file is in no project", () => {
+        expect(isOutsideProject(resultWith(`Parsing error: /p/site/page.ts ${PROJECT_SERVICE_MESSAGE}. Consider ...`))).toBe(true);
+        // GitHub Actions (Linux x64) reports TS18003 for a file next to a tsconfig whose include matches nothing.
+        expect(isOutsideProject(resultWith(`Parsing error: Unable to parse the specified 'tsconfig' file.\n\nerror TS18003: ${NO_INPUTS_MESSAGE} '/p/tsconfig.json'.`))).toBe(true);
+    });
+
+    it("leaves other parse errors alone", () => {
+        expect(isOutsideProject(resultWith("Parsing error: ';' expected."))).toBe(false);
+        expect(isOutsideProject({ filePath: "/p/a.ts", messages: [] } as unknown as ESLint.LintResult)).toBe(false);
     });
 });
 
