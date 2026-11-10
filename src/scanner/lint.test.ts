@@ -66,7 +66,7 @@ describe("runScannerLint", () => {
     it("keeps no-implied-eval on for a TypeScript file linted without type information", async () => {
         plugin.write("site/page.ts", 'setTimeout("alert(1)", 1);\n');
         const outcome = await runScannerLint(plugin.dir, ["site/page.ts"]);
-        expect(outcome.untyped).toBe(1);
+        expect(outcome.untyped, JSON.stringify(outcome)).toBe(1);
         const rules = outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`);
         expect(rules).toContain("site/page.ts:1 no-implied-eval");
     });
@@ -104,7 +104,10 @@ describe("runScannerLint", () => {
             baseConfig: createScannerConfig({ cwd: plugin.dir, typeAware: true }),
         });
         const [result] = await eslint.lintFiles(["site/page.js"]);
-        expect(result?.messages.some((message) => message.message.includes(PROJECT_SERVICE_MESSAGE))).toBe(true);
+        expect(
+            result?.messages.some((message) => message.message.includes(PROJECT_SERVICE_MESSAGE)),
+            JSON.stringify(result?.messages),
+        ).toBe(true);
     });
 });
 
