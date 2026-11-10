@@ -47,6 +47,15 @@ export interface BuildConfig {
     readonly css?: BuildCssConfig | false;
 }
 
+/** `scan` section. Every key is optional. */
+export interface ScanConfig {
+    /**
+     * Globs relative to the plugin root (`*`, `**` and `?` only). Tracked files that match are skipped by every
+     * scan check. Default none: the scanner may well read `site/`, so leaving a folder out has to be a decision.
+     */
+    readonly ignore?: readonly string[];
+}
+
 /**
  * Per-plugin settings from `opdk.config.mjs`. Each kit module adds one optional section
  * here (for example `build?: BuildConfig`) and registers its key in CONFIG_SECTIONS.
@@ -54,19 +63,21 @@ export interface BuildConfig {
  */
 export interface OpdkConfig {
     readonly build?: BuildConfig;
+    readonly scan?: ScanConfig;
 }
 
 /**
  * One entry per OpdkConfig key. The Record type makes the compiler demand an entry
  * when a section is added, so the allowed-keys check cannot drift from the type.
  */
-export const CONFIG_SECTIONS: Record<keyof OpdkConfig, true> = { build: true };
+export const CONFIG_SECTIONS: Record<keyof OpdkConfig, true> = { build: true, scan: true };
 
 /** The subset of manifest.json the kit reads. */
 export interface Manifest {
     readonly id: string;
     readonly name: string;
     readonly version: string;
+    readonly description?: string;
     readonly minAppVersion?: string;
     readonly isDesktopOnly?: boolean;
 }

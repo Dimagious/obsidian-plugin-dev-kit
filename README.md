@@ -193,6 +193,14 @@ $ VAULT_PLUGIN=~/vault/.obsidian/plugins/snipsy opdk build --vault
 
 The kit pins `esbuild` 0.28.2 and `opdk build` uses it, so a plugin needs no esbuild of its own for the build. Drop the plugin's own `esbuild` devDependency once no script of yours calls esbuild directly. Until then, pin the same version the kit does; otherwise you carry two binaries at two versions.
 
+## Scanner
+
+`opdk scan` runs the community plugin scanner's own ESLint configuration (published upstream), a CSS check and a few source checks that reproduce findings seen on plugin listings, over the files git tracks. It fails when a step has a finding; the scanner's ESLint warnings count as findings, advisory `!` lines do not. Dashy lost three points of its public score to a joined domain string that no local check saw; this catches that kind of thing before the tag.
+
+![Terminal: opdk scan prints lint, css, code and meta with 0 findings each, then the summary and exit code 0](docs/media/scan.gif)
+
+Quick start: `npx opdk scan`. Details: [docs/scanner.md](docs/scanner.md).
+
 ## Roadmap
 
 - [ ] Wave 1: build, scanner and lint, end-to-end harness, demo recording
@@ -205,7 +213,7 @@ Each module moves to Garmy first, then Dashy, then Snipsy. A plugin may change w
 
 ## Development
 
-Requires Node 22.12 or newer.
+Requires Node 22.13 or newer, or Node 24 or newer.
 
 ```bash
 npm ci
@@ -213,7 +221,7 @@ npm run typecheck   # tsc over src, bin, tests and config files
 npm run lint        # eslint, zero warnings allowed
 npm test            # vitest with coverage thresholds (90% lines, functions and statements, 80% branches)
 npm run build       # cleans dist/ and compiles src/ with tsc
-npm run smoke       # builds, packs, installs the tarball into a temp project, runs opdk --help, --version and `opdk build` on a fixture, imports defineConfig
+npm run smoke       # builds, packs, installs the tarball into a temp project, runs opdk --help, --version, `opdk build` and `opdk scan` on a fixture, imports defineConfig and `obsidian-plugin-dev-kit/eslint`
 npm run docs:media  # re-records the GIFs in docs/media with VHS (needs `vhs` and `ffmpeg`); run `npm run build` first
 ```
 
@@ -223,7 +231,7 @@ Releasing: bump `version` in `package.json`, move the `[Unreleased]` entries in 
 
 ## Credits
 
-The kit uses or borrows from: [obsidian-integration-testing](https://github.com/mnaoumov/obsidian-integration-testing) and [obsidian-dev-toolkit](https://github.com/mnaoumov/obsidian-dev-toolkit) by Michael Naumov, the [community plugin scanner configuration](https://github.com/obsidianmd/eslint-plugin) from `eslint-plugin-obsidianmd`, and [Playwright](https://playwright.dev/).
+The kit uses or borrows from: [obsidian-integration-testing](https://github.com/mnaoumov/obsidian-integration-testing) and [obsidian-dev-toolkit](https://github.com/mnaoumov/obsidian-dev-toolkit) by Michael Naumov, the [community plugin scanner configuration](https://github.com/obsidianmd/eslint-plugin) from `eslint-plugin-obsidianmd`, Dashy's `scorecard-check.cjs` for the scanner's CSS, host and manifest checks, [PostCSS](https://postcss.org/) and [caniuse](https://github.com/browserslist/caniuse-lite) data (CC-BY-4.0, through [doiuse](https://github.com/anandthakker/doiuse)), and [Playwright](https://playwright.dev/).
 
 ## License
 
