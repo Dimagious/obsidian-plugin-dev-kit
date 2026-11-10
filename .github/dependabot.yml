@@ -11,6 +11,12 @@ updates:
       dev-dependencies:
         dependency-type: development
     open-pull-requests-limit: 5
+    # @types/node follows the lowest Node in engines (22). Newer majors type APIs
+    # that Node 22 lacks, so typecheck would pass on code that fails at runtime.
+    # Bump it by hand together with engines.node.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
