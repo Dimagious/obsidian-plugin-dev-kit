@@ -13,7 +13,7 @@ Every Obsidian plugin needs the same tooling around its code: a bundle that also
 | Module | What it does |
 |---|---|
 | Build | esbuild for the browser platform, so the bundle works on mobile, plus a check that fails if Node-only code gets into `main.js`; CSS build; copy into a dev vault in watch mode |
-| Scanner and lint | An ESLint config that matches the community plugin scanner's, with `eslint-plugin-obsidianmd` pinned in one place, and a scorecard check that runs before you release |
+| Scanner and lint | `opdk scan` runs the community plugin scanner's ESLint configuration and its CSS, source and manifest checks before you release, with `eslint-plugin-obsidianmd` pinned in one place; `obsidianPlugin()` gives your own `eslint.config.js` the same base |
 | Release | Version sync between `package.json`, `manifest.json` and `versions.json`, tag checks, and a reusable GitHub release workflow with build provenance |
 | Unit tests | A Vitest preset with coverage thresholds, and DOM helpers Obsidian adds (`createEl`, `createDiv`, `setText`) |
 | End-to-end tests | Playwright in a real Obsidian: an isolated vault per test, the trust dialog handled, a check of which Obsidian version ran, launch through Electron or CDP, IME composition input, and a mode for recording tests by hand with the Playwright Inspector |
@@ -204,6 +204,10 @@ Quick start: `npx opdk scan`. Details: [docs/scanner.md](docs/scanner.md).
 ## Roadmap
 
 - [ ] Wave 1: build, scanner and lint, end-to-end harness, demo recording
+  - [x] Build: `opdk build`, `opdk build-css`, `opdk assert-bundle`, dev-vault watch
+  - [x] Scanner and lint: `opdk scan`, `obsidianPlugin()`
+  - [ ] End-to-end harness
+  - [ ] Demo recording
 - [ ] Wave 2: release tooling and the reusable workflow
 - [ ] Wave 3: integration tests preset
 - [ ] Wave 4: unit-test helpers and Obsidian mocks
