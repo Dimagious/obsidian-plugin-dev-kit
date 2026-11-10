@@ -35,12 +35,14 @@ function validateManifest(value: unknown, file: string): Manifest {
     const id = requireString(record, "id", file);
     const name = requireString(record, "name", file);
     const version = requireString(record, "version", file);
+    const description = optionalString(record, "description", file);
     const minAppVersion = optionalString(record, "minAppVersion", file);
     const isDesktopOnly = optionalBoolean(record, "isDesktopOnly", file);
     return {
         id,
         name,
         version,
+        ...(description !== undefined && { description }),
         ...(minAppVersion !== undefined && { minAppVersion }),
         ...(isDesktopOnly !== undefined && { isDesktopOnly }),
     };

@@ -24,8 +24,8 @@ describe("readManifest", () => {
     });
 
     it("keeps the optional fields and drops unrelated ones", () => {
-        write({ ...base, minAppVersion: "1.5.0", isDesktopOnly: false, author: "me" });
-        expect(readManifest(dir)).toEqual({ ...base, minAppVersion: "1.5.0", isDesktopOnly: false });
+        write({ ...base, description: "Snippets.", minAppVersion: "1.5.0", isDesktopOnly: false, author: "me" });
+        expect(readManifest(dir)).toEqual({ ...base, description: "Snippets.", minAppVersion: "1.5.0", isDesktopOnly: false });
     });
 
     it("fails with guidance when manifest.json is missing", () => {
@@ -57,6 +57,8 @@ describe("readManifest", () => {
     it("rejects optional fields of the wrong type", () => {
         write({ ...base, minAppVersion: 1 });
         expect(() => readManifest(dir)).toThrow('"minAppVersion" must be a string');
+        write({ ...base, description: 7 });
+        expect(() => readManifest(dir)).toThrow('"description" must be a string');
         write({ ...base, isDesktopOnly: "yes" });
         expect(() => readManifest(dir)).toThrow('"isDesktopOnly" must be a boolean');
     });

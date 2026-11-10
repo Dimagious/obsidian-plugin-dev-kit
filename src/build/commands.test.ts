@@ -1,11 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { build as esbuild } from "esbuild";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createContext, createPluginFixture, type PluginFixture } from "../test-support/plugin-fixture.js";
 import { assertBundleCommand, buildCommand, buildCommands, buildCssCommand } from "./commands.js";
 import { CJS_FOOTER } from "./options.js";
 import { findNodeOnlyReferences } from "./bundle-check.js";
+
+// Real ESLint, git and esbuild runs: they miss the 5 s default when suites share the machine. Per file, so the global default stays.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const MAIN_TS = 'export default class FixturePlugin {\n    hello(): string {\n        return "hello from fixture";\n    }\n}\n';
 

@@ -31,6 +31,21 @@ describe("loadConfig", () => {
         expect(await loadConfig(dir)).toEqual({ build: { minify: false, loader: { ".png": "dataurl" } } });
     });
 
+    it("loads and validates the scan section", async () => {
+        write('export default { scan: { ignore: ["site/**"] } };\n');
+        expect(await loadConfig(dir)).toEqual({ scan: { ignore: ["site/**"] } });
+    });
+
+    it("loads build and scan together", async () => {
+        write('export default { build: { minify: false }, scan: { ignore: ["design/**"] } };\n');
+        expect(await loadConfig(dir)).toEqual({ build: { minify: false }, scan: { ignore: ["design/**"] } });
+    });
+
+    it("names the config file and the key of an invalid scan section", async () => {
+        write('export default { scan: { ignore: [1] } };\n');
+        await expect(loadConfig(dir)).rejects.toThrow(`${path.join(dir, "opdk.config.mjs")}: "scan.ignore" must be an array of glob strings`);
+    });
+
     it("names the config file and the key of an invalid build section", async () => {
         write('export default { build: { target: 5 } };\n');
         await expect(loadConfig(dir)).rejects.toThrow(`${path.join(dir, "opdk.config.mjs")}: "build.target" must be a non-empty string.`);
@@ -38,7 +53,7 @@ describe("loadConfig", () => {
 
     it("rejects unknown top-level keys and lists the allowed ones", async () => {
         write("export default { biuld: {} };\n");
-        await expect(loadConfig(dir)).rejects.toThrow(/unknown top-level key\(s\): biuld\. Allowed keys: build\./);
+        await expect(loadConfig(dir)).rejects.toThrow(/unknown top-level key\(s\): biuld\. Allowed keys: build, scan\./);
     });
 
     it("names every unknown key", async () => {

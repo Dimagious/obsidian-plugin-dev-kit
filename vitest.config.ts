@@ -12,6 +12,9 @@ export default defineConfig({
                 "src/test-support/**",
                 // Only re-exports.
                 "src/index.ts",
+                "src/eslint/index.ts",
+                // Type declarations only.
+                "src/**/*.d.ts",
                 // Binds the CLI to process.argv/stdout/exit code; covered by `npm run smoke`.
                 "src/cli/main.ts",
                 // Binds the reporter to process.stdout/stderr and their TTY flags; covered by `npm run smoke`.

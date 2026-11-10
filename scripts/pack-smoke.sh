@@ -2,6 +2,9 @@
 # Packs the kit, installs the tarball into a fresh project and runs the CLI the way a plugin would.
 # A broken `prepare` or a missing file in the tarball breaks every plugin install, so CI runs this.
 set -euo pipefail
+# A hook or worktree session may export these; they would point every git call below at the wrong repository.
+# `${!GIT_@}` expands to nothing when none is set, so `set -u` stays quiet.
+for name in ${!GIT_@}; do unset "$name"; done
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d)"
@@ -13,9 +16,15 @@ npm run build --silent
 expected_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).version")"
 tarball="$(npm pack --loglevel=error --pack-destination "$tmp" | tail -n 1)"
 
+# The peer dependencies a plugin brings itself, at the versions the kit is developed against, so the smoke runs
+# `opdk scan` on the ESLint the plugins run.
+eslint_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies.eslint")"
+typescript_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies.typescript")"
+
 mkdir "$tmp/project"
 cd "$tmp/project"
 npm init -y >/dev/null
+npm install --no-audit --no-fund --loglevel=error "eslint@$eslint_version" "typescript@$typescript_version"
 npm install --no-audit --no-fund --loglevel=error "$tmp/$tarball"
 
 echo "--- npx opdk --help"
@@ -26,6 +35,15 @@ actual_version="$(npx --no -- opdk --version)"
 echo "$actual_version"
 if [ "$actual_version" != "$expected_version" ]; then
     echo "smoke: opdk --version printed '$actual_version', expected '$expected_version'" >&2
+    exit 1
+fi
+
+echo "--- npx opdk --version with a broken manifest.json in the current folder"
+# The scan loads eslint-plugin-obsidianmd, which reads manifest.json when it is imported; no other command may.
+printf '{bad json' > manifest.json
+broken_output="$(npx --no -- opdk --version 2>&1)"
+if [ "$broken_output" != "$expected_version" ]; then
+    echo "smoke: opdk --version with a broken manifest.json printed '$broken_output', expected only '$expected_version'" >&2
     exit 1
 fi
 
@@ -81,10 +99,52 @@ if ! grep -q 'module.exports = module.exports.default || module.exports;' main.j
     exit 1
 fi
 
+echo "--- npx opdk scan (same fixture, as a git repository)"
+cat > tsconfig.json <<'JSON'
+{ "compilerOptions": { "target": "ES2020", "lib": ["ES2020", "DOM"], "module": "ESNext", "moduleResolution": "Bundler", "strict": true, "noEmit": true, "types": [] }, "include": ["src/**/*.ts"] }
+JSON
+printf 'node_modules/\nmain.js\nstyles.css\npackage-lock.json\n' > .gitignore
+# The fixture's main.ts is the one `opdk build` compiled above; scan reads only the files git tracks.
+git init -q
+git add -A
+scan_status=0
+scan_output="$(env -u FORCE_COLOR -u NO_COLOR -u GITHUB_ACTIONS npx --no -- opdk scan 2>&1)" || scan_status=$?
+printf '%s\n' "$scan_output"
+if [ "$scan_status" -ne 0 ]; then
+    echo "smoke: opdk scan exited with $scan_status on a clean fixture" >&2
+    exit 1
+fi
+if ! printf '%s' "$scan_output" | grep -q '✓ scan'; then
+    echo "smoke: opdk scan output has no ✓ scan line" >&2
+    exit 1
+fi
+printf 'export const wait = (): void => {\n    setTimeout(() => undefined, 1);\n};\n' > src/late.ts
+git add -A
+bad_status=0
+bad_output="$(env -u FORCE_COLOR -u NO_COLOR -u GITHUB_ACTIONS npx --no -- opdk scan 2>&1)" || bad_status=$?
+printf '%s\n' "$bad_output"
+if [ "$bad_status" -ne 1 ]; then
+    echo "smoke: opdk scan exited with $bad_status on a fixture with a finding, expected 1" >&2
+    exit 1
+fi
+if ! printf '%s' "$bad_output" | grep -q 'src/late.ts:2  obsidianmd/prefer-window-timers'; then
+    echo "smoke: opdk scan did not report src/late.ts:2 obsidianmd/prefer-window-timers" >&2
+    exit 1
+fi
+rm src/late.ts
+git add -A
+
 echo "--- import obsidian-plugin-dev-kit"
 node --input-type=module -e "
 import { defineConfig } from 'obsidian-plugin-dev-kit';
 if (typeof defineConfig !== 'function') throw new Error('defineConfig is not exported');
+"
+
+echo "--- import obsidian-plugin-dev-kit/eslint"
+node --input-type=module -e "
+import { obsidianPlugin } from 'obsidian-plugin-dev-kit/eslint';
+const config = obsidianPlugin({ rootDir: process.cwd() });
+if (!Array.isArray(config) || config.length === 0) throw new Error('obsidianPlugin() returned no config');
 "
 
 echo "smoke: ok"

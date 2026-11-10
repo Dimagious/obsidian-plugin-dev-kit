@@ -2,6 +2,7 @@ import { statSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { validateBuildConfig } from "../build/config.js";
+import { validateScanConfig } from "../scanner/config.js";
 import { CONFIG_SECTIONS, type OpdkConfig } from "./types.js";
 
 export const CONFIG_FILE_NAME = "opdk.config.mjs";
@@ -41,7 +42,11 @@ export function validateConfig(value: unknown, source: string): OpdkConfig {
     }
     // Modules validate and copy their own section here when they add one.
     const build = Object.hasOwn(value, "build") ? value.build : undefined;
-    return { ...(build !== undefined && { build: validateBuildConfig(build, source) }) };
+    const scan = Object.hasOwn(value, "scan") ? value.scan : undefined;
+    return {
+        ...(build !== undefined && { build: validateBuildConfig(build, source) }),
+        ...(scan !== undefined && { scan: validateScanConfig(scan, source) }),
+    };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

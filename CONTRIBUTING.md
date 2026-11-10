@@ -10,7 +10,7 @@ Thanks for looking. The kit is used by three plugins that pin it by tag, so ever
 
 ## Setup
 
-Node 22.12 or newer.
+Node 22.13 or newer, or Node 24 or newer.
 
 ```bash
 npm ci
