@@ -29,6 +29,7 @@ import {
     removeFake,
     removeNotices,
     runCommandById,
+    runWithApp,
     scrollThroughElement,
     switchMobileEmulation,
 } from "./page-scripts.js";
@@ -422,6 +423,52 @@ describe("scrollThroughElement", () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+});
+
+describe("runWithApp", () => {
+    it("calls the function with window.app and the argument and returns the value", async () => {
+        vi.stubGlobal("app", { name: "the app" });
+        const result = await runWithApp({ source: "(app, arg) => app.name + ':' + arg.n", arg: { n: 3 } });
+        expect(result).toEqual({ ok: true, value: "the app:3" });
+    });
+
+    it("awaits an async function and accepts a function expression", async () => {
+        vi.stubGlobal("app", { files: ["a", "b"] });
+        const result = await runWithApp({ source: "async function (app) { return app.files.length; }" });
+        expect(result).toEqual({ ok: true, value: 2 });
+    });
+
+    it("passes undefined when there is no argument", async () => {
+        vi.stubGlobal("app", {});
+        expect(await runWithApp({ source: "(app, arg) => arg === undefined" })).toEqual({ ok: true, value: true });
+    });
+
+    it("rebuilds the function in the global scope, so it cannot see the locals of runWithApp", async () => {
+        vi.stubGlobal("app", {});
+        // A direct eval would see `args` and `app` of runWithApp; an indirect one sees only globals.
+        expect(await runWithApp({ source: "() => typeof args" })).toEqual({ ok: true, value: "undefined" });
+        expect(await runWithApp({ source: "() => typeof fn" })).toEqual({ ok: true, value: "undefined" });
+    });
+
+    it("refuses when window.app is missing", async () => {
+        vi.stubGlobal("app", undefined);
+        expect(await runWithApp({ source: "() => 1" })).toEqual({ ok: false, reason: "window.app is not defined yet" });
+    });
+
+    it("refuses source that is not a function, and source that does not parse", async () => {
+        vi.stubGlobal("app", {});
+        const reasonOf = async (source: string): Promise<string> => {
+            const result = await runWithApp({ source });
+            return result.ok ? "ran" : result.reason;
+        };
+        expect(await reasonOf("42")).toContain("not a function");
+        expect(await reasonOf("run() { return 1; }")).toContain("could not be rebuilt");
+    });
+
+    it("lets an exception of the function itself through", async () => {
+        vi.stubGlobal("app", {});
+        await expect(runWithApp({ source: "() => { throw new Error('boom'); }" })).rejects.toThrow("boom");
     });
 });
 

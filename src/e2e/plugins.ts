@@ -93,7 +93,8 @@ export function assertBuildFresh(source: PluginSource): void {
         throw new Error(
             `Stale build: main.js of "${source.id}" (${new Date(built).toISOString()}) is older than ` +
                 `${path.relative(source.dir, newest.file)} (${new Date(newest.mtimeMs).toISOString()}). ` +
-                `Run \`opdk build\` in ${source.dir}, or set staleBuildCheck: false (OPDK_E2E_ALLOW_STALE_BUILD=1 for one run).`,
+                `Run \`opdk build\` in ${source.dir}. To skip this check for this plugin, set staleBuildCheck: false on its entry in the plugins option ` +
+                `(or at the top level for the plugin in the current directory); OPDK_E2E_ALLOW_STALE_BUILD=1 skips it for every plugin in one run.`,
         );
     }
 }

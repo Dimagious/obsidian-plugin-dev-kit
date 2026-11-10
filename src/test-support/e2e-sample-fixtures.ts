@@ -7,7 +7,7 @@ import { createObsidianTest, defineObsidianConfig } from "../e2e/index.js";
 
 export const { test, expect, onlyWhen } = createObsidianTest({
     seedVault: "e2e/vault",
-    plugins: [{ dir: "." }, { dir: "../dashsidian" }],
+    plugins: [{ dir: "." }, { dir: "../dashsidian", staleBuildCheck: true }],
     data: { garmidian: { units: "metric", language: "en" } },
     window: { width: 1200, height: 1500 },
     obsidianPath: "/Applications/Obsidian.app/Contents/Resources/app.asar",
@@ -32,6 +32,29 @@ test("sample spec uses win, app and vault", async ({ win, app, vault }) => {
     await expect(win.locator(".workspace")).toBeVisible();
     expect([title, windowCount, text, present, absolute]).toHaveLength(5);
 });
+
+test("evaluate is typed by the caller", async ({ obsidian }) => {
+    interface SampleApp {
+        vault: { getName(): string };
+    }
+    const name: string = await obsidian.evaluate((app: SampleApp) => app.vault.getName());
+    const count: number = await obsidian.evaluate((_app: SampleApp, items: string[]) => Promise.resolve(items.length), ["a"]);
+    // @ts-expect-error the argument must match the function's second parameter
+    await obsidian.evaluate((_app: SampleApp, items: string[]) => items.length, 3);
+    // @ts-expect-error a function with a second parameter needs the argument
+    await obsidian.evaluate((_app: SampleApp, items: string[]) => items.length);
+    // The factory of replace() follows the same rule.
+    await obsidian.replace("my-plugin", "client.fetch", () => () => 1);
+    await obsidian.replace("my-plugin", "client.fetch", (days: number) => () => days, 7);
+    // @ts-expect-error a factory with a parameter needs the argument
+    await obsidian.replace("my-plugin", "client.fetch", (days: number) => () => days);
+    // @ts-expect-error the argument must match the factory's parameter
+    await obsidian.replace("my-plugin", "client.fetch", (days: number) => () => days, "7");
+    expect([name, count]).toHaveLength(2);
+});
+
+// @ts-expect-error a plugin entry's staleBuildCheck is a boolean
+createObsidianTest({ seedVault: "v", plugins: [{ dir: ".", staleBuildCheck: "no" }] });
 
 // @ts-expect-error seedVault is required
 createObsidianTest({});

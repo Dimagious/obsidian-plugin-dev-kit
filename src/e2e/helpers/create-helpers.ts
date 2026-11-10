@@ -35,6 +35,7 @@ import {
     removeFake,
     removeNotices,
     runCommandById,
+    runWithApp,
     scrollThroughElement,
     switchMobileEmulation,
 } from "./page-scripts.js";
@@ -414,7 +415,23 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
         await (await session()).send("Emulation.clearDeviceMetricsOverride");
     }
 
-    async function replace<A = undefined>(pluginId: string, propertyPath: string, impl: PageFactory<A>, arg?: A): Promise<FakeHandle> {
+    // The overloads of ObsidianHelpers.evaluate: with and without an `arg`. `App` is the caller's type of `window.app`.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
+    async function evaluate<R, App = unknown>(fn: (app: App) => R | Promise<R>): Promise<R>;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
+    async function evaluate<R, A, App = unknown>(fn: (app: App, arg: A) => R | Promise<R>, arg: A): Promise<R>;
+    async function evaluate<R, A, App = unknown>(fn: (app: App, arg?: A) => R | Promise<R>, arg?: A): Promise<R> {
+        const result = await win.evaluate(runWithApp, { source: fn.toString(), arg });
+        if (!result.ok) {
+            throw new Error(`evaluate(): ${result.reason}. The function runs in the page, so it cannot use variables of the test; pass them as the second argument.`);
+        }
+        // The page returned whatever `fn` returned; the type parameter is the caller's statement about it.
+        return result.value as R;
+    }
+
+    async function replace(pluginId: string, propertyPath: string, impl: PageFactory<undefined>): Promise<FakeHandle>;
+    async function replace<A>(pluginId: string, propertyPath: string, impl: PageFactory<A>, arg: A): Promise<FakeHandle>;
+    async function replace<A>(pluginId: string, propertyPath: string, impl: PageFactory<A>, arg?: A): Promise<FakeHandle> {
         fakeCount += 1;
         const id = `opdk-fake-${String(fakeCount)}`;
         const result = await win.evaluate(installFake, { id, pluginId, path: propertyPath, source: impl.toString(), arg });
@@ -466,6 +483,7 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
             readingView,
             mobile,
             desktop,
+            evaluate,
             replace,
         },
         dispose: async () => {

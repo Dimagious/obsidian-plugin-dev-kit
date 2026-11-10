@@ -70,6 +70,8 @@ test("the report carries the Obsidian version and the launch mode", ({ app }, te
     const byType = new Map(testInfo.annotations.map((annotation) => [annotation.type, annotation.description]));
     expect(byType.get("obsidian-version")).toMatch(/^\d+\.\d+\.\d+/);
     expect(byType.get("launch-mode")).toBe("electron");
+    // Launch to ready: the reporter's test duration leaves this out, the note carries it.
+    expect(Number(byType.get("obsidian-launch-ms"))).toBeGreaterThan(0);
 });
 
 test("window.confirm() does not hang the test", async ({ win }) => {

@@ -360,3 +360,40 @@ test.describe("replace", () => {
         expect(await callTransport(obsidian, win)).toBe("real:from-command");
     });
 });
+
+test.describe("evaluate", () => {
+    /** What a plugin would import as `App` from "obsidian": the slice this spec reads. */
+    interface SpecApp {
+        vault: { getMarkdownFiles(): { path: string }[] };
+        plugins: { plugins: Record<string, { manifest: { id: string } } | undefined> };
+    }
+
+    test("evaluate runs a typed function with window.app and an argument, and returns plain data", async ({ obsidian }) => {
+        const paths = await obsidian.evaluate(
+            (app: SpecApp, prefix: string) => app.vault.getMarkdownFiles().map((file) => file.path).filter((path) => path.startsWith(prefix)),
+            "Prop",
+        );
+        expect(paths).toEqual(["Properties.md"]);
+
+        const id = await obsidian.evaluate<string, string, SpecApp>((app, pluginId) => app.plugins.plugins[pluginId]?.manifest.id ?? "none", FIXTURE_ID);
+        expect(id).toBe(FIXTURE_ID);
+    });
+
+    test("evaluate awaits a promise and works without an argument", async ({ obsidian }) => {
+        const total = await obsidian.evaluate(async (app: SpecApp) => {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            return app.vault.getMarkdownFiles().length;
+        });
+        expect(total).toBe(3);
+    });
+
+    test("evaluate cannot see variables of the test, and an exception of the function fails the test with its message", async ({ obsidian }) => {
+        const fromTheTest = "unreachable";
+        await expect(obsidian.evaluate(() => fromTheTest)).rejects.toThrow("fromTheTest is not defined");
+        await expect(
+            obsidian.evaluate(() => {
+                throw new Error("thrown in the page");
+            }),
+        ).rejects.toThrow("thrown in the page");
+    });
+});

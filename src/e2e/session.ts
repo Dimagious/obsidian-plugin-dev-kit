@@ -116,8 +116,10 @@ export function prepareSession(
     const sources = options.pluginDirs.map((dir) => readPluginSource(dir));
     assertUniqueIds(sources);
     assertDataIdsInstalled(options.data, sources);
-    if (options.staleBuildCheck) {
-        sources.forEach(assertBuildFresh);
+    for (const source of sources) {
+        if (options.staleCheckDirs.includes(source.dir)) {
+            assertBuildFresh(source);
+        }
     }
     return { asar, sources };
 }
@@ -190,6 +192,7 @@ async function open(
     // No `executablePath` on purpose: Playwright then resolves `electron` from `cwd` (the plugin's node_modules) and
     // injects its loader, which holds back the app's `ready` event until Playwright is attached. With an
     // `executablePath` the loader is skipped and the attachment can miss early events.
+    const launchStartedAt = now();
     const app = await deps.launch({
         args: [asar, `--user-data-dir=${userDataDir}`, ...options.electronArgs],
         env: buildLaunchEnv(deps.env),
@@ -251,6 +254,9 @@ async function open(
         sources.map((source) => source.id),
         options.timeouts.ready,
     );
+    // The session fixture runs with its own timeout, so Playwright counts its time in a separate slot and the reported
+    // test duration covers the test body only; this note carries the launch time.
+    context.annotate("obsidian-launch-ms", String(now() - launchStartedAt));
     await checkVersion(win, options.expectedVersion, context);
 
     return {

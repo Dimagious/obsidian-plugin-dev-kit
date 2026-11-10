@@ -104,6 +104,25 @@ describe("prepareSession", () => {
         expect(() => prepareSession(options({ staleBuildCheck: false }), { env: {} })).not.toThrow();
     });
 
+    it("checks the current plugin only, and a dependency only when it asks", () => {
+        const dependency = createPluginFixture({ id: "dependency" });
+        dependency.write("main.js", "//js");
+        dependency.write("src/main.ts", "x");
+        const old = new Date(Date.now() - 60_000);
+        fs.utimesSync(path.join(dependency.dir, "main.js"), old, old);
+        try {
+            const plugins = (check?: boolean): Partial<ObsidianTestOptions> => ({
+                plugins: [{ dir: plugin.dir }, { dir: dependency.dir, ...(check === undefined ? {} : { staleBuildCheck: check }) }],
+            });
+            expect(() => prepareSession(options(plugins()), { env: {} })).not.toThrow();
+            expect(() => prepareSession(options(plugins(false)), { env: {} })).not.toThrow();
+            expect(() => prepareSession(options(plugins(true)), { env: {} })).toThrow(/Stale build: main\.js of "dependency"/);
+            expect(() => prepareSession(options(plugins(true), { OPDK_E2E_ALLOW_STALE_BUILD: "1" }), { env: {} })).not.toThrow();
+        } finally {
+            dependency.cleanup();
+        }
+    });
+
     it("fails when data names a plugin that is not installed", () => {
         expect(() => prepareSession(options({ data: { other: {} } }), { env: {} })).toThrow(/entry for "other"/);
     });
@@ -172,6 +191,7 @@ describe("startSession: happy path", () => {
             'waitForFunction:["my-plugin"]:{"polling":50,"timeout":30000}',
         ]);
         expect(r.annotations).toEqual([
+            ["obsidian-launch-ms", "0"],
             ["obsidian-version", "1.14.5"],
             ["launch-mode", "electron"],
         ]);
@@ -180,6 +200,24 @@ describe("startSession: happy path", () => {
         expect(leftovers()).toEqual([]);
         expect(r.fake.calls).toContain("app.close");
         expect(r.fake.signals.filter((s) => s.signal !== 0)).toEqual([{ pid: -4242, signal: "SIGTERM" }]);
+    });
+
+    it("annotates the time from the launch call until the plugins are ready", async () => {
+        const r = run();
+        // The clock follows the fake's call log: 1000 until the launch is recorded, 1300 after it, 1750 once the
+        // readiness wait is recorded. Reading the start late or annotating early changes the result.
+        r.deps = {
+            ...r.deps,
+            now: () => {
+                if (r.fake.calls.some((call) => call.startsWith("waitForFunction"))) {
+                    return 1750;
+                }
+                return r.fake.calls.includes("launch") ? 1300 : 1000;
+            },
+        };
+        const session = await start(options(), r);
+        expect(r.annotations).toContainEqual(["obsidian-launch-ms", "750"]);
+        await session.teardown();
     });
 
     it("fails before creating anything or launching when the Electron binary is not downloaded", async () => {
