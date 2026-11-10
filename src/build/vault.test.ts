@@ -1,12 +1,26 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createReporter } from "../cli/reporter.js";
 import { createContext, createPluginFixture, type PluginFixture } from "../test-support/plugin-fixture.js";
 import { buildCommand } from "./commands.js";
 import { resolveBuild } from "./options.js";
 import { runVaultBuild, type VaultBuildOptions } from "./vault.js";
+
+// A seam between "the CSS step read a file" and "fs.watchFile registered it", where a real edit would race the
+// poller's baseline stat. Unset, watchFile is the real one.
+const seam = vi.hoisted(() => ({ beforeWatch: undefined as ((file: string) => void) | undefined }));
+vi.mock("node:fs", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("node:fs")>();
+    return {
+        ...actual,
+        watchFile: ((...args: Parameters<typeof actual.watchFile>) => {
+            seam.beforeWatch?.(String(args[0]));
+            return actual.watchFile(...args);
+        }) as typeof actual.watchFile,
+    };
+});
 
 const MAIN_TS = (word: string): string => `export default class P {\n    word = "${word}";\n}\n`;
 
@@ -397,6 +411,7 @@ describe("opdk build --vault --watch", () => {
 
     let handlesBefore = 0;
     beforeEach(() => {
+        seam.beforeWatch = undefined;
         handlesBefore = statWatchers();
     });
     afterEach(async () => {
@@ -456,6 +471,46 @@ describe("opdk build --vault --watch", () => {
         writeFileSync(path.join(plugin.dir, "src/styles/main.css"), '@import "./a.css";\n');
         await run.until(() => !inVault("styles.css").includes(".b {"), POLL_BUDGET_MS);
         expect(statWatchers()).toBe(polling);
+
+        await run.stop();
+    });
+
+    it("syncs an edit made to a just-imported file after the CSS step read it and before its poller registered", { timeout: 30_000 }, async () => {
+        plugin.write("src/styles/b.css", ".b { color: red; }\n");
+        const run = start();
+        await run.settled();
+
+        // The edit lands in the window where watchFile's baseline would absorb it.
+        const b = path.join(plugin.dir, "src/styles/b.css");
+        let edited = false;
+        seam.beforeWatch = (file) => {
+            if (file === b && !edited) {
+                edited = true;
+                writeFileSync(b, ".b { color: purple; }\n");
+            }
+        };
+        writeFileSync(path.join(plugin.dir, "src/styles/main.css"), '@import "./a.css";\n@import "./b.css";\n');
+        await run.until(() => inVault("styles.css").includes("purple"), POLL_BUDGET_MS);
+        expect(edited).toBe(true);
+
+        await run.stop();
+    });
+
+    it("syncs a missing import target that was created after the failed CSS step and before its poller registered", { timeout: 30_000 }, async () => {
+        const run = start();
+        await run.settled();
+
+        const late = path.join(plugin.dir, "src/styles/late.css");
+        let created = false;
+        seam.beforeWatch = (file) => {
+            if (file === late && !created) {
+                created = true;
+                writeFileSync(late, ".late { color: teal; }\n");
+            }
+        };
+        writeFileSync(path.join(plugin.dir, "src/styles/main.css"), '@import "./a.css";\n@import "./late.css";\n');
+        await run.until(() => inVault("styles.css").includes("teal"), POLL_BUDGET_MS);
+        expect(created).toBe(true);
 
         await run.stop();
     });
