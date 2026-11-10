@@ -16,7 +16,7 @@ Every Obsidian plugin needs the same tooling around its code: a bundle that also
 | Scanner and lint | `opdk scan` runs the community plugin scanner's ESLint configuration and its CSS, source and manifest checks before you release, with `eslint-plugin-obsidianmd` pinned in one place; `obsidianPlugin()` gives your own `eslint.config.js` the same base |
 | Release | Version sync between `package.json`, `manifest.json` and `versions.json`, tag checks, and a reusable GitHub release workflow with build provenance |
 | Unit tests | A Vitest preset with coverage thresholds, and DOM helpers Obsidian adds (`createEl`, `createDiv`, `setText`) |
-| End-to-end tests | Playwright in a real Obsidian: an isolated vault per test, the trust dialog handled, a check of which Obsidian version ran, launch through Electron or CDP, IME composition input, and a mode for recording tests by hand with the Playwright Inspector |
+| End-to-end tests | Playwright in a real Obsidian through Electron: an isolated vault per test, the trust dialog never shown, readiness by plugin state instead of sleeps, a check of which Obsidian version ran, a trace and a video of the Obsidian window for failures, and helpers for settings, commands, the editor, IME composition, the mobile layout and fakes. Launch over CDP and a mode for recording tests by hand with the Playwright Inspector are planned |
 | Demo recording | A visible cursor that moves like a person's, subtitles, slow typing and pauses, plus a script that cuts the take and adds a voice-over per scene with ffmpeg, then exports MP4 and GIF |
 | Integration tests | A preset for [obsidian-integration-testing](https://github.com/mnaoumov/obsidian-integration-testing): the same smoke tests on the latest public and catalyst builds, and on Android |
 | Agent skills | One Claude Code skill per module, so a coding agent working in your plugin knows how to use the kit |
@@ -52,12 +52,20 @@ Quick start: `npx opdk build`. Details: [docs/build.md](docs/build.md).
 
 Quick start: `npx opdk scan`. Details: [docs/scanner.md](docs/scanner.md).
 
+## End-to-end tests
+
+`obsidian-plugin-dev-kit/e2e` runs Playwright specs in the real Obsidian: every test gets its own Obsidian process, a copy of your seed vault and a fresh user-data folder, with your built plugin installed and trusted before the window opens. Obsidian 1.13 moved Settings into a second window and took down five of Dashy's specs at once, and Snipsy pressed Escape on the trust dialog and slept to let plugins load. The kit keeps Settings in the main window, sets the trust flag before the vault loads and waits for every plugin's `onload()` to finish, and a failed test leaves a trace and a video of the Obsidian window.
+
+![Obsidian driven by the kit: in a note, text is typed key by key, the command palette finds a command, a notice appears, and the plugin's settings tab opens](docs/media/e2e.gif)
+
+Quick start: `createObsidianTest({ seedVault })` in `e2e/fixtures.ts`, `defineObsidianConfig()` in `playwright.config.ts`, then `npx playwright test`. Details: [docs/e2e.md](docs/e2e.md).
+
 ## Roadmap
 
 - [ ] Wave 1: build, scanner and lint, end-to-end harness, demo recording
   - [x] Build: `opdk build`, `opdk build-css`, `opdk assert-bundle`, dev-vault watch
   - [x] Scanner and lint: `opdk scan`, `obsidianPlugin()`
-  - [ ] End-to-end harness
+  - [ ] End-to-end harness: launch, isolation, readiness, trace and video, and the helpers are done; CDP mode is pending
   - [ ] Demo recording
 - [ ] Wave 2: release tooling and the reusable workflow
 - [ ] Wave 3: integration tests preset
@@ -78,6 +86,8 @@ npm test            # vitest with coverage thresholds (90% lines, functions and 
 npm run build       # cleans dist/ and compiles src/ with tsc
 npm run smoke       # builds, packs, installs the tarball into a temp project, runs opdk --help, --version, `opdk build` and `opdk scan` on a fixture, imports defineConfig and `obsidian-plugin-dev-kit/eslint`
 npm run docs:media  # re-records the GIFs in docs/media with VHS (needs `vhs` and `ffmpeg`); run `npm run build` first
+npm run docs:media:e2e  # re-records docs/media/e2e.gif from a real Obsidian window (needs Obsidian and `ffmpeg`)
+npm run e2e:smoke  # the kit's own e2e specs against a real Obsidian; by hand before a release, not in CI
 ```
 
 `dist/` is not committed. `npm install` from a git tag runs `prepare`, which builds it, so a broken build breaks every plugin install. CI runs the same checks plus the smoke on every pull request.
@@ -86,7 +96,7 @@ Releasing: bump `version` in `package.json`, move the `[Unreleased]` entries in 
 
 ## Credits
 
-The kit uses or borrows from: [obsidian-integration-testing](https://github.com/mnaoumov/obsidian-integration-testing) and [obsidian-dev-toolkit](https://github.com/mnaoumov/obsidian-dev-toolkit) by Michael Naumov, the [community plugin scanner configuration](https://github.com/obsidianmd/eslint-plugin) from `eslint-plugin-obsidianmd`, Dashy's `scorecard-check.cjs` for the scanner's CSS, host and manifest checks, [PostCSS](https://postcss.org/) and [caniuse](https://github.com/browserslist/caniuse-lite) data (CC-BY-4.0, through [doiuse](https://github.com/anandthakker/doiuse)), and [Playwright](https://playwright.dev/).
+The kit's code is moved from the owner's plugins: [Snipsy](https://github.com/Dimagious/snipsidian), [Dashy](https://github.com/Dimagious/dashsidian) and [Garmy](https://github.com/Dimagious/garmidian).
 
 ## License
 

@@ -149,6 +149,6 @@ An advisory finding prints as a `!` line and leaves the exit code alone:
 
 When `eslint-plugin-obsidianmd` is bumped, the mirrored configuration has to be diffed again: a test pins the version it was taken from, so a bump fails the kit's tests until someone does.
 
-## Credits
+## Origin
 
-The ESLint configuration in `opdk scan` is a copy of "Community plugin scanner configuration" in [`eslint-plugin-obsidianmd`](https://github.com/obsidianmd/eslint-plugin)'s `docs/configuration.md` (MIT, Dynalist Inc.), version 0.5.1, with the differences listed at the top of `src/scanner/scanner-config.ts`. All 48 ignored paths are upstream's; its first three (`main.js`, `**/*.min.js`, `**/{dist,build,out,release}/**`) are its stand-ins for bundled output, and upstream says to drop `main.js` for a plugin written in JavaScript. The CSS, host and manifest checks follow the ones Dashy's `scorecard-check.cjs` grew on 2026-11-09. CSS parsing is [PostCSS](https://postcss.org/) (MIT); the browser-feature data is [caniuse](https://github.com/browserslist/caniuse-lite) (CC-BY-4.0) through [doiuse](https://github.com/anandthakker/doiuse) (MIT).
+The ESLint configuration in `opdk scan` mirrors "Community plugin scanner configuration" in `eslint-plugin-obsidianmd` 0.5.1 (`docs/configuration.md`), with the differences listed at the top of `src/scanner/scanner-config.ts`. All 48 ignored paths are upstream's; its first three (`main.js`, `**/*.min.js`, `**/{dist,build,out,release}/**`) are its stand-ins for bundled output, and upstream says to drop `main.js` for a plugin written in JavaScript. The CSS, host and manifest checks follow the ones Dashy's `scorecard-check.cjs` grew on 2026-11-09.

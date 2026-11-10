@@ -1,6 +1,9 @@
 /**
  * The community plugin scanner's ESLint configuration, which `opdk scan` runs over the plugin.
  *
+ * Licence: the configuration text is copied from eslint-plugin-obsidianmd (obsidianmd/eslint-plugin, Dynalist Inc.,
+ * MIT licence); keep this notice.
+ *
  * Mirrors "Full scanner-equivalent configuration" in the section "Community plugin scanner configuration" of
  * eslint-plugin-obsidianmd's docs/configuration.md (https://github.com/obsidianmd/eslint-plugin), version
  * 0.5.1, diffed on 2026-11-10 against the tag's file. Re-diff it on every bump of that package: a test pins the
