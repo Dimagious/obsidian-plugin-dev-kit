@@ -3,6 +3,7 @@ import path from "node:path";
 import { context } from "esbuild";
 import type { Reporter } from "../cli/reporter.js";
 import type { Manifest } from "../config/types.js";
+import { CssImportError } from "./css-imports.js";
 import { runCssStep } from "./css-step.js";
 import { toEsbuildOptions, type ResolvedBuild } from "./options.js";
 import { isBuildFailure, printMessages } from "./report.js";
@@ -74,6 +75,11 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
             options.reporter.success("build", `${id}: assets copied to ${vaultDir}`);
         } catch (error) {
             state.assetsFailed = true;
+            if (error instanceof CssImportError) {
+                // Poll what the step read before it failed, or fixing a broken nested file would never trigger a sync.
+                // Keep the previous inputs too: a file that was polled stays polled while a step fails.
+                cssInputs = [...new Set([...cssInputs, ...error.files])];
+            }
             options.reporter.failure("build", `${id}: CSS build or copy failed: ${errorMessage(error)}`);
         }
         if (state.watching) {
@@ -104,6 +110,12 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
         }
     };
 
+    // ctx.watch() resolves before its first build reaches onEnd; the Watching line waits for that build.
+    let firstBuildDone: () => void = () => undefined;
+    const firstBuild = new Promise<void>((resolve) => {
+        firstBuildDone = resolve;
+    });
+
     const ctx = await context({
         ...toEsbuildOptions(build, cwd, { kind: "vault", dir: vaultDir }),
         plugins: [
@@ -124,6 +136,8 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
                             // A throw inside an esbuild hook would surface as a bare esbuild error; say what failed.
                             state.hookFailed = true;
                             options.reporter.failure("build", `${id}: reporting the build failed: ${errorMessage(error)}`);
+                        } finally {
+                            firstBuildDone();
                         }
                     });
                 },
@@ -131,19 +145,18 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
         ],
     });
 
-    let buildFailed = false;
-    try {
-        await ctx.rebuild();
-    } catch (error) {
-        if (!isBuildFailure(error)) {
-            await ctx.dispose();
-            throw error;
-        }
-        // The errors were printed by the onEnd hook.
-        buildFailed = true;
-    }
-
     if (!watching) {
+        let buildFailed = false;
+        try {
+            await ctx.rebuild();
+        } catch (error) {
+            if (!isBuildFailure(error)) {
+                await ctx.dispose();
+                throw error;
+            }
+            // The errors were printed by the onEnd hook.
+            buildFailed = true;
+        }
         await ctx.dispose();
         return buildFailed || state.assetsFailed || state.hookFailed ? 1 : 0;
     }
@@ -151,13 +164,15 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
     const manifestFile = path.join(cwd, "manifest.json");
     try {
         state.watching = true;
-        // Register before ctx.watch(): its own first rebuild then comes after the pollers took their baseline.
+        // Register before ctx.watch(): its first build, the only one at start, then comes after the pollers took
+        // their baseline. A failed first build keeps the watch alive: fixing the file triggers the next build.
         pollCssFiles();
         watchFile(manifestFile, { interval: POLL_INTERVAL_MS }, syncAssets);
         if (build.css !== false && cssEntry !== undefined && !existsSync(cssEntry)) {
             options.reporter.warn("build", `${id}: no ${build.css.entry}, CSS not watched`);
         }
         await ctx.watch();
+        await firstBuild;
         options.reporter.info("build", `${id}: Watching for changes (Ctrl+C to stop)`);
         await aborted(options.signal);
     } finally {

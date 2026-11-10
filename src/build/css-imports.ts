@@ -9,6 +9,17 @@ export interface InlineResult {
     readonly files: readonly string[];
 }
 
+/** An import problem (missing file, cycle). `files` are the ones read before it, so `--watch` can poll them. */
+export class CssImportError extends Error {
+    constructor(
+        message: string,
+        readonly files: readonly string[],
+    ) {
+        super(message);
+        this.name = "CssImportError";
+    }
+}
+
 /**
  * Inlines `@import "x.css"` directives, recursively, each path relative to the file that imports it.
  * Pure: file contents come from `read`, which returns undefined for a missing file.
@@ -22,7 +33,7 @@ export function inlineImports(entryFile: string, read: (file: string) => string 
     const inline = (file: string, chain: readonly string[]): string => {
         const css = read(file);
         if (css === undefined) {
-            throw new Error(`CSS file not found: ${file}.`);
+            throw new CssImportError(`CSS file not found: ${file}.`, [...files]);
         }
         files.push(file);
         const here = [...chain, file];
@@ -32,13 +43,15 @@ export function inlineImports(entryFile: string, read: (file: string) => string 
             }
             const target = path.resolve(path.dirname(file), importPath);
             if (here.includes(target)) {
-                throw new Error(
+                throw new CssImportError(
                     `CSS import cycle: ${[...here, target].join(" -> ")}. Remove one of the @import lines to break it.`,
+                    [...files],
                 );
             }
             if (read(target) === undefined) {
-                throw new Error(
+                throw new CssImportError(
                     `${file}: @import "${importPath}" not found (looked for ${target}). Fix the path or remove the import.`,
+                    [...files],
                 );
             }
             return inline(target, here);
