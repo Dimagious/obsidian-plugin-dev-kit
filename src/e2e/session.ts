@@ -231,7 +231,7 @@ async function open(
             sources: trace.sources,
             title: context.label,
         });
-        stack.add("stop the trace of the Obsidian window", () => stopTrace(app, plan, outcome.failed, options.timeouts.close));
+        stack.add("stop the trace of the Obsidian window", () => stopTrace(app, plan, outcome.failed, options.timeouts.trace));
     }
 
     // The vault id is the key Obsidian stores the trust flag under; the kit chose it when it wrote obsidian.json.
@@ -318,7 +318,7 @@ async function stopTrace(app: ElectronApplication, plan: ArtifactPlan, failed: b
     await within(
         app.context().tracing.stop(file === undefined ? undefined : { path: file }),
         ms,
-        `Stopping the Obsidian trace took longer than ${String(ms)} ms. Obsidian is probably hung; the app is closed next.`,
+        `Stopping the Obsidian trace took longer than ${String(ms)} ms (timeouts.trace). Obsidian is probably hung, or the test recorded a lot: raise timeouts.trace for a long traced test. The app is closed next.`,
     );
     if (file !== undefined) {
         plan.attach("trace", file, "application/zip");

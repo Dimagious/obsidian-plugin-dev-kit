@@ -581,10 +581,29 @@ describe("startSession: trace and video of the Obsidian window", () => {
         expect(leftovers()).toEqual([]);
     });
 
-    it("a tracing.stop that hangs is cut off at the close budget, then the app is closed", async () => {
+    it("a tracing.stop that hangs is cut off at the trace budget, naming timeouts.trace, then the app is closed", async () => {
         const r = run({ tracingStopHangs: true });
-        const session = await startWith(r, planFor("on", "off"), options({ timeouts: { close: 20 } }));
-        await expect(session.teardown({ failed: false })).rejects.toThrow(/Stopping the Obsidian trace took longer than 20 ms/);
+        const session = await startWith(r, planFor("on", "off"), options({ timeouts: { trace: 20 } }));
+        await expect(session.teardown({ failed: false })).rejects.toThrow(
+            /Stopping the Obsidian trace took longer than 20 ms \(timeouts\.trace\)/,
+        );
+        expect(r.fake.calls).toContain("app.close");
+        expect(leftovers()).toEqual([]);
+    });
+
+    it("a slow tracing.stop is bounded by timeouts.trace, not by timeouts.close", async () => {
+        const r = run({ tracingStopDelayMs: 150 });
+        const p = planFor("on", "off");
+        const session = await startWith(r, p, options({ timeouts: { close: 20, trace: 2_000 } }));
+        await session.teardown({ failed: false });
+        expect(p.attached.map((a) => a.name)).toEqual(["trace"]);
+        expect(leftovers()).toEqual([]);
+    });
+
+    it("a tracing.stop slower than timeouts.trace fails even when timeouts.close is generous", async () => {
+        const r = run({ tracingStopDelayMs: 500 });
+        const session = await startWith(r, planFor("on", "off"), options({ timeouts: { close: 5_000, trace: 30 } }));
+        await expect(session.teardown({ failed: false })).rejects.toThrow(/\(timeouts\.trace\)/);
         expect(r.fake.calls).toContain("app.close");
         expect(leftovers()).toEqual([]);
     });

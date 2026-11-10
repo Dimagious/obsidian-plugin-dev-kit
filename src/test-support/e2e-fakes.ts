@@ -32,6 +32,8 @@ export interface FakeObsidianBehavior {
     tracingStopFails?: boolean;
     /** `context().tracing.stop()` never resolves. */
     tracingStopHangs?: boolean;
+    /** `context().tracing.stop()` resolves after this many milliseconds. */
+    tracingStopDelayMs?: number;
     /** What `video.path()` returns; unset means the window has no video (`win.video()` is null). */
     videoPath?: string;
     /** `video.path()` never resolves. */
@@ -148,6 +150,9 @@ export function createFakeObsidian(behavior: FakeObsidianBehavior = {}): FakeObs
                     tracingStops.push(options);
                     if (behavior.tracingStopHangs === true) {
                         return new Promise<void>(() => undefined);
+                    }
+                    if (behavior.tracingStopDelayMs !== undefined) {
+                        return new Promise<void>((resolve) => setTimeout(resolve, behavior.tracingStopDelayMs));
                     }
                     return behavior.tracingStopFails === true ? Promise.reject(new Error("tracing stop failed")) : Promise.resolve();
                 },

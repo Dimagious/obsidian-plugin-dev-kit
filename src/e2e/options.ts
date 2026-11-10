@@ -28,6 +28,12 @@ export interface TimeoutOptions {
     readonly ready?: number;
     /** How long `app.close()` may take before the process tree is killed. Default 5000. */
     readonly close?: number;
+    /**
+     * How long stopping the Obsidian trace may take. Default 60000: the stop writes every snapshot and screenshot of
+     * the test to a zip, so it grows with the length of the test (a 60 s test with many DOM snapshots needed more
+     * than `close`).
+     */
+    readonly trace?: number;
     /** How long each kind of wait inside the `obsidian` helpers may take. */
     readonly helpers?: HelperTimeouts;
 }
@@ -77,7 +83,7 @@ export interface ObsidianTestOptions {
     readonly sweepAfterHours?: number | false;
 }
 
-export const DEFAULT_TIMEOUTS = { launch: 45_000, ready: 30_000, close: 5_000 } as const;
+export const DEFAULT_TIMEOUTS = { launch: 45_000, ready: 30_000, close: 5_000, trace: 60_000 } as const;
 export const DEFAULT_HELPER_TIMEOUTS = { settings: 15_000, metadataCache: 45_000, compose: 5_000, theme: 5_000, ui: 10_000 } as const;
 export const DEFAULT_SWEEP_HOURS = 2;
 
@@ -113,7 +119,7 @@ const OPTION_KEYS = [
     "sweepAfterHours",
 ];
 const PLUGIN_KEYS = ["dir", "staleBuildCheck"];
-const TIMEOUT_KEYS = ["launch", "ready", "close", "helpers"];
+const TIMEOUT_KEYS = ["launch", "ready", "close", "trace", "helpers"];
 const HELPER_TIMEOUT_KEYS = ["settings", "metadataCache", "compose", "theme", "ui"];
 const SOURCE = "createObsidianTest";
 
@@ -271,7 +277,7 @@ function resolveTimeouts(options: Record<string, unknown>): Required<Omit<Timeou
         return { ...DEFAULT_TIMEOUTS };
     }
     if (!isRecord(value)) {
-        throw new Error(`${SOURCE}: "timeouts" must be an object { launch, ready, close, helpers }.`);
+        throw new Error(`${SOURCE}: "timeouts" must be an object { launch, ready, close, trace, helpers }.`);
     }
     for (const key of Object.keys(value)) {
         if (!TIMEOUT_KEYS.includes(key)) {
@@ -282,6 +288,7 @@ function resolveTimeouts(options: Record<string, unknown>): Required<Omit<Timeou
         launch: own(value, "launch") === undefined ? DEFAULT_TIMEOUTS.launch : positiveInteger(value, "launch", "timeouts.launch"),
         ready: own(value, "ready") === undefined ? DEFAULT_TIMEOUTS.ready : positiveInteger(value, "ready", "timeouts.ready"),
         close: own(value, "close") === undefined ? DEFAULT_TIMEOUTS.close : positiveInteger(value, "close", "timeouts.close"),
+        trace: own(value, "trace") === undefined ? DEFAULT_TIMEOUTS.trace : positiveInteger(value, "trace", "timeouts.trace"),
     };
 }
 

@@ -35,8 +35,10 @@ function setup(extra: Partial<FixtureTestInfo> = {}): Setup {
 }
 
 describe("sessionFixtureTimeout", () => {
-    it("is launch + ready + 3 * close + the margin, so the kit's budgets always fire before Playwright's", () => {
-        expect(sessionFixtureTimeout({ launch: 45_000, ready: 30_000, close: 5_000 })).toBe(90_000 + FIXTURE_TIMEOUT_MARGIN_MS);
+    it("is launch + ready + trace + 2 * close + the margin, so the kit's budgets always fire before Playwright's", () => {
+        expect(sessionFixtureTimeout({ launch: 45_000, ready: 30_000, close: 5_000, trace: 60_000 })).toBe(
+            145_000 + FIXTURE_TIMEOUT_MARGIN_MS,
+        );
     });
 
     it("is longer than Playwright's default 60 s test timeout with the default budgets", () => {
@@ -44,15 +46,15 @@ describe("sessionFixtureTimeout", () => {
     });
 
     it("follows the configured timeouts", () => {
-        expect(sessionFixtureTimeout({ launch: 100, ready: 200, close: 300 })).toBe(1_200 + FIXTURE_TIMEOUT_MARGIN_MS);
+        expect(sessionFixtureTimeout({ launch: 100, ready: 200, close: 300, trace: 400 })).toBe(1_300 + FIXTURE_TIMEOUT_MARGIN_MS);
     });
 });
 
 describe("createFixtureFunctions: timeout", () => {
     it("exposes the timeout computed from the resolved options", () => {
         const s = setup();
-        const fns = createFixtureFunctions(resolved({ timeouts: { launch: 10_000, ready: 20_000, close: 1_000 } }), s);
-        expect(fns.sessionTimeoutMs).toBe(33_000 + FIXTURE_TIMEOUT_MARGIN_MS);
+        const fns = createFixtureFunctions(resolved({ timeouts: { launch: 10_000, ready: 20_000, close: 1_000, trace: 2_000 } }), s);
+        expect(fns.sessionTimeoutMs).toBe(34_000 + FIXTURE_TIMEOUT_MARGIN_MS);
     });
 });
 

@@ -161,7 +161,7 @@ Durations: the session fixture runs with its own timeout, so Playwright counts i
 
 Teardown runs when the test passes, fails, times out, and when any step above throws. In this order:
 
-1. The trace is stopped while the app is still open, and written only if the mode keeps it.
+1. The trace is stopped while the app is still open, bounded by `timeouts.trace`, and written only if the mode keeps it.
 2. Obsidian is closed, bounded by `timeouts.close` (Obsidian sometimes ignores a close request), and then the whole process tree is ended: the process group with SIGTERM and then SIGKILL on macOS and Linux, `taskkill /T /F` on Windows. A process that survives fails the test.
 3. The video is finished and kept or deleted per its mode.
 4. The user-data folder and the vault copy are removed, with retries, because Chromium helpers may still be writing for a moment after the main process exits. A folder that is still there after the retries fails the test, naming the path.
@@ -185,7 +185,8 @@ A crashed or killed run (a `kill -9`, a power cut) cannot clean up after itself.
 | `version` | string | unset | Fail the test when the running Obsidian is not this `x.y.z`. The env var `OBSIDIAN_VERSION` replaces it. Channels such as `latest` are refused: the kit checks the installed Obsidian, it does not download versions |
 | `timeouts.launch` | ms | 45000 | `_electron.launch` |
 | `timeouts.ready` | ms | 30000 | From the window opening until the workspace and every plugin are loaded. Also bounds the reload in `mobile()` and `desktop()` |
-| `timeouts.close` | ms | 5000 | How long `app.close()` may take before the process tree is killed. Also bounds stopping the trace and finishing the video |
+| `timeouts.close` | ms | 5000 | How long `app.close()` may take before the process tree is killed. Also bounds finishing the video |
+| `timeouts.trace` | ms | 60000 | How long stopping the Obsidian trace may take. The stop writes every snapshot and screenshot of the test to a zip, so it grows with the length of the test; raise it for a long traced test |
 | `timeouts.helpers.settings` | ms | 15000 | A plugin's settings tab to register (`openSettings(tab)`) |
 | `timeouts.helpers.metadataCache` | ms | 45000 | Every markdown file to have its metadata cached (`waitForMetadataCache()`) |
 | `timeouts.helpers.compose` | ms | 5000 | CodeMirror to leave a composition and show the composed text (`compose()`) |
@@ -318,6 +319,8 @@ await obsidian.runCommand("my-plugin:open-view");
 await obsidian.mobile({ width: 820, height: 1180 });   // a tablet: the window loads again
 await obsidian.desktop();
 ```
+
+Screenshots: `mobile({ scale })` sets the device scale of the page, but `win.screenshot()` still uses the pixel ratio of the display the Obsidian window opened on, so the same test gives a 1x picture on one machine and a 2x one on a Retina display. Take `win.screenshot({ scale: "css" })` for a picture that is always one pixel per CSS pixel (390 pixels wide on the default phone).
 
 A second `mobile()` with another width reloads the window, because the phone or tablet layout is decided from the viewport at load; the same width does not. Plugins with `isDesktopOnly: true` do not load on mobile, so the wait fails naming them.
 
