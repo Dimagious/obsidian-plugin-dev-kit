@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
     applyTheme,
+    areSidebarsCollapsed,
     closeSettingsModal,
     editorTextChanged,
     enabledPluginIds,
@@ -31,6 +32,7 @@ import {
     runCommandById,
     runWithApp,
     scrollThroughElement,
+    setSidebarsCollapsed,
     switchMobileEmulation,
 } from "./page-scripts.js";
 
@@ -363,6 +365,62 @@ describe("appearance and state scripts", () => {
         vi.stubGlobal("app", { vault: { setConfig: (k: string, v: unknown) => config.set(k, v), getConfig: (k: string) => config.get(k) } });
         hideNoteProperties();
         expect(readConfig("propertiesInDocument")).toBe("hidden");
+    });
+});
+
+describe("sidebar scripts", () => {
+    function stubSplits(options: { collapsed?: boolean } = {}): { left: Record<string, unknown>; right: Record<string, unknown>; calls: string[] } {
+        const calls: string[] = [];
+        const split = (name: string): Record<string, unknown> => {
+            const state: Record<string, unknown> = { collapsed: options.collapsed ?? false };
+            state.collapse = () => {
+                calls.push(`${name}:collapse`);
+                state.collapsed = true;
+            };
+            state.expand = () => {
+                calls.push(`${name}:expand`);
+                state.collapsed = false;
+            };
+            return state;
+        };
+        const left = split("left");
+        const right = split("right");
+        vi.stubGlobal("app", { workspace: { leftSplit: left, rightSplit: right } });
+        return { left, right, calls };
+    }
+
+    it("collapses and expands both panels", () => {
+        const { left, right, calls } = stubSplits();
+        expect(setSidebarsCollapsed(true)).toBe(true);
+        expect([left.collapsed, right.collapsed]).toEqual([true, true]);
+        expect(setSidebarsCollapsed(false)).toBe(true);
+        expect([left.collapsed, right.collapsed]).toEqual([false, false]);
+        expect(calls).toEqual(["left:collapse", "right:collapse", "left:expand", "right:expand"]);
+    });
+
+    it("reports a missing split without touching the other", () => {
+        const calls: string[] = [];
+        vi.stubGlobal("app", { workspace: { leftSplit: { collapse: () => calls.push("collapse"), expand: () => calls.push("expand") } } });
+        expect(setSidebarsCollapsed(true)).toBe(false);
+        expect(calls).toEqual([]);
+        vi.stubGlobal("app", {});
+        expect(setSidebarsCollapsed(true)).toBe(false);
+    });
+
+    it("sees the wanted state only when both panels are in it", () => {
+        const { left, right } = stubSplits({ collapsed: true });
+        expect(areSidebarsCollapsed(true)).toBe(true);
+        expect(areSidebarsCollapsed(false)).toBe(false);
+        right.collapsed = false;
+        expect(areSidebarsCollapsed(true)).toBe(false);
+        left.collapsed = false;
+        expect(areSidebarsCollapsed(false)).toBe(true);
+    });
+
+    it("is not satisfied while the panels are missing", () => {
+        vi.stubGlobal("app", { workspace: {} });
+        expect(areSidebarsCollapsed(true)).toBe(false);
+        expect(areSidebarsCollapsed(false)).toBe(false);
     });
 });
 

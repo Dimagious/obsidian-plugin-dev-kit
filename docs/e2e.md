@@ -48,7 +48,7 @@ Install the kit and the two things it runs on. Both are optional peer dependenci
 }
 ```
 
-Replace `vX.Y.Z` with the latest tag and pin it exactly. The kit accepts `@playwright/test` `^1.62.0` and `electron` `>=39.0.0` and is developed against 1.65.0 and 44.10.2. Electron 42 and newer do not download their binary at install time but on first use (about 100 MB); 39 to 41 download it on install. Run `npx electron --version` once after installing, and in CI cache the Electron download (the `ELECTRON_CACHE` folder) and run that command in a step before the tests. Without it the first test fails at once, saying exactly this, instead of timing out in the launch.
+Replace `vX.Y.Z` with the latest tag and pin it exactly. The kit accepts `@playwright/test` `^1.62.0` and `electron` `>=39.0.0` and is developed against 1.65.0 and 44.10.2. Electron 42 and newer do not download their binary at install time but on first use (about 100 MB); 39 to 41 download it on install. Run `npx electron --version` once after installing, and in CI cache the Electron download (the `ELECTRON_CACHE` folder) and run that command in a step before the tests. Without it the run fails once, before any test starts, saying exactly this, instead of every test timing out in the launch.
 
 The tests drive the Obsidian that is installed on the machine. On macOS the kit finds `/Applications/Obsidian.app`; elsewhere, set `OBSIDIAN_PATH` or the `obsidianPath` option.
 
@@ -94,7 +94,7 @@ test("the plugin's command writes into the note", async ({ obsidian }) => {
 
 Run `npm run e2e`. Each test starts a real Obsidian window, so expect it to open and close once per test. Build before you test: the stale-build guard refuses a `main.js` that is older than your sources.
 
-The preset from `defineObsidianConfig` sets `testDir: "e2e"`, one worker, no parallel files, a 60 s test timeout, a 10 s `expect` timeout, `forbidOnly` and one retry when the `CI` variable is set, the `list` reporter plus an HTML report (`list` only on CI), and `trace: "retain-on-failure"`, `video: "retain-on-failure"`, `screenshot: "only-on-failure"`. Pass overrides as the argument; they win, and `expect` and `use` are merged key by key:
+The preset from `defineObsidianConfig` sets `testDir: "e2e"`, one worker, no parallel files, a 60 s test timeout, a 10 s `expect` timeout, `forbidOnly` and one retry when the `CI` variable is set, the `list` reporter plus an HTML report (`list` only on CI), and `trace: "retain-on-failure"`, `video: "retain-on-failure"`, `screenshot: "only-on-failure"`, plus a `globalSetup` that checks the Electron binary once (your own `globalSetup`, a string or a list, runs after it). Pass overrides as the argument; they win, and `expect` and `use` are merged key by key:
 
 ```ts
 export default defineObsidianConfig({
@@ -142,7 +142,7 @@ On a CI runner, which is thrown away after the job, `git config --global url."ht
 ## What happens per test
 
 1. The kit checks everything that can be checked without creating anything: Obsidian's `app.asar` exists (`OBSIDIAN_PATH`, then `obsidianPath`, then the macOS default; the first one that is set must exist, with no silent fall-through), every plugin folder has `manifest.json` and a built `main.js`, plugin ids are unique, every `data` key is an installed plugin, and the `main.js` of each checked plugin is not older than the newest file under its `src/` (compared by modification time; a test file, whose name ends in `.test.<ext>` or `.spec.<ext>`, does not count, every other file does). Which plugins are checked is set by [`staleBuildCheck`](#stale-build-check). A plugin folder without `src/` is not checked for staleness.
-2. It checks that `electron` is installed and its binary is downloaded.
+2. It checks that `electron` is installed and its binary is downloaded. The check runs once per run, in a global setup that `defineObsidianConfig` registers before your own `globalSetup`: a missing binary is one error and no test starts. A check in a fixture ran again for every test, because Playwright replaces a worker after each failed test and the fixture runs in the new one (Dashy's 59 tests gave 59 identical failures). A config that does not use `defineObsidianConfig` has no global setup, so the session repeats the check for each test and a missing binary fails every test with the same message.
 3. It creates two temp folders, `opdk-e2e-vault-<title>-XXXXXX` (the test title lowercased, reduced to a-z, 0-9 and hyphens, and cut to 40 characters) and `opdk-e2e-userdata-XXXXXX`, and copies the seed vault into a `vault/` subfolder of the first with symlinks resolved, so nothing a test does reaches the repository or a linked build. A symlink loop or a dangling link fails the copy, naming the link.
 4. It writes `.obsidian/app.json` with `settingsPopoutWindow: false` and `alwaysUpdateLinks: true` unless the seed vault sets them (Settings in a popout is a second window the test does not drive, and renaming a file otherwise shows an "Update links?" modal that blocks forever).
 5. It copies each plugin's `main.js`, `manifest.json` and `styles.css` into `.obsidian/plugins/<id>/`, writes `community-plugins.json` as the ids the seed vault enables plus the installed ones, and writes `data.json` for every plugin in the `data` option (replacing a seeded one).
@@ -151,7 +151,7 @@ On a CI runner, which is thrown away after the job, `git config --global url."ht
 8. It starts the trace when `use.trace` asks for one, so the startup is in it.
 9. It sets the plugin trust flag (`enable-plugin-<vaultId>` in `localStorage`) with an init script that runs before the vault loads. The "Trust author and enable plugins" dialog never opens, and the kit never clicks it: both of its buttons have side effects. If it opens anyway, the readiness wait fails and says so. Native `alert`, `confirm` and `prompt` dialogs are dismissed.
 10. It resizes the window when `window` is given.
-11. It waits, polling every 50 ms with no sleeps, until `app.workspace.layoutReady` is true and, for every installed plugin, `app.plugins.plugins[id]` exists and `app.plugins.loadingPluginId` is no longer that id. Obsidian registers a plugin before it awaits its `onload()`, so a command or settings tab that `onload()` adds after an `await` exists when the fixtures resolve. The wait is bounded by `timeouts.ready`; a timeout names the state: `plugin still loading: <id>`, `plugin not loaded: <id>`, the trust dialog being open, or that the workspace was not ready.
+11. It waits, polling every 50 ms with no sleeps, until `app.workspace.layoutReady` is true and, for every installed plugin, `app.plugins.plugins[id]` exists and `app.plugins.loadingPluginId` is no longer that id. Obsidian registers a plugin before it awaits its `onload()`, so a command or settings tab that `onload()` adds after an `await` exists when the fixtures resolve. The wait is bounded by `timeouts.ready`; a timeout names the state: `plugin still loading: <id>`, `plugin not loaded: <id>`, the trust dialog being open, or that the workspace was not ready. It waits for every plugin's `onload()` to finish, not for what the plugin draws afterwards: a view, a code block or a reading-view render that happens after `onload()` may not exist yet when your test starts.
 12. It reads the running Obsidian version and puts it in the test report as the annotations `obsidian-version` and `launch-mode` (`electron`). When a version is pinned (`version` or `OBSIDIAN_VERSION`), the test also gets the annotation `obsidian-expected-version`, and it fails if the running version differs or cannot be read. Without a pinned version, an unreadable version is only recorded as `unknown`. The annotation `obsidian-launch-ms` holds the time from the launch call until the workspace and every plugin are ready.
 13. Your test runs.
 
@@ -255,6 +255,8 @@ The `obsidian` fixture. Each helper that waits polls Obsidian's state; the only 
 | `openSettings(tab?)` | Opens Settings in the main window and returns the content of the open tab. `tab` is a plugin id or a core tab id. A tab a plugin registers late is waited for; a missing one fails listing the registered ids. `const content = await obsidian.openSettings("my-plugin")` |
 | `closeSettings()` | Closes the modal and waits until it is gone. `await obsidian.closeSettings()` |
 
+`openSettings` returns the Locator of the settings content (`.modal.mod-settings .vertical-tab-content`), not of the page. Use it for lookups inside the tab (`content.getByText("Refresh")`). A filter on the whole page, such as `win.locator(".setting-item", { has: win.locator("input") })`, and a screenshot of the container (`win.locator(".modal.mod-settings").screenshot()`) go through `win`. Settings opens in the main window, so a settings screenshot has the size of the container in that window, not of a separate popout window as in a harness that opened Settings in a second window.
+
 Settings opens in the main window because the kit sets `settingsPopoutWindow: false` (step 4). That is a default: a value in the seed vault's `.obsidian/app.json` wins. When Settings then opens in a second window, `openSettings` fails after `timeouts.helpers.ui` with a message that names the seed's `app.json` and the key.
 
 ### Commands
@@ -272,13 +274,23 @@ Settings opens in the main window because the kit sets `settingsPopoutWindow: fa
 |---|---|
 | `openFile(path, { mode })` | Opens a note by vault path in the active tab. `mode` is `source`, `live` or `preview`, and is also forced on a note that is already open in the tab. `await obsidian.openFile("Notes/Today.md", { mode: "live" })` |
 | `readingView(path?)` | Shows a note in reading view (the active note without `path`) |
+| `collapseSidebars()` | Collapses the left and right side panels and waits until both report collapsed (they animate), so the note pane gets the whole window: a 390 px viewport is then 390 px of note. It is a helper of its own and not an option of `readingView()`, because it is about the window layout and serves source and live mode and screenshots as well. Fails, naming the helper, when this Obsidian has no `workspace.leftSplit` and `rightSplit` to drive. `await obsidian.collapseSidebars()` |
+| `expandSidebars()` | The inverse: expands both panels and waits until they are expanded |
 | `editor().type(text)` | Types key by key, so per-keystroke listeners (a snippet expander) fire. It clicks the editor to focus it only when it is not focused: a second click would move the cursor |
 | `editor().text()` | The whole document, read through `getValue()`, because CodeMirror keeps only the visible lines in the DOM |
 | `editor().clear()` | Selects all, deletes, and waits until the document is empty |
 | `editor().setCursor(line, ch)` | Both from 0; a position past the end is clamped |
 | `editor().selection()` | `{ text, anchor, head }`, positions as `{ line, ch }` |
 
-`openFile` does not collapse the side splits; do that with a command before it if your plugin needs the room. The editor is found without the `mod-active` class (Obsidian drops it from the leaf while a modal is open), so `type()` right after a closed modal works. `editor().text()` and `clear()` throw `There is no active editor` when no note is open in source or live mode.
+`openFile` does not collapse the side splits; call `collapseSidebars()` before it if your plugin needs the room. The editor is found without the `mod-active` class (Obsidian drops it from the leaf while a modal is open), so `type()` right after a closed modal works. `editor().text()` and `clear()` throw `There is no active editor` when no note is open in source or live mode.
+
+`openFile`'s `mode` is the name of what you see. Obsidian's view state stores source and live preview as the same `mode: "source"`, told apart by a `source` flag, so a harness that set the state itself maps like this:
+
+| Obsidian view state | `mode` |
+|---|---|
+| `{ mode: "source", source: false }` | `"live"` |
+| `{ mode: "source", source: true }` | `"source"` |
+| `{ mode: "preview" }` | `"preview"` |
 
 ```ts
 await obsidian.openFile("Welcome.md", { mode: "source" });
@@ -321,6 +333,16 @@ await obsidian.desktop();
 ```
 
 Screenshots: `mobile({ scale })` sets the device scale of the page, but `win.screenshot()` still uses the pixel ratio of the display the Obsidian window opened on, so the same test gives a 1x picture on one machine and a 2x one on a Retina display. Take `win.screenshot({ scale: "css" })` for a picture that is always one pixel per CSS pixel (390 pixels wide on the default phone).
+
+A harness that made stills larger with `webFrame.setZoomFactor` gets different pictures here. The zoom changed the CSS size of the page, so a layout was drawn at a smaller width and every pixel measure scaled with it. The kit's stills are the page at its real CSS size, and their pixel size follows the display: on a Retina display `win.screenshot()` is 2x. For a picture of a fixed CSS size, set the viewport with `mobile({ width, height, scale })` and cut it with a `clip` in CSS pixels; `scale: "css"` gives 1 pixel per CSS pixel on any display:
+
+```ts
+await obsidian.mobile({ width: 450, height: 844, scale: 2 });
+await win.screenshot({ path: "listing.png", clip: { x: 0, y: 0, width: 450, height: 800 } });                  // 900 x 1600 on a 2x display
+await win.screenshot({ path: "listing-1x.png", clip: { x: 0, y: 0, width: 450, height: 800 }, scale: "css" });  // 450 x 800 anywhere
+```
+
+Verified on a 2x display with Obsidian 1.14.5: the first call gave 900 x 1600 and the second 450 x 800. `scale` in `mobile()` was 2 there; `mobile({ scale: 3 })` gave the same 900 x 1600, so the size of `win.screenshot()` is the display's ratio and not the `scale` option. If you need N-times pixels on a display that is not N times, the picture has to be scaled after it is taken.
 
 A second `mobile()` with another width reloads the window, because the phone or tablet layout is decided from the viewport at load; the same width does not. Plugins with `isDesktopOnly: true` do not load on mobile, so the wait fails naming them.
 
@@ -407,12 +429,12 @@ What changes:
 
 - `onlyWhen("X")` runs the file only when `X` is exactly `1`. An old `test.skip(!process.env.X)` gate accepted any non-empty value, so `X=true` or `X=yes` now skips the file; change the command that sets it.
 - The seed vault is copied as it is, then the plugins are installed over it. A plugin folder in the seed (`<seed>/.obsidian/plugins/<id>`, committed or generated by an old setup script) is overwritten by the kit's install of `main.js`, `manifest.json` and `styles.css` (other files there, such as a seeded `data.json`, stay unless the `data` option replaces them). Delete the committed copy, and drop the `.gitignore` line that hid a generated one. The seed's `community-plugins.json` is optional: the kit writes the ids it lists plus the installed plugins.
-- No fixed sleeps. Snipsy's 800 ms and 500 ms waits after enabling plugins and its 5 s wait for the trust dialog, and the fixed 1500 ms of Dashy and Garmy, are gone: the fixture waits for plugin state. A spec that only passed because of those sleeps now fails with a message naming the plugin that is still loading.
+- No fixed sleeps. Snipsy's 800 ms and 500 ms waits after enabling plugins and its 5 s wait for the trust dialog, and the fixed 1500 ms of Dashy and Garmy, are gone: the fixture waits for plugin state. The fixture waits for every plugin's `onload()` to finish, not for the plugin's first render. A spec that slept to let a view, a block or a reading-view render appear now needs a wait of its own for what it asserts: `expect(locator).toBeVisible()` (a locator waits by itself), `expect.poll(...)` for a value read from the page, or `waitForFunction`. A spec like that fails on its own assertion or locator timeout, not with `plugin still loading`, which is reported only when an `onload()` is still running at `timeouts.ready`.
 - No Escape, no `setEnable`. The trust flag is set before the vault loads; if the dialog opens anyway the test fails and says so.
 - Cleanup retries and then fails with the folder path. A leftover that an old harness swallowed is now a failing test.
 - Snipsy's fallback that read the Obsidian version from the `obsidian.asar` on disk, and its `require("obsidian")` fallback (it never worked), are not carried over. The version is read with `ipcRenderer.sendSync("version")`, and an unreadable version fails the test when a version is pinned.
 - `editor().text()` and `clear()` throw `There is no active editor` where Snipsy's `ui.editorText` returned an empty string and `ui.clearEditor` clicked a missing editor.
-- `openFile` does not collapse the side splits, which Garmy's `openInReading` did. Do it with a command first.
+- `openFile` does not collapse the side splits, which Garmy's `openInReading` did. Call `collapseSidebars()` first (Dashy's `collapseSidebars(obsidian)` helper is the same thing).
 - `compose()` fails when CodeMirror is still composing after a commit and when the document did not change; it always commits, so Snipsy's `ime.spec.ts` lines 70 to 83 (an uncommitted preedit) keep a raw CDP session.
 - `DASHY_VAULT` becomes `OPDK_E2E_VAULT`. Dashy's `DASHY_VIDEO` option was read nowhere else; video now follows `use.video`.
 - Snipsy's `E2E_LAUNCH=cdp` mode has no replacement yet.
@@ -428,6 +450,7 @@ Where each shared helper went:
 | Dashy and Garmy `changeTheme`, the index wait, notice removal, the scroll that draws lazy blocks | `setTheme()`, `waitForMetadataCache()`, `clearNotices()`, `hideProperties()`, `scrollThrough()` |
 | The `emulateMobile` block copied into three specs | `mobile()`, `desktop()` |
 | Garmy's `fakeGarmin` | `replace()` |
+| Dashy `collapseSidebars`, the split collapse in Garmy's `openInReading` | `collapseSidebars()`, `expandSidebars()` |
 
 The per-plugin differences are also listed in the kit's `CHANGELOG.md`.
 

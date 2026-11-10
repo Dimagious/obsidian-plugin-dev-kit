@@ -119,6 +119,14 @@ export interface ObsidianHelpers {
     scrollThrough(selector?: string): Promise<void>;
     /** Shows a note in reading view (the active note when `path` is left out). */
     readingView(path?: string): Promise<void>;
+    /**
+     * Collapses the left and right side panels and waits until both are collapsed, so the note pane gets the whole
+     * window (a 390 px viewport is then 390 px of note, not of sidebars). It is a helper of its own, not an option of
+     * `readingView()`, because it is about the window layout and also serves source and live mode and screenshots.
+     */
+    collapseSidebars(): Promise<void>;
+    /** The inverse of `collapseSidebars()`: expands both side panels and waits until they are expanded. */
+    expandSidebars(): Promise<void>;
 
     /**
      * Switches Obsidian to its mobile interface in a phone-sized viewport (390 x 844 CSS pixels at scale 2 unless

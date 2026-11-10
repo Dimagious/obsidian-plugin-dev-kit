@@ -10,7 +10,11 @@ import { expect, FIXTURE_ID, SECOND_ID, test } from "./fixtures.js";
 /** The slice of Obsidian's `app` these specs read. */
 interface LiveApp {
     plugins: { plugins: Record<string, { ran?: boolean; lastResult?: string | null; transport?: (request: string) => string } | undefined> };
-    workspace: { getLeaf(newLeaf: boolean): { view: { getState(): { mode: string; source?: boolean } } } };
+    workspace: {
+        getLeaf(newLeaf: boolean): { view: { getState(): { mode: string; source?: boolean } } };
+        leftSplit: { collapsed: boolean };
+        rightSplit: { collapsed: boolean };
+    };
     vault: { getConfig(key: string): unknown; setConfig(key: string, value: unknown): void; getMarkdownFiles(): unknown[] };
     metadataCache: { getFileCache(file: unknown): unknown };
     setting: { activeTab?: { id: string } };
@@ -252,6 +256,27 @@ test.describe("appearance and state", () => {
         await expect(win.locator(".workspace-leaf.mod-active .markdown-reading-view")).toBeVisible();
     });
 
+    test("collapseSidebars folds both side panels and widens the note pane, expandSidebars brings them back", async ({ obsidian, win }) => {
+        const sidebars = (): Promise<boolean[]> => inPage(win, (page) => [page.app.workspace.leftSplit.collapsed, page.app.workspace.rightSplit.collapsed]);
+        const paneWidth = async (): Promise<number> => (await win.locator(".workspace-leaf.mod-active").first().boundingBox())?.width ?? 0;
+        // Start from a known state: both panels open, so "collapsed" below is the helper's doing.
+        await obsidian.expandSidebars();
+        expect(await sidebars()).toEqual([false, false]);
+        const narrow = await paneWidth();
+
+        await obsidian.collapseSidebars();
+        expect(await sidebars()).toEqual([true, true]);
+        // The helper waits for the animation, so the pane is already at its final width.
+        expect(await paneWidth()).toBeGreaterThan(narrow);
+        // Collapsing twice is harmless.
+        await obsidian.collapseSidebars();
+        expect(await sidebars()).toEqual([true, true]);
+
+        await obsidian.expandSidebars();
+        expect(await sidebars()).toEqual([false, false]);
+        expect(await paneWidth()).toBe(narrow);
+    });
+
     test("scrollThrough draws a block that only draws when it comes into view", async ({ obsidian, win }) => {
         await obsidian.readingView("Long.md");
         await expect(win.locator(".opdk-lazy-rendered")).toHaveCount(0);
@@ -290,6 +315,16 @@ test.describe("mobile", () => {
     test("mobile() takes a size", async ({ obsidian, win }) => {
         await obsidian.mobile({ width: 360, height: 640, scale: 3 });
         expect(await inPage(win, (page) => [page.innerWidth, page.devicePixelRatio])).toEqual([360, 3]);
+    });
+
+    test("a CSS-pixel clip gives 2x pixels on a 2x display, scale css gives 1x", async ({ obsidian, win }) => {
+        await obsidian.mobile({ width: 450, height: 844, scale: 2 });
+        const size = (png: Buffer): number[] => [png.readUInt32BE(16), png.readUInt32BE(20)];
+        const clip = { x: 0, y: 0, width: 450, height: 800 };
+        // The docs' recipe for listing pictures. The pixel size follows the display (this machine is 2x), so 900 x 1600
+        // holds on a 2x display like the existing 780 x 1688 check above; `scale: "css"` holds anywhere.
+        expect(size(await win.screenshot({ clip }))).toEqual([900, 1600]);
+        expect(size(await win.screenshot({ clip, scale: "css" }))).toEqual([450, 800]);
     });
 });
 

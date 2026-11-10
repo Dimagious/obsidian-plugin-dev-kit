@@ -11,7 +11,7 @@ Safety: `VAULT_PLUGIN` (the dev vault of `opdk build --vault`) is removed from O
 
 ## Set up a plugin
 
-1. devDependencies: `@playwright/test` (`^1.62.0`), `electron` (`>=39.0.0`) and the kit pinned to an exact tag. Electron downloads its binary on first use (about 100 MB): run `npx electron --version` once; in CI cache the download (`ELECTRON_CACHE`) and run that command before the tests.
+1. devDependencies: `@playwright/test` (`^1.62.0`), `electron` (`>=39.0.0`) and the kit pinned to an exact tag. Electron downloads its binary on first use (about 100 MB): run `npx electron --version` once; in CI cache the download (`ELECTRON_CACHE`) and run that command before the tests. Without it the run fails once, before any test, from a global setup that `defineObsidianConfig` registers (a plain Playwright config repeats the failure in every test).
 2. A seed vault (any path, set in `seedVault`), for example `e2e/vault/` with `.obsidian/core-plugins.json` containing `["file-explorer", "command-palette"]` (the palette helpers need it) and a note.
 3. `e2e/fixtures.ts`:
 
@@ -48,7 +48,7 @@ test("the command writes into the note", async ({ obsidian }) => {
 
 ## Fixtures
 
-`win` (Playwright `Page` of the Obsidian window), `app` (`ElectronApplication`, `app.evaluate` runs in the main process), `vault` (`path`, `resolve`, `exists`, `read`, `write` on the per-test copy), `obsidian` (the helpers). Each test gets a fresh Obsidian, vault copy and user-data folder. It starts when the workspace is laid out and every plugin's `onload()` has finished, so a command or tab added after an `await` in `onload()` exists.
+`win` (Playwright `Page` of the Obsidian window), `app` (`ElectronApplication`, `app.evaluate` runs in the main process), `vault` (`path`, `resolve`, `exists`, `read`, `write` on the per-test copy), `obsidian` (the helpers). Each test gets a fresh Obsidian, vault copy and user-data folder. It starts when the workspace is laid out and every plugin's `onload()` has finished, so a command or tab added after an `await` in `onload()` exists. It does not wait for what the plugin renders after `onload()`: wait for that in the spec (`expect(locator).toBeVisible()`, `expect.poll`, `waitForFunction`), never with a sleep.
 
 ## Options of `createObsidianTest` (unknown keys fail naming them)
 
@@ -56,12 +56,12 @@ test("the command writes into the note", async ({ obsidian }) => {
 
 ## Helpers (`obsidian`)
 
-- Settings: `openSettings(tab?)` (plugin id or core tab id; waits for a late-registered tab; returns the content locator), `closeSettings()`. Settings opens in the main window because the kit sets `settingsPopoutWindow: false` unless the seed vault's `app.json` says otherwise.
+- Settings: `openSettings(tab?)` (plugin id or core tab id; waits for a late-registered tab; returns the settings content locator: use it for lookups inside the tab, and use `win.locator(...)` for `has:` filters across the page and for screenshots of the container; Settings opens in the main window, so those screenshots have another size than from a popout), `closeSettings()`. Settings opens in the main window because the kit sets `settingsPopoutWindow: false` unless the seed vault's `app.json` says otherwise.
 - Commands: `runCommand(id)` (fails with close matches for an unknown id, and when `checkCallback` declined), `openCommandPalette()`, `runCommandFromPalette(name)`, `press("Mod+P")`.
-- Files and editor: `openFile(path, { mode: "source" | "live" | "preview" })`, `readingView(path?)`, `editor().type / text / clear / setCursor / selection`. `text()` and `clear()` throw `There is no active editor` without a note open in source or live mode. `text()` reads `getValue()`, not the DOM.
+- Files and editor: `openFile(path, { mode: "source" | "live" | "preview" })` (Obsidian view state `{ mode: "source", source: false }` is `"live"`, `{ mode: "source", source: true }` is `"source"`, `{ mode: "preview" }` is `"preview"`), `readingView(path?)`, `collapseSidebars()` / `expandSidebars()` (fold or unfold both side panels and wait for it; call before `openFile` when the note needs the whole window), `editor().type / text / clear / setCursor / selection`. `text()` and `clear()` throw `There is no active editor` without a note open in source or live mode. `text()` reads `getValue()`, not the DOM.
 - IME: `editor().compose(text, { chunking: "word" | "character" })`. It always commits; leaving a composition uncommitted needs a raw CDP session (`win.context().newCDPSession(win)`).
 - Appearance and state: `setTheme({ mode, theme? })`, `waitForMetadataCache()`, `clearNotices()`, `hideProperties()`, `scrollThrough(selector?)` (stays at the bottom; do not expect it to scroll back).
-- Mobile: `mobile({ width, height, scale })` (default 390 x 844 at 2), `desktop()`. It reloads the window; another width reloads again. A plugin with `isDesktopOnly: true` does not load on mobile and the wait fails naming it. Screenshot size follows the display (1x or 2x), and `scale` does not change it: use `win.screenshot({ scale: "css" })` for pictures of a fixed size.
+- Mobile: `mobile({ width, height, scale })` (default 390 x 844 at 2), `desktop()`. It reloads the window; another width reloads again. A plugin with `isDesktopOnly: true` does not load on mobile and the wait fails naming it. Screenshot size follows the display (1x or 2x), and `scale` does not change it: use `win.screenshot({ scale: "css" })` for pictures of a fixed size. Instead of `webFrame.setZoomFactor`, set the viewport with `mobile({ width, height, scale })` and cut with a `clip` in CSS pixels (450 x 800 at scale 2 is 900 x 1600 on a 2x display).
 - Page code: `evaluate(fn, arg?)` runs `fn(app, arg)` in the page with `app` = `window.app`; type it with a type-only `import type { App } from "obsidian"` (the kit does not depend on `obsidian`). `fn` is serialised as source text: no closures, no imports, pass values in `arg`; `arg` and the result must be serialisable (return fields, not a `TFile`).
 
 ```ts
@@ -104,7 +104,7 @@ Teardown runs on pass, failure, timeout and setup errors: trace stopped (bounded
 - `npm ci` fails with `Permission denied (publickey)` in CI: the lockfile records the kit as `git+ssh://`. Rewrite the URL for one command with `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf GIT_CONFIG_VALUE_0=ssh://git@github.com/ npm ci`; on a CI runner `git config --global url."https://github.com/".insteadOf ssh://git@github.com/` before `npm ci` does the same. Or write the dependency as `git+https://...`. (A public repository installs without it.)
 - `Electron is installed ... but its binary is not downloaded yet`: `npx electron --version` once.
 - `Stopping the Obsidian trace took longer than N ms (timeouts.trace)`: a long traced test; raise `timeouts.trace`.
-- `plugin still loading: <id>`: its `onload()` is slow or stuck. `plugin not loaded: <id>`: it never started; check `manifest.json` and `main.js`. Raise `timeouts.ready` only for a slow `onload()`.
+- `plugin still loading: <id>`: its `onload()` is slow or stuck (a view that is merely not drawn yet is not this: the spec has to wait for it). `plugin not loaded: <id>`: it never started; check `manifest.json` and `main.js`. Raise `timeouts.ready` only for a slow `onload()`.
 - `The "Trust author and enable plugins" dialog is open`: the kit's trust flag did not apply on this Obsidian version. Report it with the version. Never click the dialog in a spec.
 - `Cannot verify OBSIDIAN_VERSION=...`: the renderer did not answer the version request, so the pinned version could not be checked; the installed version may be right.
 - `Obsidian version mismatch: expected X, but Y is running`: the installed Obsidian is not the one pinned.
@@ -119,7 +119,7 @@ Teardown runs on pass, failure, timeout and setup errors: trace stopped (bounded
 4. Swap the plugin's helpers for `obsidian.*`: settings opener, palette and command runner, typing and reading the editor, IME loop, theme and metadata waits, notice removal, lazy-block scroll, the `emulateMobile` block, fake clients (`replace`).
 5. Replace `--grep-invert` and env `test.skip` with `onlyWhen`. `DASHY_VAULT` becomes `OPDK_E2E_VAULT`.
 6. Grep the plugin for callers of the old setup script (`e2e-setup.sh`, Garmy's `scripts/capture.mjs`, `package.json` scripts, CI) and replace them with `opdk build`. Delete plugin folders committed or generated in the seed vault (`<seed>/.obsidian/plugins/<id>`; the kit's install overwrites them) and their `.gitignore` line; the seed's `community-plugins.json` is optional.
-7. Expect these differences: `onlyWhen` needs the variable to be exactly `1` (old `test.skip(!process.env.X)` gates took any non-empty value); no sleeps (a spec that relied on them may now fail naming a loading plugin); no Escape or `setEnable` on the trust dialog; cleanup failures are now failing tests; `editor().text()` throws without an editor (Snipsy returned `""`); `openFile` does not collapse side splits; Snipsy's asar-version fallback is dropped; `compose()` always commits.
+7. Expect these differences: `onlyWhen` needs the variable to be exactly `1` (old `test.skip(!process.env.X)` gates took any non-empty value); no sleeps (the fixture waits for `onload()`, not for the first render: a spec that relied on a sleep for a render needs its own wait for what it asserts); no Escape or `setEnable` on the trust dialog; cleanup failures are now failing tests; `editor().text()` throws without an editor (Snipsy returned `""`); `openFile` does not collapse side splits (use `collapseSidebars()`); Snipsy's asar-version fallback is dropped; `compose()` always commits.
 8. Run the specs, fix each difference, list the changes in the plugin's CHANGELOG.
 
 ## Limits today
