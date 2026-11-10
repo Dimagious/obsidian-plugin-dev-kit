@@ -9,11 +9,15 @@ export interface InlineResult {
     readonly files: readonly string[];
 }
 
-/** An import problem (missing file, cycle). `files` are the ones read before it, so `--watch` can poll them. */
+/**
+ * An import problem (missing file, cycle). `files` are the ones read before it, so `--watch` can poll them.
+ * `missing` is the absolute path that was not found, so `--watch` can poll it too: creating it must trigger a sync.
+ */
 export class CssImportError extends Error {
     constructor(
         message: string,
         readonly files: readonly string[],
+        readonly missing?: string,
     ) {
         super(message);
         this.name = "CssImportError";
@@ -33,7 +37,7 @@ export function inlineImports(entryFile: string, read: (file: string) => string 
     const inline = (file: string, chain: readonly string[]): string => {
         const css = read(file);
         if (css === undefined) {
-            throw new CssImportError(`CSS file not found: ${file}.`, [...files]);
+            throw new CssImportError(`CSS file not found: ${file}.`, [...files], file);
         }
         files.push(file);
         const here = [...chain, file];
@@ -52,6 +56,7 @@ export function inlineImports(entryFile: string, read: (file: string) => string 
                 throw new CssImportError(
                     `${file}: @import "${importPath}" not found (looked for ${target}). Fix the path or remove the import.`,
                     [...files],
+                    target,
                 );
             }
             return inline(target, here);

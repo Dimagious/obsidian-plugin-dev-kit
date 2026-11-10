@@ -71,7 +71,7 @@ flowchart TD
     F -- "Ctrl+C" --> G["stop watchers, exit 0"]
 ```
 
-A compile error in watch mode is printed and the watch keeps going; fix the file and the next build recovers. The same goes for CSS: when a step fails on a broken `@import`, the files it had read stay polled, so fixing any of them triggers the next sync. If the CSS entry does not exist when the watch starts, it prints `no <entry>, CSS not watched` once and polls only `manifest.json`; esbuild still watches the sources.
+A compile error in watch mode is printed and the watch keeps going; fix the file and the next build recovers. The same goes for CSS: when a step fails on a broken `@import`, the files it had read stay polled, so fixing any of them triggers the next sync, and so does creating a missing `@import` target. If the CSS entry does not exist when the watch starts, it prints `no <entry>, CSS not watched` once and polls only `manifest.json`; esbuild still watches the sources.
 
 ### Quick start
 

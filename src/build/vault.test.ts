@@ -589,6 +589,66 @@ describe("opdk build --vault --watch", () => {
         await run.stop();
     });
 
+    it("polls a missing import target at start, so creating it syncs", { timeout: 30_000 }, async () => {
+        plugin.write("src/styles/main.css", '@import "./a.css";\n@import "./new.css";\n');
+        const run = start();
+        await run.settled();
+        expect(run.out.join("")).toContain("CSS build or copy failed");
+        expect(inVault("styles.css")).toBe("");
+
+        writeFileSync(path.join(plugin.dir, "src/styles/new.css"), ".new { color: created; }\n");
+        await run.until(() => inVault("styles.css").includes("created"), POLL_BUDGET_MS);
+        expect(inVault("styles.css")).toContain(".a {");
+
+        await run.stop();
+    });
+
+    it("stops polling a missing import target once a later CSS step succeeds without it", { timeout: 30_000 }, async () => {
+        plugin.write("src/styles/main.css", '@import "./a.css";\n@import "./new.css";\n');
+        const run = start();
+        await run.settled();
+        expect(run.out.join("").split("CSS build or copy failed").length - 1).toBe(1);
+        const polling = statWatchers();
+        const copies = (): number => run.out.join("").split("assets copied").length - 1;
+        const before = copies();
+
+        writeFileSync(path.join(plugin.dir, "src/styles/main.css"), '@import "./a.css";\n');
+        await run.until(() => copies() > before, POLL_BUDGET_MS);
+
+        // Taken mid-run: the finally block unwatches everything, so afterEach could not see the difference.
+        expect(statWatchers()).toBe(polling - 1);
+
+        await run.stop();
+    });
+
+    it("prints a missing import error once at start: the zeroed first poll of a missing file is not a change", { timeout: 30_000 }, async () => {
+        plugin.write("src/styles/main.css", '@import "./a.css";\n@import "./new.css";\n');
+        const run = start();
+        await run.settled();
+        // watchFile reports a missing path at once; give that fire (and a few polls) time to show up.
+        await new Promise((resolve) => setTimeout(resolve, POLL_MS * 3));
+        expect(run.out.join("").split("CSS build or copy failed").length - 1).toBe(1);
+
+        await run.stop();
+    });
+
+    it("polls an import target that is added to a built file before the target exists", { timeout: 30_000 }, async () => {
+        const run = start();
+        await run.settled();
+        expect(inVault("styles.css")).toContain(".a {");
+        const failures = (): number => run.out.join("").split("CSS build or copy failed").length - 1;
+
+        writeFileSync(path.join(plugin.dir, "src/styles/main.css"), '@import "./a.css";\n@import "./new.css";\n');
+        await run.until(() => failures() === 1, POLL_BUDGET_MS);
+        await new Promise((resolve) => setTimeout(resolve, POLL_MS * 3));
+        expect(failures()).toBe(1);
+
+        writeFileSync(path.join(plugin.dir, "src/styles/new.css"), ".new { color: later; }\n");
+        await run.until(() => inVault("styles.css").includes("later"), POLL_BUDGET_MS);
+
+        await run.stop();
+    });
+
     it("watches sources when the plugin has no CSS folder (Garmy layout)", { timeout: 30_000 }, async () => {
         rmSync(path.join(plugin.dir, "src/styles"), { recursive: true });
         plugin.write("styles.css", ".root{}");

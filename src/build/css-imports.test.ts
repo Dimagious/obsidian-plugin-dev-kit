@@ -100,6 +100,27 @@ describe("inlineImports", () => {
         expect(failure({}).files).toEqual([]);
     });
 
+    it("names the absolute path that was not found on the error, for --watch to poll", () => {
+        const failure = (files: Record<string, string>): CssImportError => {
+            try {
+                inlineImports(at("main.css"), reader(files));
+            } catch (error) {
+                if (error instanceof CssImportError) {
+                    return error;
+                }
+                throw error;
+            }
+            throw new Error("expected inlineImports to fail");
+        };
+        expect(failure({ "main.css": '@import "sub/gone.css";' }).missing).toBe(at("sub/gone.css"));
+        expect(failure({ "main.css": '@import "a.css";', "a.css": '@import "../up.css";' }).missing).toBe(
+            path.resolve(root, "../up.css"),
+        );
+        expect(failure({}).missing).toBe(at("main.css"));
+        // A cycle has no missing file.
+        expect(failure({ "main.css": '@import "main.css";' }).missing).toBeUndefined();
+    });
+
     it("leaves URL imports for the browser", () => {
         const css = '@import "https://fonts.example/x.css";\n.a{}';
         expect(inlineImports(at("main.css"), reader({ "main.css": css })).css).toBe(css);
