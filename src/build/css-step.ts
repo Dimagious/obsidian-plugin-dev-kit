@@ -8,14 +8,16 @@ import type { ResolvedCss } from "./options.js";
  * Runs the CSS bundler and logs what happened. Errors (missing import, cycle) propagate.
  * Without a CSS entry a hand-written stylesheet is a normal setup (`·`); with no stylesheet at all the plugin
  * ships none, which is worth a `!`. `announceNoEntry: false` stays quiet about both, so `--watch` says it once.
+ * `onRead` is passed to `buildCss`.
  */
 export function runCssStep(
     cwd: string,
     css: ResolvedCss,
     out: Pick<CommandContext, "reporter">,
     announceNoEntry = true,
+    onRead?: (file: string, stamp: string | undefined) => void,
 ): CssResult {
-    const result = buildCss(cwd, css);
+    const result = buildCss(cwd, css, onRead);
     if (result.status === "no-entry") {
         if (announceNoEntry) {
             if (existsSync(path.resolve(cwd, css.outfile))) {
