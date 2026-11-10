@@ -150,10 +150,12 @@ describe("sweepLeftovers", () => {
         }
     });
 
-    it("keeps a folder exactly at the cutoff", () => {
+    it("keeps a folder just inside the cutoff", () => {
+        // One second inside, not exactly at it: utimes stores the time with a rounding that, on Linux CI, put a
+        // folder set to the cutoff a fraction of a millisecond older than it, and the sweep removed it.
         const now = Date.now();
         const dir = createTempDir("vault", "edge", root);
-        age(dir, 2, now);
+        age(dir, 2 - 1 / 3600, now);
         expect(sweepLeftovers({ root, olderThanHours: 2, now }).removed).toEqual([]);
     });
 

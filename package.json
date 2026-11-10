@@ -43,7 +43,8 @@
     "smoke": "bash scripts/pack-smoke.sh",
     "e2e:smoke": "playwright test -c test/e2e-fixture/playwright.config.ts",
     "prepare": "npm run build",
-    "docs:media": "vhs docs/media/build.tape && vhs docs/media/build-check-fails.tape && vhs docs/media/scan.tape && vhs docs/media/scan-fails.tape"
+    "docs:media": "vhs docs/media/build.tape && vhs docs/media/build-check-fails.tape && vhs docs/media/scan.tape && vhs docs/media/scan-fails.tape",
+    "docs:media:e2e": "bash scripts/docs-media-e2e.sh"
   },
   "dependencies": {
     "doiuse": "6.0.6",

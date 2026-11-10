@@ -1,3 +1,7 @@
+/*
+ * The word and character chunking of a composition follows `composeIntoEditor` of obsidian-integration-testing 17.10
+ * by Michael Naumov (MIT licence).
+ */
 /** How the text is split into compositions: one per word (with its trailing space), or one per character. */
 export type CompositionChunking = "word" | "character";
 
