@@ -3,6 +3,7 @@ import path from "node:path";
 import { context } from "esbuild";
 import type { Reporter } from "../cli/reporter.js";
 import type { Manifest } from "../config/types.js";
+import { fileStamp } from "./css.js";
 import { CssImportError } from "./css-imports.js";
 import { runCssStep } from "./css-step.js";
 import { toEsbuildOptions, type ResolvedBuild } from "./options.js";
@@ -42,6 +43,10 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
     // A plugin with a hand-written stylesheet has no CSS entry on every sync; say so on the first one only.
     let noEntryAnnounced = false;
     const polled = new Set<string>();
+    // What each CSS file looked like when the last CSS step read it (undefined: it was missing). Lets a poller that
+    // registers later notice an edit made in between, see `recheckBaseline`.
+    const stamps = new Map<string, string | undefined>();
+    const recheckTimers = new Set<NodeJS.Timeout>();
 
     const rejection = checkVaultDirArgument(options.dir, vaultDir, cwd);
     if (rejection !== undefined) {
@@ -61,12 +66,18 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
 
     const syncAssets = (): void => {
         state.assetsFailed = false;
+        const reads = new Map<string, string | undefined>();
         try {
             // Rebuild the stylesheet rather than copying whatever is lying around.
             // Copying it stale is silent and shipped a vault missing the styles of two
             // whole blocks: the TypeScript was fresh, the CSS was three commits old.
             if (build.css !== false) {
-                const result = runCssStep(cwd, build.css, options, !noEntryAnnounced);
+                const result = runCssStep(cwd, build.css, options, !noEntryAnnounced, (file, stamp) => {
+                    // The first lookup of a file is the oldest stamp, the safest one to compare against.
+                    if (!reads.has(file)) {
+                        reads.set(file, stamp);
+                    }
+                });
                 if (result.status === "built") {
                     cssInputs = result.inputs;
                     cssMissing = undefined;
@@ -91,6 +102,9 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
             }
             options.reporter.failure("build", `${id}: CSS build or copy failed: ${errorMessage(error)}`);
         }
+        for (const [file, stamp] of reads) {
+            stamps.set(file, stamp);
+        }
         if (state.watching) {
             pollCssFiles();
         }
@@ -104,6 +118,30 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
             return;
         }
         syncAssets();
+    };
+
+    // fs.watchFile takes its baseline stat asynchronously on libuv's thread pool. An edit that lands between the CSS
+    // step reading a file and that stat (an import seen for the first time, a missing target that appears) becomes
+    // the baseline and is never reported, so it would be lost until the next edit. One poll interval after
+    // registering, the baseline is settled: compare the file with what the CSS step read, and sync if it differs.
+    const recheckBaseline = (file: string): void => {
+        if (!stamps.has(file)) {
+            return;
+        }
+        const timer = setTimeout(() => {
+            recheckTimers.delete(timer);
+            if (!state.watching || !polled.has(file)) {
+                return;
+            }
+            try {
+                if (fileStamp(file) !== stamps.get(file)) {
+                    syncAssets();
+                }
+            } catch (error) {
+                options.reporter.failure("build", `${id}: could not check ${file} for changes: ${errorMessage(error)}`);
+            }
+        }, POLL_INTERVAL_MS);
+        recheckTimers.add(timer);
     };
 
     // Poll the exact files the CSS step reads. A recursive fs.watch on the folder delivered nothing for 4-6 s
@@ -121,6 +159,7 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
             if (!polled.has(file)) {
                 polled.add(file);
                 watchFile(file, { interval: POLL_INTERVAL_MS }, onCssPoll);
+                recheckBaseline(file);
             }
         }
         for (const file of polled) {
@@ -204,6 +243,10 @@ export async function runVaultBuild(options: VaultBuildOptions): Promise<number>
         await aborted(options.signal);
     } finally {
         state.watching = false;
+        for (const timer of recheckTimers) {
+            clearTimeout(timer);
+        }
+        recheckTimers.clear();
         for (const file of polled) {
             unwatchFile(file, onCssPoll);
         }

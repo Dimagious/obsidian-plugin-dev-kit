@@ -1,4 +1,16 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig, type PlaywrightTestConfig } from "@playwright/test";
+
+/**
+ * The kit's global setup next to this file, with this file's own extension: `.js` from the installed `dist/`, `.ts`
+ * when the kit's own smoke config loads the sources.
+ */
+const GLOBAL_SETUP = fileURLToPath(new URL(`./global-setup${path.extname(fileURLToPath(import.meta.url))}`, import.meta.url));
+
+function toList(value: string | string[] | undefined): string[] {
+    return value === undefined ? [] : Array.isArray(value) ? value : [value];
+}
 
 /**
  * The Playwright settings every Obsidian plugin's e2e shares. Obsidian opens one window per process and the specs
@@ -19,6 +31,8 @@ export function buildObsidianConfig(
         reporter: ci ? "list" : [["list"], ["html", { open: "never" }]],
         timeout: 60_000,
         ...overrides,
+        // The kit's check runs first; a `globalSetup` of the plugin runs after it, so a missing Electron is the only error.
+        globalSetup: [GLOBAL_SETUP, ...toList(overrides.globalSetup)],
         expect: { timeout: 10_000, ...overrides.expect },
         use: {
             trace: "retain-on-failure",

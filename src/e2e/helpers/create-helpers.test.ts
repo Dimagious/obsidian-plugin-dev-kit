@@ -4,6 +4,7 @@ import { isReady } from "../page-scripts.js";
 import { createHelpers } from "./create-helpers.js";
 import {
     applyTheme,
+    areSidebarsCollapsed,
     closeSettingsModal,
     editorTextChanged,
     enabledPluginIds,
@@ -34,6 +35,7 @@ import {
     runCommandById,
     runWithApp,
     scrollThroughElement,
+    setSidebarsCollapsed,
     switchMobileEmulation,
 } from "./page-scripts.js";
 
@@ -601,6 +603,50 @@ describe("appearance and state", () => {
         const { fake, helpers } = setUp();
         fake.onEvaluate(scrollThroughElement, () => false);
         await expect(helpers.scrollThrough(".nope")).rejects.toThrow('nothing matches ".nope"');
+    });
+});
+
+describe("collapseSidebars and expandSidebars", () => {
+    it("collapses, then waits until both panels report collapsed, with the ui budget", async () => {
+        const { fake, helpers } = setUp();
+        const wanted: unknown[] = [];
+        fake.onEvaluate(setSidebarsCollapsed, (collapsed) => {
+            fake.log.push(`set:${String(collapsed)}`);
+            return true;
+        });
+        fake.onWait(areSidebarsCollapsed, (collapsed, options) => {
+            wanted.push([collapsed, options]);
+        });
+        await helpers.collapseSidebars();
+        expect(fake.log).toEqual(["set:true"]);
+        expect(wanted).toEqual([[true, { polling: 50, timeout: 555 }]]);
+    });
+
+    it("expands and waits for the expanded state", async () => {
+        const { fake, helpers } = setUp();
+        const wanted: unknown[] = [];
+        fake.onEvaluate(setSidebarsCollapsed, () => true);
+        fake.onWait(areSidebarsCollapsed, (collapsed) => {
+            wanted.push(collapsed);
+        });
+        await helpers.expandSidebars();
+        expect(wanted).toEqual([false]);
+    });
+
+    it("fails with the helper's name when this Obsidian has no side panels to drive", async () => {
+        const { fake, helpers } = setUp();
+        fake.onEvaluate(setSidebarsCollapsed, () => false);
+        await expect(helpers.collapseSidebars()).rejects.toThrow("collapseSidebars(): this Obsidian has no workspace.leftSplit");
+        await expect(helpers.expandSidebars()).rejects.toThrow("expandSidebars(): this Obsidian has no workspace.leftSplit");
+    });
+
+    it("names the budget when a panel stays in the old state", async () => {
+        const { fake, helpers } = setUp();
+        fake.onEvaluate(setSidebarsCollapsed, () => true);
+        fake.onWait(areSidebarsCollapsed, () => {
+            throw new Error("Timeout");
+        });
+        await expect(helpers.collapseSidebars()).rejects.toThrow(/not collapsed 555 ms after collapseSidebars\(\).*timeouts\.helpers\.ui/);
     });
 });
 

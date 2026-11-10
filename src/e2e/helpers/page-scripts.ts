@@ -30,6 +30,13 @@ interface PageLeaf {
     openFile(file: unknown, state: Record<string, unknown>): Promise<void>;
 }
 
+/** One of the two side panels of the workspace (`app.workspace.leftSplit` and `rightSplit`). */
+interface PageSidebar {
+    collapsed?: boolean;
+    collapse?(): void;
+    expand?(): void;
+}
+
 interface PageElement {
     scrollTop: number;
     scrollHeight: number;
@@ -70,6 +77,8 @@ interface PageApp {
         activeEditor?: { editor?: PageEditor } | null;
         trigger?(name: string): void;
         layoutReady?: boolean;
+        leftSplit?: PageSidebar;
+        rightSplit?: PageSidebar;
     };
     metadataCache?: { getFileCache?(file: unknown): unknown };
     plugins?: { plugins?: Record<string, Record<string, unknown> | undefined>; enabledPlugins?: Set<string> };
@@ -309,6 +318,34 @@ export function removeNotices(): number {
 
 export function hideNoteProperties(): void {
     (globalThis as unknown as PageGlobals).app?.vault?.setConfig?.("propertiesInDocument", "hidden");
+}
+
+/**
+ * Collapses (`true`) or expands (`false`) the left and right side panels. Returns false when this Obsidian has no such
+ * split object, so the helper can fail with a message instead of waiting for a state that cannot come.
+ */
+export function setSidebarsCollapsed(collapsed: boolean): boolean {
+    const workspace = (globalThis as unknown as PageGlobals).app?.workspace;
+    const splits = [workspace?.leftSplit, workspace?.rightSplit];
+    for (const split of splits) {
+        if (typeof split?.collapse !== "function" || typeof split.expand !== "function") {
+            return false;
+        }
+    }
+    for (const split of splits) {
+        if (collapsed) {
+            split?.collapse?.();
+        } else {
+            split?.expand?.();
+        }
+    }
+    return true;
+}
+
+/** True when both side panels are in the wanted state; the panels animate, so `collapse()` returns before it holds. */
+export function areSidebarsCollapsed(collapsed: boolean): boolean {
+    const workspace = (globalThis as unknown as PageGlobals).app?.workspace;
+    return [workspace?.leftSplit, workspace?.rightSplit].every((split) => split?.collapsed === collapsed);
 }
 
 export function readConfig(key: string): unknown {

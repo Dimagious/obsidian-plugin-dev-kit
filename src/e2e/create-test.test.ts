@@ -40,7 +40,7 @@ describe("createObsidianTest", () => {
         extend.mockRestore();
         expect(fixtures.opdkSession).toEqual([
             expect.any(Function),
-            { box: true, timeout: sessionFixtureTimeout({ launch: 10_000, ready: 10_000, close: 1_000 }) },
+            { box: true, timeout: sessionFixtureTimeout({ launch: 10_000, ready: 10_000, close: 1_000, trace: 60_000 }) },
         ]);
         expect(fixtures.opdkSweep).toEqual([expect.any(Function), { scope: "worker", auto: true, box: true }]);
         expect(typeof fixtures.win).toBe("function");
@@ -83,7 +83,7 @@ describe("createObsidianTest", () => {
         });
         expect(Object.keys(helpers ?? {}).sort()).toEqual(
             [
-                "clearNotices", "closeSettings", "desktop", "editor", "evaluate", "hideProperties", "mobile", "openCommandPalette", "openFile",
+                "clearNotices", "closeSettings", "collapseSidebars", "desktop", "editor", "evaluate", "expandSidebars", "hideProperties", "mobile", "openCommandPalette", "openFile",
                 "openSettings", "press", "readingView", "replace", "runCommand", "runCommandFromPalette", "scrollThrough", "setTheme",
                 "waitForMetadataCache",
             ].sort(),
