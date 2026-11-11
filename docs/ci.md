@@ -83,7 +83,7 @@ The npm cache is on in this workflow. Any job can write the Actions cache whatev
 
 ## Why ubuntu-24.04
 
-On 2026-11-11 the `ubuntu-latest` image (26.04) could not resolve the Ubuntu archive, and a CI job in the kit hung on `apt-get` until it timed out. Move to the next LTS on purpose, by passing `runs-on`, not by an alias that changes under you. The plugin's second job should pin the same label.
+On 2026-11-11 the `ubuntu-latest` image (26.04) could not resolve the Ubuntu archive, and a CI job in the kit hung on `apt-get` until it timed out. Move to the next LTS on purpose, by passing `runs-on`, not by an alias that changes under you. The plugin's second job should pin the same label. The reusable `release.yml` takes the same `runs-on` input, with the same default.
 
 ## Keeping plugin-specific steps
 

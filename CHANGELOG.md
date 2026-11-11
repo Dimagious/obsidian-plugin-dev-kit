@@ -124,6 +124,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- The reusable `release.yml` takes a `runs-on` input (default `ubuntu-24.04`) for both jobs instead of running on `ubuntu-latest`, like `plugin-ci.yml`: on 2026-11-11 the `ubuntu-latest` image (26.04) could not resolve the Ubuntu archive. The workflow uses no apt, so this is for consistency and so a runner change is a deliberate edit. See [docs/ci.md](docs/ci.md#why-ubuntu-2404).
 - `opdk scan` runs the newest scanner layer: `@typescript-eslint/no-unsafe-member-access`, `no-unsafe-assignment`, `no-unsafe-argument`, `no-unsafe-call`, `no-unsafe-return` and the two command-id rules (`no-command-in-command-id`, `no-plugin-id-in-command-id`) are on at `warn`, as the public scorecard reports them. The plugin's root `eslint.config.js` or `.ts` is now linted too, with types (a config that imports untyped helpers gets `no-unsafe-*` findings there). A plugin that scanned clean before can now have findings. `docs/scanner.md` has a section on the differences that remain.
 
 - `opdk --version` (and the first line of `--help`) prints the git commit the kit was built from when it is known, for example `0.0.0 (3613c4f)`, so a plugin that pins a commit can tell builds apart. `npm run build` writes it to `dist/build-info.json` (`scripts/write-build-info.mjs`). It comes from git in a checkout (with `-dirty` after uncommitted changes) and from `scripts/archive-commit` in the `git archive` tarball npm downloads for a GitHub install; with neither, only the version is printed.
