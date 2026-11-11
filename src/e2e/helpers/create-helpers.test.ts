@@ -14,6 +14,7 @@ import {
     installFake,
     isEditorEmpty,
     isEditorSettled,
+    isPageSettled,
     isFocusInside,
     isMetadataCacheComplete,
     isMobileApplied,
@@ -38,7 +39,10 @@ import {
     saveWorkspaceLayout,
     scrollThroughElement,
     setSidebarsCollapsed,
+    stopPageWatch,
     switchMobileEmulation,
+    unsettledReasons,
+    watchPageChanges,
 } from "./page-scripts.js";
 
 /** Distinct values, so a test can tell which budget a wait took. */
@@ -993,5 +997,91 @@ describe("evaluate", () => {
             throw new Error("boom in page");
         });
         await expect(helpers.evaluate(() => 1)).rejects.toThrow("boom in page");
+    });
+});
+
+describe("settle", () => {
+    it("starts a watch, waits with the ui budget, then stops the watch", async () => {
+        const { fake, helpers } = setUp();
+        fake.onEvaluate(watchPageChanges, (root) => {
+            fake.log.push(`watch:${String(root)}`);
+            return true;
+        });
+        fake.onWait(isPageSettled, (quietMs, options) => {
+            fake.log.push(`wait:${String(quietMs)}:${JSON.stringify(options)}`);
+        });
+        fake.onEvaluate(stopPageWatch, () => fake.log.push("stop"));
+        await helpers.settle();
+        expect(fake.log).toEqual(["watch:null", 'wait:150:{"polling":50,"timeout":555}', "stop"]);
+    });
+
+    it("passes quietMs and root through", async () => {
+        const { fake, helpers } = setUp();
+        const seen: unknown[] = [];
+        fake.onEvaluate(watchPageChanges, (root) => {
+            seen.push(root);
+            return true;
+        });
+        fake.onWait(isPageSettled, (quietMs) => {
+            seen.push(quietMs);
+        });
+        fake.onEvaluate(stopPageWatch, () => undefined);
+        await helpers.settle({ quietMs: 300, root: ".workspace" });
+        expect(seen).toEqual([".workspace", 300]);
+    });
+
+    it("names settle(), the budget and how to raise it, and what kept changing, when time runs out", async () => {
+        const { fake, helpers } = setUp();
+        fake.onEvaluate(watchPageChanges, () => true);
+        fake.onWait(isPageSettled, () => {
+            throw new Error("Timeout 555ms exceeded.");
+        });
+        fake.onEvaluate(unsettledReasons, () => ["the DOM changed 12 ms ago"]);
+        fake.onEvaluate(stopPageWatch, () => fake.log.push("stop"));
+        const error: unknown = await helpers.settle().catch((caught: unknown) => caught);
+        expect(error).toBeInstanceOf(Error);
+        const message = (error as Error).message;
+        expect(message).toContain("settle(): the page was not quiet for 150 ms within 555 ms (the DOM changed 12 ms ago)");
+        expect(message).toContain("Raise timeouts.helpers.ui");
+        expect((error as Error).cause).toBeInstanceOf(Error);
+        // The watch does not outlive a failed wait.
+        expect(fake.log).toEqual(["stop"]);
+    });
+
+    it("still names settle() when the page cannot be read after the timeout, and tries to stop the watch", async () => {
+        const { fake, helpers } = setUp();
+        fake.onEvaluate(watchPageChanges, () => true);
+        fake.onWait(isPageSettled, () => {
+            throw new Error("Timeout 555ms exceeded.");
+        });
+        fake.onEvaluate(unsettledReasons, () => {
+            throw new Error("Target page, context or browser has been closed");
+        });
+        fake.onEvaluate(stopPageWatch, () => {
+            fake.log.push("stop");
+            throw new Error("Execution context was destroyed");
+        });
+        const error: unknown = await helpers.settle().catch((caught: unknown) => caught);
+        expect(error).toBeInstanceOf(Error);
+        const message = (error as Error).message;
+        expect(message).toContain("settle(): the page was not quiet for 150 ms within 555 ms");
+        expect(message).toContain("the page could not be read: Target page, context or browser has been closed");
+        expect((error as Error).cause).toBeInstanceOf(Error);
+        expect(fake.log).toEqual(["stop"]);
+    });
+
+    it("fails for a root that matches nothing, without waiting", async () => {
+        const { fake, helpers } = setUp();
+        fake.onEvaluate(watchPageChanges, () => false);
+        await expect(helpers.settle({ root: ".gone" })).rejects.toThrow('settle(): nothing matches root ".gone"');
+        await expect(helpers.settle()).rejects.toThrow("settle(): the page has no <body>");
+        expect(fake.timeouts).toEqual([]);
+    });
+
+    it("refuses a quietMs the budget could never satisfy, before touching the page", async () => {
+        const { fake, helpers } = setUp();
+        await expect(helpers.settle({ quietMs: 555 })).rejects.toThrow(/quietMs \(555 ms\) is not below the wait budget timeouts\.helpers\.ui \(555 ms\)/);
+        await expect(helpers.settle({ quietMs: -1 })).rejects.toThrow(/quietMs must be a number of milliseconds from 0/);
+        expect(fake.log).toEqual([]);
     });
 });

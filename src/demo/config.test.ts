@@ -6,6 +6,7 @@ import {
     DEFAULT_WARN_BYTES,
     demoFolders,
     resolveFilmSettings,
+    stillsSettings,
     validateDemoConfig,
 } from "./config.js";
 
@@ -20,6 +21,7 @@ describe("validateDemoConfig", () => {
         const config = {
             outDir: "out",
             output: "media",
+            stills: { output: "docs/pictures" },
             gif: { width: 800, colors: 64, fps: 8 },
             mp4: false,
             poster: { width: 1200 },
@@ -42,7 +44,7 @@ describe("validateDemoConfig", () => {
     });
 
     it.each([
-        [{ nope: 1 }, /unknown key\(s\) in "demo": nope\. Allowed keys: gif, mp4, poster, layout, budget, loop, phone, outDir, output, films\./],
+        [{ nope: 1 }, /unknown key\(s\) in "demo": nope\. Allowed keys: gif, mp4, poster, layout, budget, loop, phone, outDir, output, stills, films\./],
         [[], /"demo" must be an object/],
         [{ outDir: "" }, /"demo.outDir" must be a non-empty string/],
         [{ output: 3 }, /"demo.output" must be a non-empty string/],
@@ -91,6 +93,39 @@ describe("validateDemoConfig", () => {
     it("accepts poster true as the default poster", () => {
         expect(validateDemoConfig({ poster: true }, SRC).poster).toBe(true);
         expect(validateDemoConfig({ poster: {} }, SRC).poster).toEqual({});
+    });
+});
+
+describe("demo.stills", () => {
+    it("accepts a boolean or an object with an output folder, and copies it", () => {
+        expect(validateDemoConfig({ stills: false }, SRC).stills).toBe(false);
+        expect(validateDemoConfig({ stills: true }, SRC).stills).toBe(true);
+        expect(validateDemoConfig({ stills: {} }, SRC).stills).toEqual({});
+        expect(validateDemoConfig({ stills: { output: "docs/pictures" } }, SRC).stills).toEqual({ output: "docs/pictures" });
+    });
+
+    it("names the key for a wrong shape, an unknown key and an empty folder", () => {
+        expect(() => validateDemoConfig({ stills: "yes" }, SRC)).toThrow('"demo.stills" must be an object ({ output }) or true or false.');
+        expect(() => validateDemoConfig({ stills: { folder: "x" } }, SRC)).toThrow('unknown key(s) in "demo.stills": folder. Allowed keys: output.');
+        expect(() => validateDemoConfig({ stills: { output: "" } }, SRC)).toThrow('"demo.stills.output" must be a non-empty string.');
+    });
+
+    it("is not a per-film key: a still belongs to no film", () => {
+        expect(() => validateDemoConfig({ films: { tour: { stills: false } } }, SRC)).toThrow('unknown key(s) in "demo.films["tour"]": stills.');
+    });
+});
+
+describe("stillsSettings", () => {
+    it("is on by default and publishes next to the films", () => {
+        expect(stillsSettings({})).toEqual({ output: "docs/screens" });
+        expect(stillsSettings({ stills: true })).toEqual({ output: "docs/screens" });
+        expect(stillsSettings({ output: "media" })).toEqual({ output: "media" });
+        expect(stillsSettings({ output: "media", stills: {} })).toEqual({ output: "media" });
+    });
+
+    it("takes its own folder when given, and is off for false", () => {
+        expect(stillsSettings({ output: "media", stills: { output: "docs/pictures" } })).toEqual({ output: "docs/pictures" });
+        expect(stillsSettings({ stills: false })).toBeNull();
     });
 });
 

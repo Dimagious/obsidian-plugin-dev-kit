@@ -3,6 +3,8 @@ import path from "node:path";
 
 /** The file in a film's folder that says which test wrote the film in which run. */
 export const OWNER_FILE = "owner.json";
+/** The folder of stills under the demo output folder (`<outDir>/stills/<name>.png`). */
+export const STILLS_DIR = "stills";
 /** Folder under the output folder with one such file per still, so `stills/` holds pictures only. */
 export const STILL_OWNERS_DIR = path.join(".owners", "stills");
 

@@ -18,7 +18,7 @@ describe("registration", () => {
     });
 
     it("documents the outputs, the checks, ffmpeg and the config in its usage", () => {
-        for (const text of ["Usage: opdk demo [film names...]", "<name>.mp4", "OPDK_FFMPEG", "phone-captions", "2 MB", "10 MB", "loop", "opdk.config.mjs", "No audio"]) {
+        for (const text of ["Usage: opdk demo [names...]", "<name>.mp4", "OPDK_FFMPEG", "phone-captions", "2 MB", "10 MB", "loop", "opdk.config.mjs", "No audio", "<name>.png", "demo.stills: false", "a name selects\nthe film and the still of that name", "no films and no stills", "still that cannot be copied"]) {
             expect(demoCommand.usage).toContain(text);
         }
     });
@@ -34,7 +34,7 @@ describe("registration", () => {
             "hold      ",
             "attached to issues and pull requests",
             "The command never deletes media",
-            "Exit 1 when anything fails: no films, a name",
+            "Exit 1 when anything fails: no films and no stills, a",
             "a missing ffmpeg",
         ]) {
             expect(demoCommand.usage).toContain(text);

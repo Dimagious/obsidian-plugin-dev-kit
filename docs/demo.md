@@ -22,8 +22,8 @@ A film of stills makes timing a property of the script (`hold`) and not of the m
 
 | Part | What it does |
 |---|---|
-| `demo.film(options)` | Starts a film of stills. Returns a `Film` with `name`, `dir` and `shot({ hold, caption?, clip?, padding? })` |
-| `demo.still(name, options?)` | One PNG, `<outDir>/stills/<name>.png`, optionally at the exact pixels of a destination (`preset`) |
+| `demo.film(options)` | Starts a film of stills. Returns a `Film` with `name`, `dir` and `shot({ hold, caption?, clip?, padding?, settle? })` |
+| `demo.still(name, options?)` | One PNG, `<outDir>/stills/<name>.png`, optionally at the exact pixels of a destination (`preset`). `opdk demo` publishes it |
 | `demo.moveAndClick(target)`, `demo.tap(target, { whilePressed? })` | A visible cursor that travels to the target and clicks it (desktop), or a tap dot that presses and releases (phone) |
 | `demo.typeSlowly(text)`, `demo.typeSlowly(target, text)` | Types key by key, 40 ms apart by default |
 | `demo.caption(text \| null)` | A caption bar at the bottom of the window, drawn into every frame until changed |
@@ -32,7 +32,7 @@ A film of stills makes timing a property of the script (`hold`) and not of the m
 | `demo.freezeTime(date)` | Fixes the window's clock |
 | `demo.themes(["light", "dark"], scene)` | Runs a scene once per theme and names the output `-light` and `-dark` |
 
-Every shot first freezes the page: CSS transitions end, running animations finish (endless ones are paused for the picture and played again), the caret and the CodeMirror cursor layer are hidden, and two animation frames are awaited. Then the picture is taken through the same CDP session as the `obsidian` helpers, so it keeps the mobile emulation.
+Every shot first freezes the page (after `obsidian.settle()` when the shot passes `settle: true`, see **Settling**): CSS transitions end, running animations finish (endless ones are paused for the picture and played again), the caret and the CodeMirror cursor layer are hidden, and two animation frames are awaited. Then the picture is taken through the same CDP session as the `obsidian` helpers, so it keeps the mobile emulation.
 
 ## Quick start
 
@@ -117,7 +117,7 @@ export default defineConfig({
 
 The examples above were typechecked against the kit in a temporary project (strict; callbacks that read `document` need "DOM" in `lib`).
 
-A film is encoded only when its recording test passed. A test that failed, timed out or was skipped leaves the film marked incomplete. `opdk demo` does not encode it: when you name it on the command line it fails with exit 1 (`<name>: not encoded` and the reason), and when no film is complete, incomplete ones print as `!` lines (`<name>: skipped, <reason>`) and the exit is 1.
+A film is encoded only when its recording test passed. A test that failed, timed out or was skipped leaves the film marked incomplete. `opdk demo` does not encode it: when you name it on the command line it fails with exit 1 (`<name>: not encoded` and the reason), and incomplete ones print as `!` lines (`<name>: skipped, <reason>`). Without names, when films were recorded and none of them is complete, the exit is 1 (`no complete film among the N recorded`), also when stills exist: stills do not stand in for films. With names, only what was named counts. A project with stills and no film folders at all exits 0.
 
 ## Recording a film
 
@@ -129,9 +129,11 @@ A film is encoded only when its recording test passed. A test that failed, timed
 - `scale` is device pixels per CSS pixel, a whole number from 1 to 4. The default is `demo.scale` of the fixture options, 2.
 - `cursor` is `true` by default; `false` keeps the cursor arrow out of this film's frames (see below).
 
-`film.shot({ hold, caption?, clip?, padding? })` takes one frame. Call it after the assertion that the app is in the state the frame should show: nothing in a shot waits for the app.
+`film.shot({ hold, caption?, clip?, padding?, settle? })` takes one frame. Call it after the assertion that the app is in the state the frame should show: nothing in a shot waits for the app unless it passes `settle: true`.
 
 **Holds.** `hold` is seconds on screen and must be above 0. A film of stills takes its timing from `hold` and from nothing else. By default the GIF runs at 10 fps at most (`gif.fps` changes it), so a hold shorter than one GIF frame (0.1 s) can be skipped by the GIF; `opdk demo` warns and names the frame. For typing, take a shot every few characters with a hold of 0.4 to 0.6 s and a longer one at the end, as the film above does.
+
+**Settling.** `settle: true` in `film.shot()` or `demo.still()` runs `obsidian.settle()` first: the shot waits until the DOM has been quiet for 150 ms, no font is loading and the images in view are complete, and only then freezes the page. With a `preset` the wait comes after the window has been resized, so the reflow is waited for too. Use it where a spec used to sleep before a picture. The default is `false`: a frame of a loading state that you film on purpose is taken as it is. If the page does not settle within `timeouts.helpers.ui` the shot fails with the error of `settle()` (what kept changing, how to raise the budget) and writes nothing. `settle()` takes `quietMs` and `root` when called on its own ([docs/e2e.md](e2e.md)); the shot options use the defaults, so call `obsidian.settle({ root })` yourself before a shot of a page that has a part that never stops changing. `settle` sees changes that are happening, not ones that are scheduled: a pause longer than `quietMs` before the render looks settled, so assert on the element or raise `quietMs`.
 
 **Pacing.** Two to four seconds per step reads well; one second per step is too fast to read a caption. Hold the first and the last frame a little longer than the rest.
 
@@ -158,7 +160,7 @@ A film is encoded only when its recording test passed. A test that failed, timed
 
 ### Stills
 
-`demo.still(name, { preset?, clip?, padding?, scale? })` writes `<outDir>/stills/<name>.png`, replacing an earlier one. A preset gives exactly its pixels, puts the window at the CSS size that produces them and puts it back afterwards. A preset cannot be combined with `clip` or `scale`.
+`demo.still(name, { preset?, clip?, padding?, scale?, settle? })` writes `<outDir>/stills/<name>.png`, replacing an earlier one. A preset gives exactly its pixels, puts the window at the CSS size that produces them and puts it back afterwards. A preset cannot be combined with `clip` or `scale`.
 
 | Preset | Pixels | For |
 |---|---|---|
@@ -167,7 +169,7 @@ A film is encoded only when its recording test passed. A test that failed, timed
 | `listing-phone` | 900 x 1600 | the listing, phone (a 450 x 800 window at 2x) |
 | `social` | 1200 x 630 | a link preview card |
 
-Stills are not touched by `opdk demo`: they stay in `<outDir>/stills/`, and you copy the ones you publish.
+`opdk demo` publishes every still: it copies `<outDir>/stills/<name>.png` to the output folder (`docs/screens` by default) as `<name>.png`, next to the films, and only when the bytes there differ, so a retake of an unchanged picture leaves the file and git alone. A still is as sharp as the fixture's density, not the display's, which is the reason to use it for README and listing pictures instead of `win.screenshot()`. `demo.stills: false` turns this off, `demo.stills: { output: "docs/pictures" }` publishes them to another folder. Names on the command line select stills as well as films ([What `opdk demo` does](#what-opdk-demo-does)). Stills are copied as they are: they go through no size budget and no check.
 
 ### Pixels
 
@@ -201,7 +203,7 @@ The default vault is the plugin's own seed vault, so a film made without any of 
 
 ## What `opdk demo` does
 
-`opdk demo [film names...]` reads `<demo.outDir>/films/<name>/manifest.json` (default `.opdk/demo`) and writes, for each complete film, into the output folder (`docs/screens` by default, where the three plugins keep their media):
+`opdk demo [names...]` reads `<demo.outDir>/films/<name>/manifest.json` (default `.opdk/demo`) and writes, for each complete film, into the output folder (`docs/screens` by default, where the three plugins keep their media):
 
 | File | What it is |
 |---|---|
@@ -209,7 +211,7 @@ The default vault is the plugin's own seed vault, so a film made without any of 
 | `<name>.gif` | its own palette (`palettegen stats_mode=diff`, bayer dithering), 128 colours, 10 fps (the film's fps when that is lower), as wide as the frames up to 1000 px, never upscaled |
 | `<name>-poster.png` | the film's first frame at the frame's resolution, so a site's `<video poster>` is as sharp as the video |
 
-Without names every complete film is encoded. Every file a run writes is recorded in `<outDir>/published.json` for the stale-media check, which names a recorded file that is still on disk when its film is gone, or when its film encoded cleanly in this run without writing it (an output turned off with `mp4: false`, or moved with `demo.output`). A name that is not a film fails. Each file is encoded to a temporary name in a work folder and moved into the output folder when it is complete, so a failed encode leaves the previous good file. The command never deletes media. Frames go through ffmpeg's concat demuxer with a duration per frame; the last frame is listed again, so its whole hold plays, and the encode is capped at the sum of the holds.
+Without names every complete film is encoded and every still is copied. A name selects the film and the still of that name (both, when a film and a still share it), and only those: `opdk demo hero` copies the still `hero` and encodes no film, `opdk demo tour` encodes the film `tour` and copies no still. A name that is neither a film nor a still fails (with stills turned off, a still's name is not known, and the error adds `demo.stills is false, so stills are not selectable`). A run that has stills and no film copies them without needing ffmpeg. A still never replaces a film's file, written in the same run or recorded as the film's by an earlier one: a still named `tour-poster` next to the film `tour` fails with `still "tour-poster" would overwrite the poster of film "tour"; rename the still`, and the poster stays. Every file a run writes, stills included, is recorded in `<outDir>/published.json` for the stale-media check, which names a recorded file that is still on disk when its film or still is gone, or when its film or still was written without a failure in this run but not this file (an output turned off with `mp4: false`, or moved with `demo.output` or `demo.stills.output`). A film's file is encoded to a temporary name in a work folder and moved into the output folder when it is complete; a still is copied to `<name>.png.opdk-partial` next to its destination and renamed. Either way a failure leaves the previous good file. The command never deletes media. Frames go through ffmpeg's concat demuxer with a duration per frame; the last frame is listed again, so its whole hold plays, and the encode is capped at the sum of the holds.
 
 ### The phone layout
 
@@ -227,22 +229,26 @@ The page is rendered in a bare hidden Electron window from the plugin's own `ele
 | loop | the film's last recorded frame should equal its first, or the GIF jumps when it repeats; pixels whose channels differ by 8 of 255 or less count as equal, and the warning names the box and share of the pixels that differ more | warns; `loop: "fail"` fails, `"off"` skips |
 | short holds | a frame held for less than one GIF frame can be skipped; the warning names the frame | warns |
 | density | frames shot below scale 2, or a frame size that does not match the scale | warns |
-| stale media | media this command wrote on an earlier run (recorded in `<outDir>/published.json`) that is still on disk and that no film produces any more: its film is gone, or its film encoded cleanly in this run without writing the file (an output turned off or moved). A film that failed or was not selected proves nothing about its files. Listed and never deleted | warns |
+| stale media | media this command wrote on an earlier run (recorded in `<outDir>/published.json`) that is still on disk and that no film or still produces any more: its film or still is gone from `<outDir>`, or it was written cleanly in this run without writing the file (an output turned off or moved). A film that failed or was not selected proves nothing about its files. Listed and never deleted | warns |
 | theme pairs | a `-light` or `-dark` film whose partner is missing | warns |
 
-Warnings print as `!` lines and leave the exit code alone. Exit 1 on anything that fails: no films, a name that is not a film, an incomplete film named on the command line, no complete film at all, an unusable manifest, a missing ffmpeg, an encode, a file over the fail limit and `loop: "fail"`.
+Warnings print as `!` lines and leave the exit code alone. Exit 1 on anything that fails: no films and no stills, a name that is neither a film nor a still, an incomplete film named on the command line, without names, no complete film among the recorded films (stills do not make up for it), a still that cannot be copied or would overwrite a file a film wrote now or in an earlier run, an unusable manifest, a missing ffmpeg, an encode, a file over the fail limit and `loop: "fail"`.
 
 ### Example output
 
-The kit's own film (`npm run docs:media:demo`), then two failures:
+The kit's own film (`npm run docs:media:demo`), a run of two stills (the first changed since the last run, the second did not), then two failures:
 
 ```text
 $ opdk demo demo
 · demo    demo: composing 8 frames beside their captions in Electron
 ✓ demo    demo: gif 141 KB
+$ opdk demo hero settings
+✓ demo    still hero: png 312 KB
+· demo    1 still unchanged: settings
 $ opdk demo nosuch
-✗ demo    no film named "nosuch" in /path/to/plugin/.opdk/demo/films
+✗ demo    no film or still named "nosuch" in /path/to/plugin/.opdk/demo
             Films there: demo
+            Stills there: hero, settings
           Run the demo specs first (npx playwright test), or fix the name.
 $ OPDK_FFMPEG=/nonexistent/ffmpeg opdk demo
 ✗ opdk: command "demo" failed: OPDK_FFMPEG=/nonexistent/ffmpeg cannot run (/nonexistent/ffmpeg could not run (spawn /nonexistent/ffmpeg ENOENT).). Point it at a working ffmpeg binary or unset it to use PATH.
@@ -251,7 +257,7 @@ $ OPDK_FFMPEG=/nonexistent/ffmpeg opdk demo
 A film that was renamed or deleted leaves its files behind, and the next run says so:
 
 ```text
-! demo    media published by an earlier run of this command belongs to films that no longer exist: docs/screens/old-name.gif, docs/screens/old-name.mp4. Delete them if they are obsolete; the command never removes files.
+! demo    media published by an earlier run of this command belongs to films or stills that no longer exist: docs/screens/old-name.gif, docs/screens/old-name.mp4. Delete them if they are obsolete; the command never removes files.
 ```
 
 Only files `opdk demo` itself wrote are named. The record is `<outDir>/published.json` (output path to film name); it is created by the first run, so a project that has just updated sees no stale warning until its films have been encoded once. A file that was deleted drops out of the record on the next run. Unrelated pictures in the output folder are never listed. The record sits in `outDir`, next to the raw frames, and is not meant to be committed.
@@ -264,6 +270,7 @@ The `demo` section of `opdk.config.mjs`. Every key is optional, an unknown key f
 |---|---|---|---|
 | `outDir` | string | `.opdk/demo` | Where the fixture wrote films. The same default as the fixture's `demo.outDir`; set both when you change it |
 | `output` | string | `docs/screens` | Where finished media go, relative to the plugin root |
+| `stills` | `{ output? }` or boolean | `true`, copied to `output` | Publishes `<outDir>/stills/<name>.png` as `<output>/<name>.png`, when the bytes differ. `false` turns it off, `output` is a separate folder. Top level only: a still belongs to no film |
 | `gif` | `{ width?, colors?, fps? }` or `false` | 128 colours, 10 fps at most, width of the frames up to 1000 | `width` 16 to 8000 (not upscaled; a wider value warns), `colors` 2 to 256, `fps` 1 to 50 (used as given). `false` skips the GIF |
 | `mp4` | boolean | `true` | `false` skips the MP4 |
 | `poster` | `{ width? }`, boolean | `true`, the frame's resolution | `false` skips the poster |
@@ -303,6 +310,7 @@ A film needs the real Obsidian, so recording belongs on a machine that has it. `
 1. Install the kit, ffmpeg and (for the e2e fixture) the e2e dependencies ([docs/e2e.md](e2e.md)). Add `.opdk/` to `.gitignore`. To move the kit to a newer tag run `npm install -D "github:Dimagious/obsidian-plugin-dev-kit#<tag>"`. Editing the tag in `package.json` and running a plain `npm install` keeps the old entry in `package-lock.json`, and the old version stays installed.
 2. Rewrite the recording specs on the `demo` fixture: a film of stills (`demo.film`, `film.shot`) in place of a screen recording or a screenshot loop, `demo.moveAndClick`, `demo.tap`, `demo.typeSlowly`, `demo.caption`, `demo.cleanUi`, `demo.freezeTime`, `demo.themes`.
 3. Move the encoding settings to the `demo` section of `opdk.config.mjs` and delete the plugin's encoder script.
+   Pictures for the README or the listing that a script takes with `win.screenshot()` move to `demo.still(name, { preset })`; `opdk demo` then puts them in the output folder, and their density no longer depends on the display. A `waitForTimeout` before such a picture becomes `settle: true` (or `obsidian.settle()` before an assertion); a pause longer than `quietMs` before the render looks settled, so assert on the element or raise `quietMs`.
 4. Run the specs and `opdk demo`, compare the files with the old ones and list the differences in the plugin's CHANGELOG.
 
 What changes, plugin by plugin. Anything not listed behaves as before.
@@ -311,6 +319,7 @@ All plugins:
 
 - The poster is `<name>-poster.png` and the output folder `docs/screens`, the plugins' own names and folder. The theme suffix is `-light` or `-dark`, as the fixture names themed films. ffmpeg is looked up through `OPDK_FFMPEG` first. A film is only encoded when its recording finished.
 - The GIF defaults (128 colours, 10 fps at most, as wide as the frames up to 1000 px) replace each script's own numbers, which are now `gif` options per film.
+- Dashy and Garmy take their README and listing pictures with plain `win.screenshot`, whose density is the display's. They move to `demo.still(name, { preset, settle: true })` (2x on any monitor, exactly the pixels of the destination), and `opdk demo` copies them to the output folder; a fixed `waitForTimeout` before such a picture becomes `settle: true` (a pause longer than `quietMs` before the render looks settled, so assert on the element or raise `quietMs`). Pictures that were committed from a 1x or a 2x display change size, so list them in the plugin's CHANGELOG.
 - `beat()` takes seconds, not milliseconds. The helpers no longer pause by themselves: pacing is `beat()` for a Playwright video of a test and `hold` for films of stills.
 
 Dashy (`scripts/film-phone.cjs`, `scripts/capture.cjs`):
@@ -338,7 +347,6 @@ Snipsy (`scripts/build-demo.sh`):
 - No audio, no voice-over, no intro or outro cards.
 - Verified on macOS with Obsidian 1.14.5. Capture on Linux CI is not built; the kit's CI runs only the encoder and the layout tests there. Windows is untested.
 - The fixture records one window. Films in several languages are not covered.
-- `opdk demo` does not copy or process stills.
 - A retake is not byte-identical: pictures come from a real Obsidian, so a pixel here and there can differ between runs.
 - `freezeTime` does not freeze the file dates in the explorer, and code that measures elapsed time sees none pass.
 - The loop check treats a pixel as equal when each channel differs by at most 8 of 255, so noise below that is not reported. A tour that does not end where it began still warns; see **Loops**.

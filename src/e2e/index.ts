@@ -15,6 +15,7 @@ export type {
     ObsidianHelpers,
     PageFactory,
     PageFunction,
+    SettleOptions,
     ThemeOptions,
     ViewMode,
 } from "./helpers/types.js";

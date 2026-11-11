@@ -2,7 +2,7 @@ import type { Command } from "../cli/types.js";
 import { CONFIG_FILE_NAME, loadConfig } from "../config/load-config.js";
 import { parseDemoArgs } from "./args.js";
 
-const demoUsage = `Usage: opdk demo [film names...]
+const demoUsage = `Usage: opdk demo [names...]
 
 Turns the films the demo fixture recorded into finished media, in the output folder
 (default docs/screens): <name>.mp4, <name>.gif and <name>-poster.png for each film.
@@ -13,6 +13,8 @@ Turns the films the demo fixture recorded into finished media, in the output fol
   gif       its own palette, 128 colours, 10 fps (the film's fps when lower), as wide as
             the frames up to 1000 px
   poster    the first frame, as wide as the MP4 (demo.poster: { width } or false)
+  stills    <demo.outDir>/stills/<name>.png is copied to the output folder as <name>.png, only
+            when its bytes changed (demo.stills: false turns it off, { output } picks a folder)
   layout    "phone-captions" first puts each phone frame beside its caption list, in the
             colours of the film's theme (needs electron and @playwright/test in the plugin,
             like the e2e tests)
@@ -28,13 +30,17 @@ Checks, as "!" lines unless noted:
   hold      a frame held for less than one GIF frame can be skipped by the GIF
   density   frames shot below scale 2, or sizes that do not match the scale
   pair      a -light or -dark film whose partner film is missing
-  stale     media in the output folder with no film behind it (never deleted)
+  stale     media in the output folder with no film or still behind it (never deleted)
 
-Needs ffmpeg: on PATH, or its path in OPDK_FFMPEG. No audio, no intro or outro cards.
-Without names every complete film is encoded. Exit 1 when anything fails: no films, a name
-that is not a film, an unusable manifest, a missing ffmpeg, an encode or a check set to fail.
+Needs ffmpeg for films: on PATH, or its path in OPDK_FFMPEG. No audio, no intro or outro
+cards. Without names every complete film is encoded and every still copied; a name selects
+the film and the still of that name. Exit 1 when anything fails: no films and no stills, a
+name that is neither a film nor a still, an incomplete film named on the command line,
+without names no complete film among the recorded films, an unusable manifest,
+a missing ffmpeg, an encode, a still that cannot be copied or would overwrite a film's file,
+or a check set to fail.
 
-Settings come from opdk.config.mjs ("demo" section): outDir, output, films, and gif, mp4,
+Settings come from opdk.config.mjs ("demo" section): outDir, output, stills, films, and gif, mp4,
 poster, layout, budget, loop, phone for all films or per film under films.<name>.
 `;
 

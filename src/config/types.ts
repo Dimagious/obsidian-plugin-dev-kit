@@ -127,12 +127,20 @@ export interface DemoFilmConfig {
     readonly phone?: DemoPhoneConfig;
 }
 
+/** `demo.stills`: where the stills of `demo.still()` are published. */
+export interface DemoStillsConfig {
+    /** Folder for the stills, relative to the plugin root. Default: `demo.output`, next to the films. */
+    readonly output?: string;
+}
+
 /** `demo` section. Every key is optional. */
 export interface DemoConfig extends DemoFilmConfig {
     /** Where the `demo` fixture wrote films and stills; the same default as the fixture, `.opdk/demo`. */
     readonly outDir?: string;
-    /** Where the finished media go, relative to the plugin root. Default `docs/screens`. `opdk demo` only adds and replaces its own files there. */
+    /** Where the finished media go, relative to the plugin root. Default `docs/screens`. `opdk demo` adds files and replaces files of the same name; it never deletes. */
     readonly output?: string;
+    /** `false` leaves the stills in `outDir`, an object publishes them to its own folder. Default on: every `<outDir>/stills/<name>.png` is copied to `output` as `<name>.png`, when its bytes changed. */
+    readonly stills?: DemoStillsConfig | boolean;
     /** Overrides by film name. A theme pair (`x-light`, `x-dark`) also reads the entry `x`; the exact name wins. */
     readonly films?: Readonly<Record<string, DemoFilmConfig>>;
 }

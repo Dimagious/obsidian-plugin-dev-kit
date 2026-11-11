@@ -20,6 +20,7 @@ import {
     isMetadataCacheComplete,
     isMobileApplied,
     isReloaded,
+    isPageSettled,
     isSchemeApplied,
     listSettingTabIds,
     markBeforeReload,
@@ -41,8 +42,12 @@ import {
     saveWorkspaceLayout,
     scrollThroughElement,
     setSidebarsCollapsed,
+    stopPageWatch,
     switchMobileEmulation,
+    unsettledReasons,
+    watchPageChanges,
 } from "./page-scripts.js";
+import { resolveSettleOptions, settleRootMissingMessage, settleTimeoutMessage, type SettleOptions } from "./settle.js";
 import { settingsNotOpenedMessage, settingsTabNotFoundMessage } from "./settings.js";
 import type { EditorHelpers, EditorSelection, FakeHandle, ObsidianHelpers, PageFactory, ThemeOptions } from "./types.js";
 import { viewModeFailureMessage, viewModeMatches, viewModeSelector, viewModeState, type ViewMode } from "./view-mode.js";
@@ -363,6 +368,32 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
         await openFile(target, { mode: "preview" });
     }
 
+    async function settle(settleOptions: SettleOptions = {}): Promise<void> {
+        const { quietMs, root } = resolveSettleOptions(settleOptions, timeouts.ui);
+        if (!(await win.evaluate(watchPageChanges, root))) {
+            throw new Error(root === null ? "settle(): the page has no <body> to watch or cannot observe DOM changes." : settleRootMissingMessage(root));
+        }
+        try {
+            await win.waitForFunction(isPageSettled, quietMs, { polling: POLL_MS, timeout: timeouts.ui });
+        } catch (error) {
+            let reasons: string[];
+            try {
+                reasons = await win.evaluate(unsettledReasons, quietMs);
+            } catch (readError) {
+                // The window can be gone by now (a reload, a crash); the timeout is still what the caller needs to hear about.
+                reasons = [`the page could not be read: ${readError instanceof Error ? readError.message : String(readError)}`];
+            } finally {
+                try {
+                    await win.evaluate(stopPageWatch);
+                } catch {
+                    // Only the cleanup failed, and a page that cannot be read has no watch left to stop.
+                }
+            }
+            throw new Error(settleTimeoutMessage({ budgetMs: timeouts.ui, quietMs, root, reasons }), { cause: error });
+        }
+        await win.evaluate(stopPageWatch);
+    }
+
     /** Collapses or expands both side panels and waits until they are in that state (they animate). */
     async function setSidebars(collapsed: boolean): Promise<void> {
         const verb = collapsed ? "collapseSidebars" : "expandSidebars";
@@ -526,6 +557,7 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
             hideProperties: () => win.evaluate(hideNoteProperties),
             scrollThrough,
             readingView,
+            settle,
             collapseSidebars: () => setSidebars(true),
             expandSidebars: () => setSidebars(false),
             mobile,

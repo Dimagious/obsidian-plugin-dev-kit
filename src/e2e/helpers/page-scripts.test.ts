@@ -11,6 +11,7 @@ import {
     installFake,
     isEditorEmpty,
     isEditorSettled,
+    isPageSettled,
     isFocusInside,
     isMetadataCacheComplete,
     isMobileApplied,
@@ -35,7 +36,10 @@ import {
     saveWorkspaceLayout,
     scrollThroughElement,
     setSidebarsCollapsed,
+    stopPageWatch,
     switchMobileEmulation,
+    unsettledReasons,
+    watchPageChanges,
 } from "./page-scripts.js";
 
 afterEach(() => {
@@ -727,5 +731,195 @@ describe("mobile scripts", () => {
         vi.stubGlobal("document", { body: { classList: { contains: (name: string) => name === "is-mobile" } } });
         expect(isMobileApplied(true)).toBe(true);
         expect(isMobileApplied(false)).toBe(false);
+    });
+});
+
+describe("settle scripts", () => {
+    interface FakeImage {
+        complete: boolean;
+        box: { top: number; left: number; bottom: number; right: number };
+    }
+
+    /** A page whose clock, DOM mutations, fonts and images the test drives by hand. */
+    function stubPage(options: { images?: FakeImage[]; panelImages?: FakeImage[]; fonts?: string } = {}): {
+        mutate(): void;
+        advance(ms: number): void;
+        observed: unknown[];
+        disconnected: () => number;
+        fonts: { status: string };
+    } {
+        let now = 1000;
+        let callback: (() => void) | undefined;
+        let disconnects = 0;
+        const observed: unknown[] = [];
+        const fonts = { status: options.fonts ?? "loaded" };
+        const elements = (list: FakeImage[]): unknown[] =>
+            list.map((image) => ({
+                get complete(): boolean {
+                    return image.complete;
+                },
+                getBoundingClientRect: () => image.box,
+            }));
+        // The body holds every image; the panel is a part of the page with its own.
+        const bodyImages = elements(options.images ?? []);
+        const panelImages = elements(options.panelImages ?? []);
+        const body = { querySelectorAll: (selector: string) => (selector === "img" ? [...bodyImages, ...panelImages] : []) };
+        const panel = { querySelectorAll: (selector: string) => (selector === "img" ? panelImages : []) };
+        vi.stubGlobal("performance", { now: () => now });
+        vi.stubGlobal("innerWidth", 400);
+        vi.stubGlobal("innerHeight", 800);
+        vi.stubGlobal("document", {
+            body,
+            fonts,
+            querySelector: (selector: string) => (selector === ".panel" ? panel : null),
+        });
+        vi.stubGlobal(
+            "MutationObserver",
+            class {
+                constructor(cb: () => void) {
+                    callback = cb;
+                }
+                observe(target: unknown, init: unknown): void {
+                    observed.push([target === panel ? "panel" : target === body ? "body" : "other", init]);
+                }
+                disconnect(): void {
+                    disconnects += 1;
+                }
+            },
+        );
+        return {
+            mutate: () => callback?.(),
+            advance: (ms) => {
+                now += ms;
+            },
+            observed,
+            disconnected: () => disconnects,
+            fonts,
+        };
+    }
+
+    afterEach(() => {
+        delete (globalThis as { __opdkSettle?: unknown }).__opdkSettle;
+    });
+
+    it("watches the body for every kind of change, or the root that was asked for", () => {
+        const page = stubPage();
+        expect(watchPageChanges(null)).toBe(true);
+        expect(watchPageChanges(".panel")).toBe(true);
+        const init = { childList: true, subtree: true, attributes: true, characterData: true };
+        expect(page.observed).toEqual([["body", init], ["panel", init]]);
+        // The second call replaced the first watch.
+        expect(page.disconnected()).toBe(1);
+    });
+
+    it("reports a root that matches nothing, and a page that cannot observe, without leaving a watch behind", () => {
+        stubPage();
+        expect(watchPageChanges(".nope")).toBe(false);
+        expect(isPageSettled(0)).toBe(false);
+        vi.stubGlobal("MutationObserver", undefined);
+        expect(watchPageChanges(null)).toBe(false);
+        vi.stubGlobal("document", undefined);
+        expect(watchPageChanges(null)).toBe(false);
+    });
+
+    it("is settled only after the DOM has been quiet for quietMs, and a mutation starts the window again", () => {
+        const page = stubPage();
+        watchPageChanges(null);
+        expect(isPageSettled(150)).toBe(false);
+        page.advance(149);
+        expect(isPageSettled(150)).toBe(false);
+        page.advance(1);
+        expect(isPageSettled(150)).toBe(true);
+        page.mutate();
+        expect(isPageSettled(150)).toBe(false);
+        page.advance(150);
+        expect(isPageSettled(150)).toBe(true);
+    });
+
+    it("waits for fonts that are loading", () => {
+        const page = stubPage({ fonts: "loading" });
+        watchPageChanges(null);
+        page.advance(500);
+        expect(isPageSettled(150)).toBe(false);
+        expect(unsettledReasons(150)).toEqual(["a font is still loading"]);
+        page.fonts.status = "loaded";
+        expect(isPageSettled(150)).toBe(true);
+    });
+
+    it("waits for images in the viewport only; an image far below the fold or already complete does not count", () => {
+        const inView = { complete: false, box: { top: 10, left: 10, bottom: 110, right: 110 } };
+        const page = stubPage({
+            images: [
+                inView,
+                { complete: false, box: { top: 5000, left: 0, bottom: 5100, right: 100 } },
+                { complete: false, box: { top: -300, left: 0, bottom: -200, right: 100 } },
+                { complete: false, box: { top: 0, left: 900, bottom: 100, right: 1000 } },
+                { complete: false, box: { top: 0, left: -300, bottom: 100, right: -200 } },
+                { complete: true, box: { top: 0, left: 0, bottom: 100, right: 100 } },
+            ],
+        });
+        watchPageChanges(null);
+        page.advance(500);
+        expect(isPageSettled(150)).toBe(false);
+        expect(unsettledReasons(150)).toEqual(["1 image in view has not finished loading"]);
+        inView.complete = true;
+        expect(isPageSettled(150)).toBe(true);
+        expect(unsettledReasons(150)).toEqual([]);
+    });
+
+    it("looks at the images inside the watched root only: a pending one outside it does not block", () => {
+        const box = { top: 10, left: 10, bottom: 110, right: 110 };
+        const inside = { complete: true, box };
+        const page = stubPage({ images: [{ complete: false, box }], panelImages: [inside] });
+        watchPageChanges(".panel");
+        page.advance(500);
+        expect(isPageSettled(150)).toBe(true);
+        expect(unsettledReasons(150)).toEqual([]);
+        // The same page watched as a whole is not settled, and a pending image inside the root blocks.
+        watchPageChanges(null);
+        page.advance(500);
+        expect(isPageSettled(150)).toBe(false);
+        watchPageChanges(".panel");
+        page.advance(500);
+        inside.complete = false;
+        expect(isPageSettled(150)).toBe(false);
+        expect(unsettledReasons(150)).toEqual(["1 image in view has not finished loading"]);
+    });
+
+    it("explains every reason at once, and counts images", () => {
+        const page = stubPage({
+            fonts: "loading",
+            images: [
+                { complete: false, box: { top: 0, left: 0, bottom: 10, right: 10 } },
+                { complete: false, box: { top: 0, left: 0, bottom: 10, right: 10 } },
+            ],
+        });
+        watchPageChanges(null);
+        page.advance(40);
+        expect(unsettledReasons(150)).toEqual(["the DOM changed 40 ms ago", "a font is still loading", "2 images in view have not finished loading"]);
+    });
+
+    it("says the watch was lost when there is none (the window reloaded), and is never settled then", () => {
+        stubPage();
+        expect(isPageSettled(0)).toBe(false);
+        expect(unsettledReasons(0)).toEqual(["the watch was lost, probably because the window reloaded during settle()"]);
+    });
+
+    it("stops the watch, and stopping twice is harmless", () => {
+        const page = stubPage();
+        watchPageChanges(null);
+        stopPageWatch();
+        stopPageWatch();
+        expect(page.disconnected()).toBe(1);
+        expect(isPageSettled(0)).toBe(false);
+    });
+
+    it("does not look at the clock Date, which freezeTime() fixes", () => {
+        const page = stubPage();
+        vi.stubGlobal("Date", { now: () => 0 });
+        watchPageChanges(null);
+        page.advance(200);
+        expect(isPageSettled(150)).toBe(true);
+        vi.unstubAllGlobals();
     });
 });

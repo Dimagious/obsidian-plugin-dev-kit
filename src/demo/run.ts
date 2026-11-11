@@ -10,6 +10,7 @@ import {
     DEFAULT_GIF_FPS,
     MAX_AUTO_GIF_WIDTH,
     resolveFilmSettings,
+    stillsSettings,
     type FilmSettings,
 } from "./config.js";
 import { buildConcatList, gifArgs, locateFfmpeg, mp4Args, posterArgs, rawFrameArgs, resolveGifWidth } from "./ffmpeg.js";
@@ -18,6 +19,7 @@ import { assertFrameFiles, listFilms, moveFile, type FoundFilm } from "./films.j
 import { PAGE_HEIGHT, PAGE_SCALE, PAGE_WIDTH, resolvePhoneLayout } from "./phone-layout.js";
 import type { ComposeParams } from "./phone-render.js";
 import { PUBLISHED_FILE, readPublished, sameRecord, updatePublished, writePublished, type PublishedRecord } from "./published.js";
+import { listStills, publishStill, stillKey } from "./stills.js";
 
 const STEP = "demo";
 
@@ -77,16 +79,26 @@ export async function runDemo(options: DemoRunOptions): Promise<number> {
     const outDir = path.resolve(options.cwd, folders.outDir);
     const output = path.resolve(options.cwd, folders.output);
     const listing = listFilms(outDir);
-    const known = new Set([...listing.complete, ...listing.incomplete, ...listing.broken].map((film) => film.name));
-    const unknownNames = options.names.filter((name) => !known.has(name));
+    const filmNames = new Set([...listing.complete, ...listing.incomplete, ...listing.broken].map((film) => film.name));
+    const stillsConfig = stillsSettings(config);
+    const stills = listStills(outDir);
+    // A name selects a film, a still, or both. With stills turned off a still's name is not one the command knows.
+    const stillNames = stillsConfig === null ? [] : stills;
+    const unknownNames = options.names.filter((name) => !filmNames.has(name) && !stillNames.includes(name));
     if (unknownNames.length > 0) {
-        reporter.failure(STEP, `no film named ${unknownNames.map((name) => `"${name}"`).join(", ")} in ${path.join(outDir, "films")}`, {
-            details: [known.size === 0 ? "There are no films there." : `Films there: ${[...known].join(", ")}`],
+        const hiddenStills = unknownNames.filter((name) => stills.includes(name));
+        reporter.failure(STEP, `no film${stillNames.length > 0 ? " or still" : ""} named ${unknownNames.map((name) => `"${name}"`).join(", ")} in ${outDir}`, {
+            details: [
+                filmNames.size === 0 ? "There are no films there." : `Films there: ${[...filmNames].join(", ")}`,
+                ...(stillNames.length > 0 ? [`Stills there: ${stillNames.join(", ")}`] : []),
+                ...(hiddenStills.length > 0 ? ["demo.stills is false, so stills are not selectable."] : []),
+            ],
             hint: "Run the demo specs first (npx playwright test), or fix the name.",
         });
         return 1;
     }
     const wanted = (name: string): boolean => options.names.length === 0 || options.names.includes(name);
+    const selectedStills = stillNames.filter(wanted);
     let failed = false;
     for (const film of listing.broken.filter((item) => wanted(item.name))) {
         failed = true;
@@ -101,9 +113,17 @@ export async function runDemo(options: DemoRunOptions): Promise<number> {
             reporter.warn(STEP, `${film.name}: skipped, ${film.reason}`);
         }
     }
+    // Stills do not stand in for films: films were recorded and none can be encoded, so the run failed. With names,
+    // only what was named counts (an incomplete named film already failed above).
+    if (options.names.length === 0 && filmNames.size > 0 && listing.complete.length === 0 && !failed) {
+        failed = true;
+        reporter.failure(STEP, `no complete film among the ${String(filmNames.size)} recorded in ${path.join(outDir, "films")}`, {
+            hint: "Run the demo specs again (npx playwright test) and check that they pass.",
+        });
+    }
     const films = listing.complete.filter((film) => wanted(film.name));
-    if (films.length === 0) {
-        if (!failed && listing.broken.length + listing.incomplete.length === 0) {
+    if (films.length === 0 && selectedStills.length === 0) {
+        if (!failed && filmNames.size === 0) {
             reporter.failure(STEP, `no films in ${path.join(outDir, "films")}`, {
                 hint: "Record them with the demo fixture (npx playwright test), or set demo.outDir in opdk.config.mjs to where the specs write.",
             });
@@ -111,14 +131,19 @@ export async function runDemo(options: DemoRunOptions): Promise<number> {
         return 1;
     }
     const planned = films.map((film) => ({ film, settings: resolveFilmSettings(config, film.name, film.manifest.theme, options.source) }));
-    // Before any work: a missing ffmpeg is the same message for every film.
-    const ffmpeg = await deps.locateFfmpeg(options.env, planned.some((item) => item.settings.mp4));
-    fs.mkdirSync(output, { recursive: true });
+    // Before any work: a missing ffmpeg is the same message for every film. A run of stills only does not need one.
+    const ffmpeg = planned.length === 0 ? undefined : await deps.locateFfmpeg(options.env, planned.some((item) => item.settings.mp4));
+    if (planned.length > 0) {
+        fs.mkdirSync(output, { recursive: true });
+    }
 
     const written: Record<string, string> = {};
-    // Films that encoded without a failure: only they can say that a recorded file of theirs is no longer produced.
+    // Films (and stills, by their key) that were written without a failure: only they can say that a recorded file of theirs is no longer produced.
     const encoded = new Set<string>();
     for (const { film, settings } of planned) {
+        if (ffmpeg === undefined) {
+            break;
+        }
         const outcome = await encodeFilm({ film, settings, ffmpeg, deps, options, output });
         for (const file of outcome.files) {
             written[projectPath(options.cwd, file)] = film.name;
@@ -137,11 +162,77 @@ export async function runDemo(options: DemoRunOptions): Promise<number> {
         }
     }
 
+    if (stillsConfig !== null && publishStills({ names: selectedStills, outDir, folder: path.resolve(options.cwd, stillsConfig.output), cwd: options.cwd, written, encoded, reporter, filmFiles: filmOwnedFiles(outDir) })) {
+        failed = true;
+    }
+
     for (const warning of pairWarnings(listing.complete.map((film) => film.manifest))) {
         reporter.warn(STEP, warning);
     }
+    // Stills are known whether or not they are published now: turning `demo.stills` off must not make them look orphaned.
+    const known = new Set([...filmNames, ...stills.map(stillKey)]);
     reportStale({ outDir, cwd: options.cwd, written, encoded, known, reporter });
     return failed ? 1 : 0;
+}
+
+/** The files the published record gives to films (not stills). An unreadable record gives none; reportStale reports it. */
+function filmOwnedFiles(outDir: string): PublishedRecord {
+    let record: PublishedRecord;
+    try {
+        record = readPublished(outDir);
+    } catch {
+        return {};
+    }
+    return Object.fromEntries(Object.entries(record).filter(([, owner]) => !owner.startsWith("still:")));
+}
+
+/** Copies the selected stills into `folder`, reporting each one that was copied. Returns true when any failed. */
+function publishStills(params: {
+    names: readonly string[];
+    outDir: string;
+    folder: string;
+    cwd: string;
+    written: Record<string, string>;
+    encoded: Set<string>;
+    reporter: Reporter;
+    /** Files an earlier run recorded as a film's, so a still named alone cannot take them either. */
+    filmFiles: PublishedRecord;
+}): boolean {
+    const unchanged: string[] = [];
+    let failed = false;
+    for (const name of params.names) {
+        // A still must not replace a film's file, written in this run or recorded by an earlier one (a still named
+        // `<film>-poster` would take the poster).
+        const destination = projectPath(params.cwd, path.join(params.folder, `${name}.png`));
+        const owner = params.written[destination] ?? params.filmFiles[destination];
+        if (owner !== undefined) {
+            failed = true;
+            const what = destination.endsWith("-poster.png") ? "the poster" : "the file";
+            params.reporter.failure(STEP, `still "${name}" would overwrite ${what} of film "${owner}"; rename the still`, {
+                hint: `${destination} belongs to film "${owner}". Rename ${path.join(params.outDir, "stills", `${name}.png`)} by changing the name passed to demo.still().`,
+            });
+            continue;
+        }
+        try {
+            const still = publishStill(params.outDir, name, params.folder);
+            params.written[projectPath(params.cwd, still.file)] = stillKey(name);
+            params.encoded.add(stillKey(name));
+            if (still.copied) {
+                params.reporter.success(STEP, `still ${name}: png ${formatBytes(still.bytes)}`);
+            } else {
+                unchanged.push(name);
+            }
+        } catch (error) {
+            failed = true;
+            params.reporter.failure(STEP, `still ${name}: ${error instanceof Error ? error.message : String(error)}`, {
+                hint: `Check that ${path.join(params.outDir, "stills", `${name}.png`)} can be read and ${params.folder} can be written, or run the spec again.`,
+            });
+        }
+    }
+    if (unchanged.length > 0) {
+        params.reporter.info(STEP, `${String(unchanged.length)} ${unchanged.length === 1 ? "still" : "stills"} unchanged: ${unchanged.join(", ")}`);
+    }
+    return failed;
 }
 
 /** The record's key for a file: relative to the project, with `/` on every platform. */
@@ -176,10 +267,10 @@ function reportStale(params: {
     }
     const stale = findStaleOutputs(previous, params.known, exists, { encoded: params.encoded, written: params.written });
     if (stale.goneFilms.length > 0) {
-        reporter.warn(STEP, `media published by an earlier run of this command belongs to films that no longer exist: ${stale.goneFilms.join(", ")}. Delete them if they are obsolete; the command never removes files.`);
+        reporter.warn(STEP, `media published by an earlier run of this command belongs to films or stills that no longer exist: ${stale.goneFilms.join(", ")}. Delete them if they are obsolete; the command never removes files.`);
     }
     if (stale.notWritten.length > 0) {
-        reporter.warn(STEP, `media published by an earlier run of this command is no longer written by its film (an output turned off, or moved): ${stale.notWritten.join(", ")}. Delete them if they are obsolete; the command never removes files.`);
+        reporter.warn(STEP, `media published by an earlier run of this command is no longer written by its film or still (an output turned off, or moved): ${stale.notWritten.join(", ")}. Delete them if they are obsolete; the command never removes files.`);
     }
     const next = updatePublished(previous, params.written, exists);
     if (!readable || !sameRecord(previous, next)) {

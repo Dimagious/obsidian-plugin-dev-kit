@@ -38,6 +38,10 @@ function setUp(overrides: Partial<DemoDeps> = {}): DemoController {
             fake.log.push("collapseSidebars");
             return Promise.resolve();
         },
+        settle: () => {
+            fake.log.push("settle");
+            return Promise.resolve();
+        },
         uiTimeoutMs: 555,
         seedVault: "/plugin/e2e/vault",
         seedVaultSource: "option",
@@ -346,6 +350,57 @@ describe("still", () => {
         const { demo } = setUp();
         await demo.still("hero");
         expect(fs.existsSync(out("films"))).toBe(false);
+    });
+});
+
+describe("settle option of shots and stills", () => {
+    const shotWith = async (settle?: boolean): Promise<void> => {
+        const film = setUp().demo.film({ kind: "desktop" });
+        await film.shot({ hold: 1, ...(settle !== undefined && { settle }) });
+    };
+
+    it("does not settle unless asked, so a loading frame filmed on purpose is taken as it is", async () => {
+        await shotWith();
+        await shotWith(false);
+        expect(logged("settle")).toEqual([]);
+        await setUp().demo.still("plain");
+        expect(logged("settle")).toEqual([]);
+    });
+
+    it("settles a shot before the page is frozen", async () => {
+        await shotWith(true);
+        expect(fake.log.filter((entry) => ["settle", "freeze", "release"].includes(entry))).toEqual(["settle", "freeze", "release"]);
+    });
+
+    it("settles a still before the freeze, and after a preset has resized the window", async () => {
+        const { demo } = setUp({
+            settle: () => {
+                fake.log.push(`settle@${JSON.stringify(fake.viewport)}`);
+                return Promise.resolve();
+            },
+        });
+        await demo.still("card", { preset: "social", settle: true });
+        const order = fake.log.filter((entry) => entry.startsWith("settle") || entry === "freeze");
+        expect(order).toEqual([`settle@${JSON.stringify({ width: 1200, height: 630, scale: 1 })}`, "freeze"]);
+        expect(fs.existsSync(out("stills", "card.png"))).toBe(true);
+    });
+
+    it("writes nothing and puts the window back when settle() fails", async () => {
+        const { demo } = setUp({ settle: () => Promise.reject(new Error("settle(): the page was not quiet")) });
+        await expect(demo.still("card", { preset: "social", settle: true })).rejects.toThrow("settle(): the page was not quiet");
+        expect(fs.existsSync(out("stills", "card.png"))).toBe(false);
+        expect(fake.viewport).toEqual({ width: 1200, height: 800, scale: 1 });
+        expect(logged("freeze")).toEqual([]);
+        const film = setUp({ settle: () => Promise.reject(new Error("settle(): not quiet")) }).demo.film({ kind: "desktop", name: "f" });
+        await expect(film.shot({ hold: 1, settle: true })).rejects.toThrow("not quiet");
+        expect(manifestOf("f").frames).toHaveLength(0);
+    });
+
+    it("refuses a settle that is not a boolean", async () => {
+        const { demo } = setUp();
+        await expect(demo.still("x", { settle: "yes" as never })).rejects.toThrow('still "x": settle must be true or false, got "yes".');
+        const film = demo.film({ kind: "desktop", name: "g" });
+        await expect(film.shot({ hold: 1, settle: 1 as never })).rejects.toThrow(/frame 1: settle must be true or false, got 1/);
     });
 });
 

@@ -28,7 +28,7 @@ Safety: specs run in a temp copy of the seed vault. When you run anything that w
 ## Destinations and sizes
 
 - README GIF: GitHub shows a README at about 1000 px, and 900 is the kit's own choice, under 2 MB (`gif: { width: 900 }`; the default is the frame width up to 1000 px, 128 colours, 10 fps at most). The size check warns above 2 MB and fails above 10 MB.
-- Stills for other places (`demo.still(name, { preset })`): `readme` 1000 x 640, `listing-desktop` 1200 x 800, `listing-phone` 900 x 1600, `social` 1200 x 630. Stills stay in `<outDir>/stills/`; `opdk demo` does not copy them.
+- Stills for other places (`demo.still(name, { preset })`): `readme` 1000 x 640, `listing-desktop` 1200 x 800, `listing-phone` 900 x 1600, `social` 1200 x 630. `opdk demo` copies every `<outDir>/stills/<name>.png` to the output folder as `<name>.png`, only when the bytes changed (`demo.stills: false` turns it off, `demo.stills: { output }` picks a folder); `opdk demo hero` selects the still `hero` as well as a film of that name.
 - Frames are shot at scale 2 (a 1200 x 800 window gives 2400 x 1600, a phone gives 780 x 1688). The MP4 and poster keep the frame size, the GIF is smaller.
 
 ## The recording API
@@ -56,7 +56,7 @@ test("tour: open a note, type, run a command", async ({ obsidian, demo, win }) =
 });
 ```
 
-- `demo.film({ kind, name?, fps?, captions?, clip?, padding?, scale?, cursor?, forbiddenSelectors?, allowForeignVault? })`; the folder is emptied at the start, so a retake replaces the frames. `film.shot({ hold, caption?, clip?, padding? })`: assert the state first, a shot does not wait for the app.
+- `demo.film({ kind, name?, fps?, captions?, clip?, padding?, scale?, cursor?, forbiddenSelectors?, allowForeignVault? })`; the folder is emptied at the start, so a retake replaces the frames. `film.shot({ hold, caption?, clip?, padding?, settle? })`: assert the state first, a shot does not wait for the app. `settle: true` (also in `demo.still()`, default `false`) waits for the page to stop changing before the freeze: use it instead of a `waitForTimeout` (a pause longer than `quietMs` before the render looks settled, so assert on the element or raise `quietMs`).
 - `demo.tap(target, { whilePressed? })` on a phone, `demo.moveAndClick(target)` on the desktop; `demo.typeSlowly(text)` types into the focused element (fails when nothing editable has focus), `demo.typeSlowly(target, text)` clicks the target first. `demo.caption(text | null)` is a bar drawn into the frames; `captions` in `film()` is the list the phone layout draws beside the phone. `demo.hideCursor()`. The cursor arrow follows every Playwright mouse action (`click()`, `check()`, `selectOption()`), not only `moveAndClick()`; `cursor: false` in `demo.film()` keeps it out of that film's frames.
 - `demo.beat(seconds)` is seconds (not milliseconds, throws above 60) and is for pacing a Playwright video of a test; the kit films stills only, so use `hold`.
 - `demo.cleanUi(options?)` (each call sets the five hidden parts: ribbon, statusBar, tabHeaders, viewHeader, inlineTitle; it also folds both sidebars, `sidebars: false` keeps them), `demo.freezeTime(date)`, `demo.themes(["light", "dark"], scene)` (names get `-light` and `-dark`).
@@ -64,19 +64,19 @@ test("tour: open a note, type, run a command", async ({ obsidian, demo, win }) =
 
 ## Encode
 
-`opdk.config.mjs`, `demo` section (all optional): `outDir` (`.opdk/demo`), `output` (`docs/screens`), `gif`, `mp4`, `poster`, `layout` (`"plain"` or `"phone-captions"`), `budget`, `loop`, `phone`, and `films.<name>` with the same film keys. Then:
+`opdk.config.mjs`, `demo` section (all optional): `outDir` (`.opdk/demo`), `output` (`docs/screens`), `gif`, `mp4`, `poster`, `stills` (`true`, `false` or `{ output }`), `layout` (`"plain"` or `"phone-captions"`), `budget`, `loop`, `phone`, and `films.<name>` with the same film keys. Then:
 
 ```bash
 OPDK_E2E_FILM=1 npx playwright test film   # records
-npx opdk demo [names...]                   # encodes every complete film
+npx opdk demo [names...]                   # encodes every complete film, copies the stills
 ```
 
-`opdk demo` needs ffmpeg (on `PATH` or `OPDK_FFMPEG`). The phone layout also needs `electron` and `@playwright/test`, as the e2e tests do; in CI add ffmpeg, a virtual display (`xvfb-run -a`) and `OPDK_COMPOSE_NO_SANDBOX=1`.
+`opdk demo` needs ffmpeg for films (on `PATH` or `OPDK_FFMPEG`). The phone layout also needs `electron` and `@playwright/test`, as the e2e tests do; in CI add ffmpeg, a virtual display (`xvfb-run -a`) and `OPDK_COMPOSE_NO_SANDBOX=1`.
 
 ## Reading failures
 
 - `no films in <dir>/films`: the specs did not run or wrote elsewhere. Run the gated spec, or set `demo.outDir`.
-- `no film named "x" in ...`: the message lists the films there; fix the name.
+- `no film named "x" in ...` (`no film or still named` when stills exist) `in <outDir>`: the message lists the films and stills there; fix the name. With `stills: false` it adds `demo.stills is false, so stills are not selectable` when the name is a still on disk.
 - `<name>: skipped, <reason>` or `not encoded`: the recording test did not pass, so the film is incomplete. Fix the test, record again.
 - `film "x" refused: OPDK_E2E_VAULT points this run at ...`: unset `OPDK_E2E_VAULT`. `... the seed vault ... lies outside the plugin folder`: move the seed vault into the plugin folder. Do not reach for `allowForeignVault` to make it pass.
 - `film "x", frame N refused: an element matching the forbidden selector`: close or hide the element before the shot.
@@ -86,8 +86,9 @@ npx opdk demo [names...]                   # encodes every complete film
 - `! loop does not close: the last frame differs from the first in a W x H px area at (x, y)`: end the scene where it began (hide the caption and the cursor in the last frame), or set `loop: "off"` for a tour. Pixels within 8 of 255 per channel already count as equal.
 - `! frame 0003.png (0.05 s) is held for less than one GIF frame`: hold it at least 0.1 s, or raise `gif.fps`.
 - `! the dark film "x-dark" is missing`: record both themes, or encode with the pair's name.
-- `! media published by an earlier run of this command belongs to films that no longer exist: ...`: files `opdk demo` itself wrote (recorded in `<outDir>/published.json`) for a film that was renamed or removed; the command never deletes, so delete them by hand. Unrelated media in the output folder is never listed.
-- `! media published by an earlier run of this command is no longer written by its film (an output turned off, or moved): ...`: recorded files of a film that still exists and encoded cleanly this run without writing them (for example after `mp4: false` or a new `demo.output`). Delete them by hand.
+- `! media published by an earlier run of this command belongs to films or stills that no longer exist: ...`: files `opdk demo` itself wrote (recorded in `<outDir>/published.json`) for a film or still that was renamed or removed; the command never deletes, so delete them by hand. Unrelated media in the output folder is never listed.
+- `! media published by an earlier run of this command is no longer written by its film or still (an output turned off, or moved): ...`: recorded files of a film or still that still exists and was written without a failure this run but not these files (for example after `mp4: false`, a new `demo.output` or `demo.stills.output`). Delete them by hand.
+- `settle(): the page was not quiet for N ms within M ms (...)`: something keeps changing the DOM, a font or an image in view is slow. Pass `settle` only where the page can be still, call `obsidian.settle({ root })` with a `root` that leaves out a part that never stops changing, or raise `timeouts.helpers.ui`.
 - `layout "phone-captions" ... has none` / `is for phone films`: pass `captions` to `demo.film()`, and use `kind: "phone"`.
 - `... must be a CSS value without "..."`: a `phone` colour or font holds `; { } < > \ /* url(` or quotes; use a plain value.
 
@@ -95,5 +96,5 @@ npx opdk demo [names...]                   # encodes every complete film
 
 1. Add the kit, `@playwright/test`, `electron` and ffmpeg; add `.opdk/` to `.gitignore`. To move the kit to a new tag use `npm install -D "github:Dimagious/obsidian-plugin-dev-kit#<tag>"`: editing `package.json` and running a plain `npm install` keeps the old lock entry.
 2. Rewrite the film and capture specs on `demo` (films of stills in place of screen recordings and screenshot loops).
-3. Move GIF numbers to `gif` per film, the poster and output names are `<name>-poster.png` and `docs/screens` (Garmy: name the film `film-<name>` to keep `film-<name>-poster.png`; Dashy's phone film uses `layout: "phone-captions"` with the colours in `phone`; Snipsy's voice-over and outro are not part of the kit).
+3. Move README and listing pictures from `win.screenshot` to `demo.still(name, { preset, settle: true })` (and their sleeps to `settle`; a pause longer than `quietMs` before the render looks settled, so assert on the element or raise `quietMs`), then GIF numbers to `gif` per film, the poster and output names are `<name>-poster.png` and `docs/screens` (Garmy: name the film `film-<name>` to keep `film-<name>-poster.png`; Dashy's phone film uses `layout: "phone-captions"` with the colours in `phone`; Snipsy's voice-over and outro are not part of the kit).
 4. Delete the old encoder scripts, run the specs and `opdk demo`, compare, and list the differences in the plugin's CHANGELOG. `beat()` takes seconds now.

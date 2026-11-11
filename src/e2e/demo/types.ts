@@ -54,6 +54,13 @@ export interface ShotOptions {
     readonly clip?: Locator | DemoRect;
     /** Overrides the film's padding for this frame. */
     readonly padding?: number;
+    /**
+     * Run `obsidian.settle()` before the page is frozen: waits until the DOM has been quiet for 150 ms, fonts are loaded
+     * and the images in view are complete (budget: `timeouts.helpers.ui`). Default false, so a loading state filmed on
+     * purpose is taken as it is. A pause longer than `quietMs` before the render looks settled: assert on the element
+     * or raise `quietMs` (call `obsidian.settle({ quietMs })` yourself).
+     */
+    readonly settle?: boolean;
 }
 
 /** A film being recorded. */
@@ -73,6 +80,13 @@ export interface StillOptions extends CaptureOptions {
     readonly preset?: DemoPresetName;
     /** Device pixels per CSS pixel. Default: `demo.scale` of the options, 2. */
     readonly scale?: number;
+    /**
+     * Run `obsidian.settle()` before the page is frozen: waits until the DOM has been quiet for 150 ms, fonts are loaded
+     * and the images in view are complete (budget: `timeouts.helpers.ui`). Default false, so a loading state filmed on
+     * purpose is taken as it is. A pause longer than `quietMs` before the render looks settled: assert on the element
+     * or raise `quietMs` (call `obsidian.settle({ quietMs })` yourself).
+     */
+    readonly settle?: boolean;
 }
 
 export interface StillResult {
