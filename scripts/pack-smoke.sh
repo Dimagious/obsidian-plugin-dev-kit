@@ -22,6 +22,8 @@ eslint_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.j
 typescript_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies.typescript")"
 # The version of Playwright the e2e step below installs.
 playwright_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies['@playwright/test']")"
+# The version of Vitest the unit step below installs.
+vitest_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies.vitest")"
 
 # The agent skills ship in the tarball at the same path as in the repository.
 tarball_files="$(tar -tzf "$tmp/$tarball")"
@@ -40,7 +42,7 @@ npm install --no-audit --no-fund --loglevel=error "$tmp/$tarball"
 
 # Playwright and Electron are optional peers: installing the kit must not bring them. Everything up to the e2e step
 # below runs without them, which is the proof that the CLI, the build and the scanner never load Playwright.
-for optional_peer in node_modules/@playwright/test node_modules/electron; do
+for optional_peer in node_modules/@playwright/test node_modules/electron node_modules/vitest node_modules/jsdom; do
     if [ -e "$optional_peer" ]; then
         echo "smoke: $optional_peer exists before the e2e step; the kit's optional peers must not be installed with it" >&2
         exit 1
@@ -206,6 +208,28 @@ let rejected = false;
 try { createObsidianTest({}); } catch (error) { rejected = /seedVault/.test(String(error)); }
 if (!rejected) throw new Error('createObsidianTest accepted options without seedVault');
 if (defineObsidianConfig().workers !== 1) throw new Error('defineObsidianConfig did not set workers: 1');
+"
+
+echo "--- import obsidian-plugin-dev-kit/vitest and /vitest/dom (Vitest installed only now: it is an optional peer)"
+npm install --no-audit --no-fund --loglevel=error "vitest@$vitest_version"
+node --input-type=module -e "
+import fs from 'node:fs';
+import { defineUnitConfig } from 'obsidian-plugin-dev-kit/vitest';
+import { installObsidianDom, uninstallObsidianDom } from 'obsidian-plugin-dev-kit/vitest/dom';
+const config = defineUnitConfig({ coverage: { include: ['src/**/*.ts'] }, dom: ['src/ui/**/*.test.ts'] });
+if (config.test?.coverage?.provider !== 'v8' || config.test.projects?.length !== 2) throw new Error('defineUnitConfig returned an unexpected config');
+// The setup file the dom project uses must be in the tarball, not only importable by name.
+const setupFile = config.test.projects[1].test.setupFiles[0];
+if (!setupFile.includes('node_modules/obsidian-plugin-dev-kit/dist/vitest/dom/setup.js') || !fs.existsSync(setupFile)) {
+    throw new Error('the dom setup file is missing from the package: ' + setupFile);
+}
+let rejected = false;
+try { defineUnitConfig({}); } catch (error) { rejected = /coverage\\.include/.test(String(error)); }
+if (!rejected) throw new Error('defineUnitConfig accepted options without coverage.include');
+if (typeof installObsidianDom !== 'function' || typeof uninstallObsidianDom !== 'function') throw new Error('vitest/dom exports are missing');
+let loud = false;
+try { installObsidianDom(); } catch (error) { loud = /needs a DOM/.test(String(error)); }
+if (!loud) throw new Error('installObsidianDom did not fail loudly without a DOM');
 "
 
 echo "smoke: ok"
