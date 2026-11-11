@@ -7,7 +7,7 @@ const release = (assets: Record<string, unknown>[], extra: Record<string, unknow
 describe("releasesOfTag", () => {
     it("finds a draft by tag among several releases and counts the page", () => {
         const json = JSON.stringify([release([], { tag_name: "1.2.4", id: 10 }), release([asset("main.js")])]);
-        expect(releasesOfTag(json, "1.2.3")).toEqual({ count: 2, found: [{ id: 9, tag: "1.2.3", draft: true, prerelease: false, url: "https://example.com/r", assets: [{ id: 1, name: "main.js", size: 10, state: "uploaded" }] }] });
+        expect(releasesOfTag(json, "1.2.3")).toEqual({ count: 2, found: [{ id: 9, tag: "1.2.3", draft: true, prerelease: false, url: "https://example.com/r", body: "", assets: [{ id: 1, name: "main.js", size: 10, state: "uploaded" }] }] });
     });
 
     it("returns every release of the tag, so a duplicate is visible", () => {
@@ -27,7 +27,9 @@ describe("releasesOfTag", () => {
 
 describe("parseRelease", () => {
     it("defaults what is missing", () => {
-        expect(parseRelease({ id: 1, tag_name: "1.0.0" })).toEqual({ id: 1, tag: "1.0.0", draft: false, prerelease: false, url: "", assets: [] });
+        expect(parseRelease({ id: 1, tag_name: "1.0.0" })).toEqual({ id: 1, tag: "1.0.0", draft: false, prerelease: false, url: "", body: "", assets: [] });
+        expect(parseRelease({ id: 1, tag_name: "1.0.0", body: "Notes\n" })?.body).toBe("Notes\n");
+        expect(parseRelease({ id: 1, tag_name: "1.0.0", body: null })?.body).toBe("");
         expect(parseRelease({ id: "x" })).toBeUndefined();
         expect(parseRelease({ id: 1, tag_name: "1", assets: [{ name: "a" }, { id: 2, name: "b" }] })?.assets).toEqual([{ id: 2, name: "b", size: 0, state: "" }]);
     });

@@ -102,6 +102,10 @@ const REJECTED = /rejected|non-fast-forward|fetch first|failed to push some refs
 export async function pushBranch(run: RunGit, facts: TagFacts): Promise<"pushed" | "already-there"> {
     const listed = await run(["ls-remote", "origin", `refs/heads/${facts.branch}`]);
     const remoteTip = listed.split("\n").find((entry) => entry.endsWith(`\trefs/heads/${facts.branch}`))?.split("\t")[0];
+    if (remoteTip !== undefined && remoteTip !== facts.commit) {
+        // The ancestry test needs origin's tip as an object here: origin may hold the release commit plus newer commits this clone never fetched.
+        await run(["fetch", "--no-tags", "origin", facts.branch]);
+    }
     if (remoteTip !== undefined && (remoteTip === facts.commit || (await tryGit(run, ["merge-base", "--is-ancestor", facts.commit, remoteTip])) !== undefined)) {
         return "already-there";
     }

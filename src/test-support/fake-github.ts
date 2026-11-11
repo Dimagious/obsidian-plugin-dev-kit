@@ -27,6 +27,8 @@ export interface FakeRun {
     conclusion: string | null;
     event: string;
     head_sha: string;
+    /** The tag name on a tag push. */
+    head_branch: string;
     html_url: string;
     name: string;
     created_at: string;
@@ -42,6 +44,7 @@ export function kitRun(slug: string, commit: string, overrides: Partial<FakeRun>
         conclusion: "success",
         event: "push",
         head_sha: commit,
+        head_branch: "1.0.1",
         html_url: `https://github.com/${slug}/actions/runs/${String(id)}`,
         name: "Release",
         created_at: "2026-11-11T10:00:00Z",
@@ -53,6 +56,8 @@ export function kitRun(slug: string, commit: string, overrides: Partial<FakeRun>
 export interface FakeRelease {
     draft: boolean;
     assets: { name: string; bytes: Buffer; state?: string }[];
+    /** The notes of this release; unset: `FakeGithub.notes`. */
+    body?: string;
 }
 
 /**
@@ -69,6 +74,8 @@ export class FakeGithub implements RunGh {
     /** What successive reads of one run by id return as `status/conclusion`; the last one repeats. Unset: the run as it is. */
     runStates: string[] | undefined;
     release: FakeRelease | undefined;
+    /** The notes every release carries unless it sets its own `body`. */
+    notes = "";
     /** Releases of other tags, listed before this one; `pages` of them fill the first pages of the list. */
     otherReleases = 0;
     /** A second release for the tag, as a re-run of a failed workflow makes. */
@@ -203,6 +210,7 @@ export class FakeGithub implements RunGh {
             draft: release?.draft ?? false,
             prerelease: false,
             html_url: `https://github.com/${this.slug}/releases/tag/${this.tag}`,
+            body: release?.body ?? this.notes,
             assets: (release?.assets ?? []).map((asset, index) => ({ id: index + 1, name: asset.name, size: asset.bytes.length, state: asset.state ?? "uploaded" })),
         };
     }

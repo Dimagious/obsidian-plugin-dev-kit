@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createContext } from "../test-support/plugin-fixture.js";
 import { createReleaseRepo, type ReleaseRepo } from "../test-support/release-fixture.js";
 import { releaseCommand } from "./commands.js";
-import { changelogNotes } from "./publish-command.js";
+import { changelogNotes, tagChangelogNotes } from "./publish-command.js";
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
@@ -29,6 +29,27 @@ function signedOutGh(): void {
     chmodSync(path.join(bin, "gh"), 0o755);
     process.env.PATH = `${bin}:${savedPath ?? ""}`;
 }
+
+describe("tagChangelogNotes", () => {
+    it("reads the changelog as committed at the tag, not the working tree", async () => {
+        repo = createReleaseRepo();
+        repo.write("CHANGELOG.md", "# Changelog\n\n## [1.0.0] - 2026-01-01\n\n- Edited after the tag.\n");
+        expect(await tagChangelogNotes(repo.run, {}, "1.0.0")).toBe("### Added\n\n- First release.\n");
+        expect(changelogNotes(repo.dir, {}, "1.0.0")).toBe("- Edited after the tag.\n");
+    });
+
+    it("fails with git's message when the tag has no such file, and with the fix when it has no section", async () => {
+        repo = createReleaseRepo();
+        await expect(tagChangelogNotes(repo.run, { release: { changelog: "HISTORY.md" } }, "1.0.0")).rejects.toThrow("HISTORY.md");
+        await expect(tagChangelogNotes(repo.run, {}, "2.0.0")).rejects.toThrow("invalid object name '2.0.0'");
+        await expect(tagChangelogNotes(repo.run, {}, "1.0.0")).resolves.toContain("First release.");
+        repo.write("CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n- x\n");
+        repo.git("add", "CHANGELOG.md");
+        repo.git("commit", "--quiet", "-m", "changelog without 1.1.0");
+        repo.git("tag", "-a", "1.1.0", "-m", "1.1.0");
+        await expect(tagChangelogNotes(repo.run, {}, "1.1.0")).rejects.toThrow('has no "## [1.1.0]" section');
+    });
+});
 
 describe("changelogNotes", () => {
     it("returns the body of the section of the given version, or of the manifest version", () => {

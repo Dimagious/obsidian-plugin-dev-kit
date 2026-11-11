@@ -9,6 +9,8 @@ export interface WorkflowRun {
     readonly conclusion: string;
     readonly event: string;
     readonly headSha: string;
+    /** For a tag push, the tag name: two tags on one commit share `head_sha` but not this. */
+    readonly headBranch: string;
     readonly url: string;
     readonly name: string;
     readonly createdAt: string;
@@ -46,6 +48,7 @@ export function parseRun(value: unknown): WorkflowRun {
         conclusion: text(record, "conclusion"),
         event: text(record, "event"),
         headSha: text(record, "head_sha"),
+        headBranch: text(record, "head_branch"),
         url: text(record, "html_url"),
         name: text(record, "name"),
         createdAt: text(record, "created_at"),
@@ -73,13 +76,14 @@ export const runPath = (repo: string, id: number): string => `repos/${repo}/acti
 export const callsKitWorkflow = (run: WorkflowRun): boolean => run.referenced.some((path) => path.startsWith(`${KIT_WORKFLOW_PATH}@`));
 
 /**
- * The run that belongs to the tag: a push run on exactly the tagged commit that called the kit's release workflow,
- * the newest if it ran more than once. Other workflows on the same push (Pages, say) are not the release, and a
- * manual re-run by someone else is not a push event.
+ * The run that belongs to the tag: a push run on exactly the tagged commit, for exactly this tag (`head_branch` is the
+ * tag name on a tag push; two tags on one commit share the commit and its runs), that called the kit's release
+ * workflow, the newest if it ran more than once. Other workflows on the same push (Pages, say) are not the release,
+ * and a manual re-run by someone else is not a push event.
  */
-export function pickRun(runs: readonly WorkflowRun[], commit: string): WorkflowRun | undefined {
+export function pickRun(runs: readonly WorkflowRun[], commit: string, version: string): WorkflowRun | undefined {
     return runs
-        .filter((run) => run.event === "push" && run.headSha === commit && callsKitWorkflow(run))
+        .filter((run) => run.event === "push" && run.headSha === commit && run.headBranch === version && callsKitWorkflow(run))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)[0];
 }
 

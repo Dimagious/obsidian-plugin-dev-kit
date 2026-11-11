@@ -45,6 +45,8 @@ export interface VerifyInput {
     readonly facts: TagFacts;
     readonly release: ReleaseInfo;
     readonly local: TaggedBuild;
+    /** The changelog notes of the tag, which the draft's body must equal. */
+    readonly notes: string;
     readonly zip: boolean;
     /** An empty folder for the downloaded assets. */
     readonly dir: string;
@@ -67,6 +69,22 @@ const FIX = (version: string, release: ReleaseInfo): string =>
         ? `Nothing was published. Do not edit the assets by hand: delete the draft on GitHub, fix the cause, and release a new patch version with \`opdk release patch\` (the tag ${version} stays and is never moved).`
         : `The release ${version} is already public, so this flow changes nothing. Do not delete it: look at what differs, and if the assets are wrong, release a new patch version with \`opdk release patch\`.`;
 
+/** Reads the notes of the tag; a failure is a stop that resuming would not fix (the tag's changelog is what it is). */
+export async function tagNotes(read: (version: string) => Promise<string>, version: string): Promise<string> {
+    try {
+        return await read(version);
+    } catch (error) {
+        throw new StepFailure(`cannot read the release notes of the tag ${version}: ${error instanceof Error ? error.message : String(error)}`, "The workflow takes the release notes from the changelog at the tag, and so does this check. The tag is never moved: release a new patch version with `opdk release patch`.", [], false);
+    }
+}
+
+const NOTES_SHOWN = 300;
+const trimNotes = (text: string): string => text.replace(/\s+$/, "");
+const shortNotes = (text: string): string => {
+    const trimmed = trimNotes(text);
+    return trimmed.length > NOTES_SHOWN ? `${trimmed.slice(0, NOTES_SHOWN)}... (${String(trimmed.length)} characters)` : trimmed;
+};
+
 /**
  * Checks a release before it is made public: the right asset names, the bytes equal to a build of the tagged
  * commit made here (and the manifest equal to the committed one), and an attestation for each attested file. Throws a
@@ -81,6 +99,17 @@ export async function verifyRelease(input: VerifyInput): Promise<void> {
         throw new StepFailure(`the release ${facts.version} is not what Obsidian needs: ${release.url}`, FIX(facts.version, release), problems, false);
     }
     reporter.success("verify", `assets: ${expected.names.join(", ")}`);
+
+    // The notes travel between two jobs of the workflow (and a person may edit a draft), so they are checked like the bytes.
+    if (trimNotes(release.body) !== trimNotes(input.notes)) {
+        throw new StepFailure(
+            `the notes of the release ${facts.version} do not match the CHANGELOG at the tag: ${release.url}`,
+            FIX(facts.version, release),
+            [`the draft's notes: ${JSON.stringify(shortNotes(release.body))}`, `the CHANGELOG at ${facts.version}: ${JSON.stringify(shortNotes(input.notes))}`],
+            false,
+        );
+    }
+    reporter.success("verify", `release notes equal the CHANGELOG section of ${facts.version}`);
 
     mkdirSync(input.dir, { recursive: true });
     const downloaded = new Map<string, Buffer>();

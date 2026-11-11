@@ -7,6 +7,8 @@ export interface ReleaseInfo {
     readonly draft: boolean;
     readonly prerelease: boolean;
     readonly url: string;
+    /** The release notes; empty when GitHub has none. */
+    readonly body: string;
     readonly assets: readonly ReleaseAsset[];
 }
 
@@ -38,6 +40,7 @@ export function parseRelease(value: unknown): ReleaseInfo | undefined {
         draft: record.draft === true,
         prerelease: record.prerelease === true,
         url: typeof record.html_url === "string" ? record.html_url : "",
+        body: typeof record.body === "string" ? record.body : "",
         assets,
     };
 }

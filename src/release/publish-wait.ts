@@ -37,12 +37,12 @@ export async function waitForWorkflow(input: WaitInput): Promise<WorkflowRun> {
     let run: WorkflowRun | undefined;
     while (run === undefined) {
         const listed = parseRuns(await gh.text(["api", runsPath(repo, commit)]));
-        run = pickRun(listed, commit);
+        run = pickRun(listed, commit, version);
         if (run !== undefined) {
             break;
         }
         if (clock.now() - startedAt >= input.appearMs) {
-            const others = [...new Set(listed.filter((other) => other.event === "push" && other.headSha === commit).map((other) => other.name))];
+            const others = [...new Set(listed.filter((other) => other.event === "push" && other.headSha === commit && other.headBranch === version).map((other) => other.name))];
             const seen = others.length === 0 ? "" : ` The runs on this commit are ${others.map((name) => `"${name}"`).join(", ")}, and none of them calls the kit's release workflow.`;
             throw new StepFailure(
                 `no release workflow run started for the tag ${version} within ${minutes(input.appearMs)}.${seen}`,

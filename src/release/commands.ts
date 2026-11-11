@@ -83,7 +83,8 @@ already pushed. It:
      change); when it fails it prints the run URL and stops, the tag stays. If no such run starts within 3
      minutes, the plugin's tag workflow does not call the kit's release.yml;
   3. checks the draft release: a draft, main.js and manifest.json, styles.css only if the plugin has CSS, no
-     other asset (--zip also expects <id>-<version>.zip); downloads the assets and compares them byte for byte
+     other asset (--zip also expects <id>-<version>.zip); notes equal to the CHANGELOG section at the tag;
+     downloads the assets and compares them byte for byte
      with a build of the tagged commit made here (the committed-tree build of the reproducible check) and
      with the committed manifest.json (the zip is checked for presence and size only); runs gh attestation
      verify on each attested file for the repository, the tag, the tagged commit and the signer, which must be

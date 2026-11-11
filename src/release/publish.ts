@@ -10,7 +10,7 @@ import { CleanupSet, INTERRUPTED_EXIT, type InterruptHooks } from "./interrupt.j
 import { asRecord } from "./json.js";
 import { pushBranch, pushTag, readTagFacts, type TagFacts } from "./publish-git.js";
 import { StepFailure, stopReport, type Stage } from "./publish-state.js";
-import { fetchRelease, verifyRelease } from "./publish-verify.js";
+import { fetchRelease, tagNotes, verifyRelease } from "./publish-verify.js";
 import { waitForWorkflow, type Clock } from "./publish-wait.js";
 import { slugText, type RepoSlug } from "./remote.js";
 import type { ReleaseInfo } from "./release-assets.js";
@@ -23,6 +23,8 @@ export interface PublishInput {
     /** From `release.defaultBranch`; else `origin/HEAD`. */
     readonly defaultBranch: string | undefined;
     /** A production build of the tagged commit; the release assets must equal it. */
+    /** The release notes of the tag, as the workflow makes them (`opdk release notes` at the tag). Throws a message with the fix. */
+    readonly notes: (version: string) => Promise<string>;
     readonly buildTagged: (cleanups: CleanupSet) => Promise<TaggedBuild>;
     /** Expect `<id>-<version>.zip` among the assets (the workflow's `zip: true`). */
     readonly zip: boolean;
@@ -176,7 +178,7 @@ async function flow(input: PublishInput, cleanups: CleanupSet, progress: Progres
     cleanups.add(() => {
         rmSync(dir, { recursive: true, force: true });
     });
-    await verifyRelease({ gh, slug, facts, release, local, zip: input.zip, dir, reporter });
+    await verifyRelease({ gh, slug, facts, release, local, notes: await tagNotes(input.notes, version), zip: input.zip, dir, reporter });
 
     progress.enter("publish");
     const wasDraft = release.draft;
@@ -203,7 +205,7 @@ async function flow(input: PublishInput, cleanups: CleanupSet, progress: Progres
     const pushedBranch = await pushBranch(run, facts);
     reporter.success("git", pushedBranch === "pushed" ? `pushed the release commit to ${facts.branch} (no force)` : `${facts.branch} on origin already holds the release commit`);
 
-    summary(reporter, { repo, version, release, runUrl, branch: facts.branch });
+    summary(reporter, { repo, version, release, runUrl, branch: facts.branch, branchPushed: pushedBranch === "pushed" });
 }
 
 async function findDraft(gh: RunGh, slug: RepoSlug, version: string, clock: Clock): Promise<ReleaseInfo> {
@@ -217,11 +219,11 @@ async function findDraft(gh: RunGh, slug: RepoSlug, version: string, clock: Cloc
     throw new StepFailure(`the workflow succeeded but there is no release for ${version}.`, "The release job's last step creates a draft release; read the run log. Fix the cause, then release a new patch version.", [], false);
 }
 
-function summary(reporter: Reporter, { repo, version, release, runUrl, branch }: { repo: string; version: string; release: ReleaseInfo; runUrl: string | undefined; branch: string }): void {
+function summary(reporter: Reporter, { repo, version, release, runUrl, branch, branchPushed }: { repo: string; version: string; release: ReleaseInfo; runUrl: string | undefined; branch: string; branchPushed: boolean }): void {
     reporter.success("release", `${repo} ${version} released`);
     reporter.info("release", `release   ${release.url}`);
     if (runUrl !== undefined) {
         reporter.info("release", `workflow  ${runUrl}`);
     }
-    reporter.info("release", `branch    ${branch} pushed; Obsidian now reads ${version} from its manifest.json`);
+    reporter.info("release", `branch    ${branch} ${branchPushed ? "pushed" : "already contained the release commit"}; Obsidian now reads ${version} from its manifest.json`);
 }

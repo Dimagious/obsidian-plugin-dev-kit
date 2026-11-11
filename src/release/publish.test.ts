@@ -9,6 +9,7 @@ import { createReleaseRepo, hermeticGitEnv, type ReleaseRepo } from "../test-sup
 import type { TaggedBuild } from "./build-tagged.js";
 import type { RunGit } from "./git.js";
 import { runPublish, type PublishInput } from "./publish.js";
+import { changelogNotes } from "./publish-command.js";
 import { runRelease } from "./release.js";
 
 // Real git with a bare origin per test.
@@ -76,6 +77,8 @@ async function scenario(): Promise<Scenario> {
     const manifest = Buffer.from(current.git("show", "1.0.1:manifest.json"));
     const github = new FakeGithub(SLUG, "1.0.1");
     github.commit = commit;
+    const notes = changelogNotes(current.dir, {}, "1.0.1");
+    github.notes = notes;
     github.runs = [kitRun(SLUG, commit)];
     github.release = {
         draft: true,
@@ -108,6 +111,7 @@ async function scenario(): Promise<Scenario> {
             run,
             gh: github,
             defaultBranch: undefined,
+            notes: () => Promise.resolve(notes),
             buildTagged: () => Promise.resolve(build),
             zip: false,
             timeoutMs: 20 * 60_000,
@@ -348,6 +352,13 @@ describe("runPublish: the workflow", () => {
         expect(s.ctx.out.join("")).toContain(`workflow  https://github.com/${SLUG}/actions/runs/42`);
     });
 
+    it("takes the run of the asked tag when another tag on the same commit has a newer failed run", async () => {
+        const s = await scenario();
+        s.github.runs = [...s.github.runs, kitRun(SLUG, s.commit, { id: 55, head_branch: "1.0.2", conclusion: "failure", created_at: "2026-11-12T10:00:00Z" })];
+        expect(await runPublish(s.input())).toBe(0);
+        expect(s.ctx.out.join("")).toContain(`workflow  https://github.com/${SLUG}/actions/runs/42`);
+    });
+
     it("waits for the kit's release run, not for a newer Pages run on the same commit", async () => {
         const s = await scenario();
         const pages = kitRun(SLUG, s.commit, { id: 77, name: "Pages", status: "completed", conclusion: "success", created_at: "2026-11-11T10:05:00Z", referenced_workflows: [] });
@@ -457,6 +468,40 @@ describe("runPublish: the draft is checked before it is made public", () => {
         await expectRefused((s) => {
             s.github.release = { draft: true, assets: [{ name: "main.js", bytes: MAIN }, { name: "manifest.json", bytes: Buffer.from(`${s.manifest.toString("utf8")} `) }, { name: "styles.css", bytes: CSS }] };
         }, /manifest\.json differs between/);
+    });
+
+    it("refuses a draft whose notes differ from the CHANGELOG at the tag and shows both", async () => {
+        const s = await expectRefused((current) => {
+            current.github.notes = "### Added\n\n- Something nobody wrote in the changelog.\n";
+        }, "the notes of the release 1.0.1 do not match the CHANGELOG at the tag");
+        const err = s.ctx.err.join("");
+        expect(err).toContain("Something nobody wrote in the changelog.");
+        expect(err).toContain("Word count in the status bar.");
+        expect(s.github.calls.some((call) => call.startsWith("attestation verify"))).toBe(false);
+    });
+
+    it("truncates long notes in the mismatch message", async () => {
+        const s = await expectRefused((current) => {
+            current.github.notes = `${"x".repeat(1000)}\n`;
+        }, "do not match the CHANGELOG");
+        expect(s.ctx.err.join("")).toContain("(1000 characters)");
+        expect(s.ctx.err.join("")).not.toContain("x".repeat(400));
+    });
+
+    it("accepts notes that differ from the CHANGELOG only in trailing whitespace", async () => {
+        const s = await scenario();
+        s.github.notes = `${changelogNotes(s.repo.dir, {}, "1.0.1").trimEnd()}\n\n  \n`;
+        expect(await runPublish(s.input())).toBe(0);
+        expect(s.ctx.out.join("")).toContain("release notes equal the CHANGELOG section of 1.0.1");
+    });
+
+    it("stops without resuming when the notes of the tag cannot be read", async () => {
+        const s = await scenario();
+        expect(await runPublish(s.input({ notes: () => Promise.reject(new Error('CHANGELOG.md has no "## [1.0.1]" section.')) }))).toBe(1);
+        const err = s.ctx.err.join("");
+        expect(err).toContain('cannot read the release notes of the tag 1.0.1: CHANGELOG.md has no "## [1.0.1]" section.');
+        expect(err).not.toContain("Resume with");
+        expect(s.github.calls.some((call) => call.startsWith("release edit"))).toBe(false);
     });
 
     it("refuses an attestation that does not verify", async () => {
@@ -697,6 +742,36 @@ describe("runPublish: resuming", () => {
         expect(s.gitCalls.filter((args) => args[0] === "push")).toHaveLength(pushes);
         expect(s.github.calls.filter((call) => call.startsWith("release edit"))).toHaveLength(editsBefore);
         expect(s.ctx.out.join("")).toContain("main on origin already holds the release commit");
+    });
+
+    it("recognises an origin that holds the release commit plus newer commits this clone never fetched", async () => {
+        const s = await scenario();
+        s.repo.git("push", "--quiet", "origin", `${s.commit}:refs/heads/main`);
+        const other = mkdtempSync(path.join(tmp, "clone-"));
+        const env = hermeticGitEnv();
+        execFileSync("git", ["clone", "--quiet", s.repo.origin, other], { env });
+        execFileSync("git", ["-c", "user.name=x", "-c", "user.email=x@example.com", "commit", "--quiet", "--allow-empty", "-m", "someone else"], { cwd: other, env });
+        execFileSync("git", ["push", "--quiet", "origin", "main"], { cwd: other, env });
+        const newer = s.repo.originGit("rev-parse", "main").trim();
+        expect(newer).not.toBe(s.commit);
+
+        expect(await runPublish(s.input())).toBe(0);
+
+        expect(s.ctx.err.join("")).toBe("");
+        expect(s.gitCalls).toContainEqual(["fetch", "--no-tags", "origin", "main"]);
+        expect(s.gitCalls.filter((args) => args[0] === "push" && args[2]?.endsWith(":refs/heads/main") === true)).toEqual([]);
+        expect(s.repo.originGit("rev-parse", "main").trim()).toBe(newer);
+        const out = s.ctx.out.join("");
+        expect(out).toContain("main on origin already holds the release commit");
+        expect(out).toContain("branch    main already contained the release commit;");
+    });
+
+    it("says the branch was pushed when it was", async () => {
+        const s = await scenario();
+        expect(await runPublish(s.input())).toBe(0);
+        const out = s.ctx.out.join("");
+        expect(out).toContain("branch    main pushed;");
+        expect(out).not.toContain("already contained");
     });
 
     it("finishes after origin rejected the branch: the owner merges and pushes by hand, then the same command succeeds", async () => {

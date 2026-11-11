@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import { callsKitWorkflow, describeRun, KIT_WORKFLOW_PATH, parseRun, parseRuns, pickRun, runOutcome, runPath, runsPath, type WorkflowRun } from "./workflow-run.js";
 
 const KIT = `${KIT_WORKFLOW_PATH}@${"a".repeat(40)}`;
-const run = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({ id: 1, status: "completed", conclusion: "success", event: "push", headSha: "abc", url: "https://example.com/1", name: "Release", createdAt: "2026-11-11T10:00:00Z", referenced: [KIT], ...overrides });
+const run = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({ id: 1, status: "completed", conclusion: "success", event: "push", headSha: "abc", headBranch: "1.0.1", url: "https://example.com/1", name: "Release", createdAt: "2026-11-11T10:00:00Z", referenced: [KIT], ...overrides });
 
 describe("parseRuns", () => {
     it("reads the fields of the REST API", () => {
         const json = JSON.stringify({
             total_count: 1,
-            workflow_runs: [{ id: 7, status: "queued", conclusion: null, event: "push", head_sha: "abc", html_url: "u", name: "Release", created_at: "t", referenced_workflows: [{ path: KIT, sha: "s", ref: "r" }, { path: 5 }, "junk"] }],
+            workflow_runs: [{ id: 7, status: "queued", conclusion: null, event: "push", head_sha: "abc", head_branch: "1.0.1", html_url: "u", name: "Release", created_at: "t", referenced_workflows: [{ path: KIT, sha: "s", ref: "r" }, { path: 5 }, "junk"] }],
         });
-        expect(parseRuns(json)).toEqual([{ id: 7, status: "queued", conclusion: "", event: "push", headSha: "abc", url: "u", name: "Release", createdAt: "t", referenced: [KIT] }]);
+        expect(parseRuns(json)).toEqual([{ id: 7, status: "queued", conclusion: "", event: "push", headSha: "abc", headBranch: "1.0.1", url: "u", name: "Release", createdAt: "t", referenced: [KIT] }]);
     });
 
     it("rejects a payload without a list or with a run without an id", () => {
@@ -40,19 +40,28 @@ describe("pickRun", () => {
             run({ id: 3, headSha: "other", createdAt: "2026-11-12T00:00:00Z" }),
             run({ id: 4, event: "workflow_dispatch", createdAt: "2026-11-13T00:00:00Z" }),
         ];
-        expect(pickRun(runs, "abc")?.id).toBe(2);
+        expect(pickRun(runs, "abc", "1.0.1")?.id).toBe(2);
     });
 
     it("ignores a newer run of another workflow on the same commit, such as Pages", () => {
         const pages = run({ id: 9, name: "Pages", referenced: [], createdAt: "2026-11-11T12:00:00Z" });
-        expect(pickRun([run({ id: 5 }), pages], "abc")?.id).toBe(5);
-        expect(pickRun([pages], "abc")).toBeUndefined();
+        expect(pickRun([run({ id: 5 }), pages], "abc", "1.0.1")?.id).toBe(5);
+        expect(pickRun([pages], "abc", "1.0.1")).toBeUndefined();
+    });
+
+    it("takes only the run of the asked tag when two tags point at one commit", () => {
+        const older = run({ id: 1, headBranch: "1.0.1", createdAt: "2026-11-11T10:00:00Z" });
+        const newerOtherTag = run({ id: 2, headBranch: "1.0.2", conclusion: "failure", createdAt: "2026-11-11T11:00:00Z" });
+        expect(pickRun([older, newerOtherTag], "abc", "1.0.1")?.id).toBe(1);
+        expect(pickRun([older, newerOtherTag], "abc", "1.0.2")?.id).toBe(2);
+        expect(pickRun([older], "abc", "1.0.2")).toBeUndefined();
+        expect(pickRun([run({ headBranch: "" })], "abc", "1.0.1")).toBeUndefined();
     });
 
     it("breaks a tie by id and returns undefined when nothing matches", () => {
-        expect(pickRun([run({ id: 1 }), run({ id: 5 })], "abc")?.id).toBe(5);
-        expect(pickRun([run({ headSha: "x" })], "abc")).toBeUndefined();
-        expect(pickRun([], "abc")).toBeUndefined();
+        expect(pickRun([run({ id: 1 }), run({ id: 5 })], "abc", "1.0.1")?.id).toBe(5);
+        expect(pickRun([run({ headSha: "x" })], "abc", "1.0.1")).toBeUndefined();
+        expect(pickRun([], "abc", "1.0.1")).toBeUndefined();
     });
 });
 
