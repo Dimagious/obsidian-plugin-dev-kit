@@ -464,7 +464,7 @@ describe("stale outputs and theme pairs", () => {
         removeFilm("b");
         ctx.out.length = 0;
         expect(await run({ deps })).toBe(0);
-        expect(out()).toMatch(/! demo +media published by an earlier run of this command belongs to films that no longer exist: docs\/screens\/b-poster\.png, docs\/screens\/b\.gif, docs\/screens\/b\.mp4\./);
+        expect(out()).toMatch(/! demo +media published by an earlier run of this command belongs to films or stills that no longer exist: docs\/screens\/b-poster\.png, docs\/screens\/b\.gif, docs\/screens\/b\.mp4\./);
         expect(out()).not.toContain("docs-unrelated");
         expect(media()).toContain("b.gif");
         expect(recorded()["docs/screens/b.gif"]).toBe("b");
@@ -503,7 +503,7 @@ describe("stale outputs and theme pairs", () => {
         await run({ deps });
         ctx.out.length = 0;
         expect(await run({ deps, config: { mp4: false } })).toBe(0);
-        expect(out()).toMatch(/! demo +media published by an earlier run of this command is no longer written by its film \(an output turned off, or moved\): docs\/screens\/a\.mp4\./);
+        expect(out()).toMatch(/! demo +media published by an earlier run of this command is no longer written by its film or still \(an output turned off, or moved\): docs\/screens\/a\.mp4\./);
         expect(out()).not.toContain("no longer exist");
         expect(media()).toContain("a.mp4");
         expect(recorded()["docs/screens/a.mp4"]).toBe("a");
@@ -515,7 +515,7 @@ describe("stale outputs and theme pairs", () => {
         await run({ deps });
         ctx.out.length = 0;
         await run({ deps, config: { output: "site/media" } });
-        expect(out()).toMatch(/no longer written by its film.*: docs\/screens\/a-poster\.png, docs\/screens\/a\.gif, docs\/screens\/a\.mp4\./);
+        expect(out()).toMatch(/no longer written by its film or still.*: docs\/screens\/a-poster\.png, docs\/screens\/a\.gif, docs\/screens\/a\.mp4\./);
         expect(recorded()).toMatchObject({ "site/media/a.gif": "a", "docs/screens/a.gif": "a" });
         fs.rmSync(path.join(cwd, "docs", "screens"), { recursive: true });
         ctx.out.length = 0;
@@ -585,6 +585,247 @@ describe("stale outputs and theme pairs", () => {
             ]),
         ).toEqual([]);
         expect(pairWarnings([{ name: "x-dark", theme: "dark" }])[0]).toContain('the light film "x-light" is missing');
+    });
+});
+
+describe("stills", () => {
+    const writeStill = (name: string, content: string | Buffer = fakePng(300, 200)): void => {
+        fs.mkdirSync(path.join(outDir, "stills"), { recursive: true });
+        fs.writeFileSync(path.join(outDir, "stills", `${name}.png`), content);
+    };
+    const screens = (...segments: string[]): string => path.join(cwd, "docs", "screens", ...segments);
+    const recorded = (): Record<string, string> =>
+        (JSON.parse(fs.readFileSync(path.join(outDir, "published.json"), "utf8")) as { files: Record<string, string> }).files;
+    /** A preflight that must not run: a run of stills alone needs no ffmpeg. */
+    const noFfmpeg: DemoDeps = { locateFfmpeg: () => Promise.reject(new Error("ffmpeg must not be located")), compose: () => Promise.reject(new Error("compose must not run")) };
+
+    it("copies every still to the output folder as <name>.png and reports each one, without needing ffmpeg", async () => {
+        writeStill("hero");
+        writeStill("settings", Buffer.alloc(2048));
+        expect(await run({ deps: noFfmpeg })).toBe(0);
+        expect(media()).toEqual(["hero.png", "settings.png"]);
+        expect(fs.readFileSync(screens("hero.png")).equals(fakePng(300, 200))).toBe(true);
+        expect(out()).toMatch(/✓ demo +still hero: png 1 KB/);
+        expect(out()).toMatch(/✓ demo +still settings: png 2 KB/);
+        expect(recorded()).toEqual({ "docs/screens/hero.png": "still:hero", "docs/screens/settings.png": "still:settings" });
+    });
+
+    it("publishes next to the films of the same run", async () => {
+        writeFilm(outDir, film({ name: "tour" }));
+        writeStill("hero");
+        expect(await run({ deps: depsWith(fakeFfmpeg().tool) })).toBe(0);
+        expect(media()).toEqual(["hero.png", "tour-poster.png", "tour.gif", "tour.mp4"]);
+        expect(out()).toMatch(/✓ demo +tour: /);
+        expect(out()).toMatch(/✓ demo +still hero: /);
+    });
+
+    it("copies only when the bytes changed: an unchanged still is left alone and reported once", async () => {
+        writeStill("hero", "one");
+        writeStill("card", "two");
+        await run({ deps: noFfmpeg });
+        const past = new Date("2020-01-01T00:00:00Z");
+        fs.utimesSync(screens("hero.png"), past, past);
+        fs.utimesSync(screens("card.png"), past, past);
+        ctx.out.length = 0;
+        writeStill("hero", "three");
+        expect(await run({ deps: noFfmpeg })).toBe(0);
+        expect(out()).toMatch(/✓ demo +still hero: png 1 KB/);
+        expect(out()).not.toContain("still card:");
+        expect(out()).toMatch(/· demo +1 still unchanged: card/);
+        expect(fs.readFileSync(screens("hero.png"), "utf8")).toBe("three");
+        expect(fs.statSync(screens("card.png")).mtime.getTime()).toBe(past.getTime());
+        // An unchanged still stays in the record: it is still published.
+        expect(recorded()).toEqual({ "docs/screens/card.png": "still:card", "docs/screens/hero.png": "still:hero" });
+    });
+
+    it("records an unchanged still again when the record was lost", async () => {
+        writeStill("card", "two");
+        await run({ deps: noFfmpeg });
+        fs.rmSync(path.join(outDir, "published.json"));
+        ctx.out.length = 0;
+        expect(await run({ deps: noFfmpeg })).toBe(0);
+        expect(out()).toMatch(/· demo +1 still unchanged: card/);
+        expect(recorded()).toEqual({ "docs/screens/card.png": "still:card" });
+    });
+
+    it("uses demo.output, and demo.stills.output when it is set", async () => {
+        writeStill("hero");
+        expect(await run({ config: { output: "media" }, deps: noFfmpeg })).toBe(0);
+        expect(fs.existsSync(path.join(cwd, "media", "hero.png"))).toBe(true);
+        expect(await run({ config: { output: "media", stills: { output: "docs/pictures" } }, deps: noFfmpeg })).toBe(0);
+        expect(fs.existsSync(path.join(cwd, "docs", "pictures", "hero.png"))).toBe(true);
+        expect(media()).toEqual([]);
+    });
+
+    it("does nothing with stills when demo.stills is false, and then a run with only stills has no films", async () => {
+        writeStill("hero");
+        expect(await run({ config: { stills: false }, deps: noFfmpeg })).toBe(1);
+        expect(err()).toContain("no films in");
+        expect(media()).toEqual([]);
+        writeFilm(outDir, film({ name: "tour" }));
+        expect(await run({ config: { stills: false }, deps: depsWith(fakeFfmpeg().tool) })).toBe(0);
+        expect(media()).toEqual(["tour-poster.png", "tour.gif", "tour.mp4"]);
+        expect(out()).not.toContain("still");
+    });
+
+    it("fails when films were recorded and none is complete, even though stills exist; a stills-only project passes", async () => {
+        writeFilm(outDir, film({ name: "half", complete: false }));
+        writeStill("hero");
+        expect(await run({ deps: noFfmpeg })).toBe(1);
+        expect(err()).toMatch(/✗ demo +no complete film among the 1 recorded in /);
+        expect(out()).toMatch(/! demo +half: skipped, its recording did not finish/);
+        // The stills are still copied: the failure is about the films.
+        expect(fs.existsSync(screens("hero.png"))).toBe(true);
+        fs.rmSync(path.join(outDir, "films"), { recursive: true });
+        ctx.err.length = 0;
+        expect(await run({ deps: noFfmpeg })).toBe(0);
+        expect(err()).toBe("");
+    });
+
+    it("fails a still whose file a film wrote in this run, keeps the film's file and says to rename the still", async () => {
+        writeFilm(outDir, film({ name: "x" }));
+        writeStill("x-poster", "still pixels");
+        writeStill("hero");
+        expect(await run({ deps: depsWith(fakeFfmpeg().tool) })).toBe(1);
+        expect(err()).toContain('still "x-poster" would overwrite the poster of film "x"; rename the still');
+        const poster = fs.readFileSync(screens("x-poster.png"));
+        expect(poster.toString()).not.toBe("still pixels");
+        expect(recorded()["docs/screens/x-poster.png"]).toBe("x");
+        // The other still is not held back.
+        expect(fs.existsSync(screens("hero.png"))).toBe(true);
+    });
+
+    it("refuses a still named alone when an earlier run recorded its file as a film's", async () => {
+        writeFilm(outDir, film({ name: "x" }));
+        expect(await run({ deps: depsWith(fakeFfmpeg().tool) })).toBe(0);
+        const poster = fs.readFileSync(screens("x-poster.png"));
+        writeStill("x-poster", "still pixels");
+        ctx.err.length = 0;
+        expect(await run({ deps: noFfmpeg, names: ["x-poster"] })).toBe(1);
+        expect(err()).toContain('still "x-poster" would overwrite the poster of film "x"; rename the still');
+        expect(fs.readFileSync(screens("x-poster.png"))).toEqual(poster);
+        expect(recorded()["docs/screens/x-poster.png"]).toBe("x");
+    });
+
+    it("does not fail a run that names only a still because recorded films are incomplete", async () => {
+        writeFilm(outDir, film({ name: "half", complete: false }));
+        writeStill("hero");
+        expect(await run({ deps: noFfmpeg, names: ["hero"] })).toBe(0);
+        expect(err()).toBe("");
+        expect(fs.existsSync(screens("hero.png"))).toBe(true);
+    });
+
+    it("fails with no films and no stills, as before", async () => {
+        fs.mkdirSync(path.join(outDir, "stills"), { recursive: true });
+        expect(await run({ deps: noFfmpeg })).toBe(1);
+        expect(err()).toContain("no films in");
+    });
+
+    describe("names on the command line", () => {
+        it("select stills as well as films: a film name leaves the stills alone, a still name leaves the films alone", async () => {
+            writeFilm(outDir, film({ name: "tour" }));
+            writeStill("hero");
+            writeStill("card");
+            expect(await run({ names: ["hero"], deps: noFfmpeg })).toBe(0);
+            expect(media()).toEqual(["hero.png"]);
+            expect(await run({ names: ["tour"], deps: depsWith(fakeFfmpeg().tool) })).toBe(0);
+            expect(media()).toEqual(["hero.png", "tour-poster.png", "tour.gif", "tour.mp4"]);
+            expect(fs.existsSync(screens("card.png"))).toBe(false);
+        });
+
+        it("select both when a film and a still share the name", async () => {
+            writeFilm(outDir, film({ name: "tour" }));
+            writeStill("tour");
+            expect(await run({ names: ["tour"], deps: depsWith(fakeFfmpeg().tool) })).toBe(0);
+            expect(media()).toEqual(["tour-poster.png", "tour.gif", "tour.mp4", "tour.png"]);
+            expect(recorded()["docs/screens/tour.png"]).toBe("still:tour");
+            expect(recorded()["docs/screens/tour.mp4"]).toBe("tour");
+        });
+
+        it("fail for an unknown name and list the stills there are; a still name is unknown when stills are off", async () => {
+            writeFilm(outDir, film({ name: "tour" }));
+            writeStill("hero");
+            expect(await run({ names: ["nope"], deps: depsWith(fakeFfmpeg().tool) })).toBe(1);
+            expect(err()).toContain('no film or still named "nope" in ' + outDir);
+            expect(err()).toContain("Films there: tour");
+            expect(err()).toContain("Stills there: hero");
+            ctx.err.length = 0;
+            expect(await run({ names: ["hero"], config: { stills: false }, deps: depsWith(fakeFfmpeg().tool) })).toBe(1);
+            expect(err()).toContain('no film named "hero"');
+            expect(err()).not.toContain("Stills there");
+            expect(err()).toContain("demo.stills is false, so stills are not selectable.");
+        });
+    });
+
+    it("fails the run when a still cannot be copied, says which, and still encodes the films", async () => {
+        writeFilm(outDir, film({ name: "tour" }));
+        writeStill("hero");
+        // A file where the stills folder should go.
+        fs.writeFileSync(path.join(cwd, "blocked"), "x");
+        expect(await run({ config: { stills: { output: "blocked/pictures" } }, deps: depsWith(fakeFfmpeg().tool) })).toBe(1);
+        expect(err()).toMatch(/✗ demo +still hero: .*(ENOTDIR|EEXIST)/);
+        expect(err()).toContain(path.join(outDir, "stills", "hero.png"));
+        expect(out()).toMatch(/✓ demo +tour: /);
+        expect(recorded()["docs/screens/tour.mp4"]).toBe("tour");
+    });
+
+    describe("stale check", () => {
+        const removeStill = (name: string): void => {
+            fs.rmSync(path.join(outDir, "stills", `${name}.png`));
+        };
+
+        it("names a published still whose source is gone, and deletes nothing", async () => {
+            writeStill("hero");
+            writeStill("card");
+            await run({ deps: noFfmpeg });
+            removeStill("hero");
+            ctx.out.length = 0;
+            expect(await run({ deps: noFfmpeg })).toBe(0);
+            expect(out()).toMatch(/! demo +media published by an earlier run of this command belongs to films or stills that no longer exist: docs\/screens\/hero\.png\./);
+            expect(fs.existsSync(screens("hero.png"))).toBe(true);
+            expect(recorded()["docs/screens/hero.png"]).toBe("still:hero");
+        });
+
+        it("does not name a still that was never published, nor a picture of the folder that is not a still of the kit", async () => {
+            fs.mkdirSync(screens(), { recursive: true });
+            fs.writeFileSync(screens("logo.png"), "x");
+            writeStill("hero");
+            await run({ deps: noFfmpeg });
+            expect(out()).not.toContain("no longer");
+        });
+
+        it("keeps a still and a film of the same name apart", async () => {
+            writeFilm(outDir, film({ name: "tour" }));
+            writeStill("tour");
+            const deps = depsWith(fakeFfmpeg().tool);
+            await run({ deps });
+            removeStill("tour");
+            ctx.out.length = 0;
+            await run({ deps });
+            expect(out()).toMatch(/no longer exist: docs\/screens\/tour\.png\./);
+            expect(out()).not.toContain("tour.mp4");
+        });
+
+        it("names the old copy when demo.stills.output moves the stills", async () => {
+            writeStill("hero");
+            await run({ deps: noFfmpeg });
+            ctx.out.length = 0;
+            await run({ config: { stills: { output: "docs/pictures" } }, deps: noFfmpeg });
+            expect(out()).toMatch(/no longer written by its film or still \(an output turned off, or moved\): docs\/screens\/hero\.png\./);
+            expect(fs.existsSync(screens("hero.png"))).toBe(true);
+        });
+
+        it("is quiet about published stills when demo.stills is turned off, and when only another still is selected", async () => {
+            writeStill("hero");
+            writeStill("card");
+            await run({ deps: noFfmpeg });
+            ctx.out.length = 0;
+            writeFilm(outDir, film({ name: "tour" }));
+            await run({ config: { stills: false }, deps: depsWith(fakeFfmpeg().tool) });
+            expect(out()).not.toContain("no longer");
+            await run({ names: ["card"], deps: noFfmpeg });
+            expect(out()).not.toContain("no longer");
+        });
     });
 });
 

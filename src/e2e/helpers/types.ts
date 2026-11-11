@@ -1,9 +1,10 @@
 import type { Locator } from "@playwright/test";
 import type { CompositionChunking } from "./ime.js";
 import type { MobileOptions } from "./mobile.js";
+import type { SettleOptions } from "./settle.js";
 import type { ViewMode } from "./view-mode.js";
 
-export type { CompositionChunking, MobileOptions, ViewMode };
+export type { CompositionChunking, MobileOptions, SettleOptions, ViewMode };
 
 /** A position in a note; both numbers start at 0. */
 export interface EditorPosition {
@@ -128,6 +129,16 @@ export interface ObsidianHelpers {
     collapseSidebars(): Promise<void>;
     /** The inverse of `collapseSidebars()`: expands both side panels and waits until they are expanded. */
     expandSidebars(): Promise<void>;
+
+    /**
+     * Waits until the page stops changing: no DOM mutation for `quietMs` (default 150 ms), no font loading, and every
+     * image in the viewport loaded. Use it in place of a fixed sleep before a picture or an assertion that cannot say
+     * what it waits for. It sees changes that are happening, not ones only scheduled: a gap between two changes longer than
+     * `quietMs` counts as quiet. CSS animations and transitions are not DOM changes, so an endless one does not hold it up.
+     * `root` limits the watch to a part of the page (default: the `<body>`). The wait takes `timeouts.helpers.ui`;
+     * when it runs out the error names `settle()`, says what was still changing and how to raise the budget.
+     */
+    settle(options?: SettleOptions): Promise<void>;
 
     /**
      * Switches Obsidian to its mobile interface in a phone-sized viewport (390 x 844 CSS pixels at scale 2 unless

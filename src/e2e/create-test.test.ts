@@ -101,7 +101,7 @@ describe("createObsidianTest", () => {
             [
                 "clearNotices", "closeSettings", "collapseSidebars", "desktop", "editor", "evaluate", "expandSidebars", "hideProperties", "mobile", "openCommandPalette", "openFile",
                 "openSettings", "press", "readingView", "reload", "replace", "runCommand", "runCommandFromPalette", "scrollThrough", "setTheme",
-                "waitForMetadataCache",
+                "settle", "waitForMetadataCache",
             ].sort(),
         );
         // The helpers are bound to the fixture's window.

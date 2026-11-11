@@ -44,6 +44,8 @@ interface PageElement {
     classList: { contains(name: string): boolean };
     remove(): void;
     contains(other: unknown): boolean;
+    /** Only images are looked up this way (`settle()`). */
+    querySelectorAll(selector: string): ArrayLike<PageImage>;
 }
 
 /**
@@ -96,6 +98,20 @@ interface FakeRecord {
     original: unknown;
 }
 
+/** What `settle()` keeps in the page between polls. */
+interface SettleWatch {
+    observer: { disconnect(): void };
+    /** `performance.now()` of the last mutation, or of the start of the watch. */
+    lastChange: number;
+    /** The watched element; images are looked up inside it. */
+    root: PageElement;
+}
+
+interface PageImage {
+    complete: boolean;
+    getBoundingClientRect(): { top: number; left: number; bottom: number; right: number };
+}
+
 interface PageGlobals {
     app?: PageApp;
     document?: {
@@ -103,9 +119,18 @@ interface PageGlobals {
         activeElement: unknown;
         querySelector(selector: string): PageElement | null;
         querySelectorAll(selector: string): ArrayLike<PageElement>;
+        /** `status` is "loading" while a font is being fetched, "loaded" otherwise; `ready` resolves at the same moment. */
+        fonts?: { status: string };
     };
     innerWidth?: number;
+    innerHeight?: number;
+    MutationObserver?: new (callback: () => void) => {
+        observe(target: PageElement, options: { childList: boolean; subtree: boolean; attributes: boolean; characterData: boolean }): void;
+        disconnect(): void;
+    };
+    performance?: { now(): number };
     requestAnimationFrame?(callback: () => void): number;
+    __opdkSettle?: SettleWatch;
     __opdkFakes?: Map<string, FakeRecord>;
     __opdkBeforeReload?: boolean;
 }
@@ -397,6 +422,90 @@ export async function scrollThroughElement(selector: string): Promise<boolean> {
         top += Math.max(200, root.clientHeight - 100);
     }
     return true;
+}
+
+// --- settle -------------------------------------------------------------------------------------------------
+
+/**
+ * Starts watching `root` (a selector; null is the whole `<body>`) for DOM changes, replacing any watch left from an
+ * earlier call. Returns false when nothing matches or the page cannot observe mutations. Animations and transitions
+ * are not DOM changes, so an endless CSS animation never keeps the page from settling.
+ */
+export function watchPageChanges(root: string | null): boolean {
+    const globals = globalThis as unknown as PageGlobals;
+    globals.__opdkSettle?.observer.disconnect();
+    globals.__opdkSettle = undefined;
+    const target = root === null ? globals.document?.body : globals.document?.querySelector(root);
+    if (target === undefined || target === null || globals.MutationObserver === undefined || globals.performance === undefined) {
+        return false;
+    }
+    const watch: SettleWatch = { observer: { disconnect: () => undefined }, lastChange: globals.performance.now(), root: target };
+    const { performance } = globals;
+    const observer = new globals.MutationObserver(() => {
+        watch.lastChange = performance.now();
+    });
+    observer.observe(target, { childList: true, subtree: true, attributes: true, characterData: true });
+    watch.observer = observer;
+    globals.__opdkSettle = watch;
+    return true;
+}
+
+/** Stops the watch of `watchPageChanges`. */
+export function stopPageWatch(): void {
+    const globals = globalThis as unknown as PageGlobals;
+    globals.__opdkSettle?.observer.disconnect();
+    globals.__opdkSettle = undefined;
+}
+
+/**
+ * True when the watched part of the page has had no DOM change for `quietMs`, no font is loading, and every image
+ * inside it that is in the viewport has finished loading (a broken image counts as finished). False when no watch
+ * is running, as after a reload. `unsettledReasons` must keep answering the same question.
+ */
+export function isPageSettled(quietMs: number): boolean {
+    const globals = globalThis as unknown as PageGlobals;
+    const watch = globals.__opdkSettle;
+    if (watch === undefined || globals.performance === undefined || globals.performance.now() - watch.lastChange < quietMs) {
+        return false;
+    }
+    if (globals.document?.fonts?.status === "loading") {
+        return false;
+    }
+    const height = globals.innerHeight ?? 0;
+    const width = globals.innerWidth ?? 0;
+    const images = watch.root.querySelectorAll("img");
+    return !Array.from(images).some((image) => {
+        const box = image.getBoundingClientRect();
+        return !image.complete && box.bottom > 0 && box.right > 0 && box.top < height && box.left < width;
+    });
+}
+
+/** What keeps the page from being settled right now, for the error of a `settle()` that ran out of time. Empty when it is settled. */
+export function unsettledReasons(quietMs: number): string[] {
+    const globals = globalThis as unknown as PageGlobals;
+    const watch = globals.__opdkSettle;
+    if (watch === undefined || globals.performance === undefined) {
+        return ["the watch was lost, probably because the window reloaded during settle()"];
+    }
+    const reasons: string[] = [];
+    const sinceChange = globals.performance.now() - watch.lastChange;
+    if (sinceChange < quietMs) {
+        reasons.push(`the DOM changed ${String(Math.round(sinceChange))} ms ago`);
+    }
+    if (globals.document?.fonts?.status === "loading") {
+        reasons.push("a font is still loading");
+    }
+    const height = globals.innerHeight ?? 0;
+    const width = globals.innerWidth ?? 0;
+    const images = watch.root.querySelectorAll("img");
+    const pending = Array.from(images).filter((image) => {
+        const box = image.getBoundingClientRect();
+        return !image.complete && box.bottom > 0 && box.right > 0 && box.top < height && box.left < width;
+    }).length;
+    if (pending > 0) {
+        reasons.push(`${String(pending)} ${pending === 1 ? "image" : "images"} in view ${pending === 1 ? "has" : "have"} not finished loading`);
+    }
+    return reasons;
 }
 
 // --- evaluate ----------------------------------------------------------------------------------------------

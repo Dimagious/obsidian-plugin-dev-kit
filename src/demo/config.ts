@@ -8,6 +8,7 @@ import type {
     DemoPhoneColors,
     DemoPhoneConfig,
     DemoPosterConfig,
+    DemoStillsConfig,
 } from "../config/types.js";
 import { DEFAULT_DEMO_OUT_DIR } from "../e2e/demo/options.js";
 
@@ -23,9 +24,10 @@ export const DEFAULT_FAIL_BYTES = 10 * 1024 * 1024;
 const LAYOUTS: readonly DemoLayout[] = ["plain", "phone-captions"];
 const LOOP_MODES: readonly DemoLoopMode[] = ["warn", "fail", "off"];
 const FILM_KEYS = ["gif", "mp4", "poster", "layout", "budget", "loop", "phone"];
-const DEMO_KEYS = [...FILM_KEYS, "outDir", "output", "films"];
+const DEMO_KEYS = [...FILM_KEYS, "outDir", "output", "stills", "films"];
 const GIF_KEYS = ["width", "colors", "fps"];
 const POSTER_KEYS = ["width"];
+const STILLS_KEYS = ["output"];
 const BUDGET_KEYS = ["warnBytes", "failBytes"];
 const COLOR_KEYS = ["background", "text", "muted", "accent"] as const;
 const PHONE_KEYS = [...COLOR_KEYS, "font", "title", "light", "dark"];
@@ -38,11 +40,13 @@ export function validateDemoConfig(value: unknown, source: string): DemoConfig {
     rejectUnknownKeys(value, DEMO_KEYS, "demo", source);
     const outDir = optionalString(value, "outDir", "demo.outDir", source);
     const output = optionalString(value, "output", "demo.output", source);
+    const stills = optionalStills(value, source);
     const films = optionalFilms(value, source);
     return {
         ...validateFilmConfig(value, "demo", source),
         ...(outDir !== undefined && { outDir }),
         ...(output !== undefined && { output }),
+        ...(stills !== undefined && { stills }),
         ...(films !== undefined && { films }),
     };
 }
@@ -77,6 +81,19 @@ function optionalPoster(parent: Record<string, unknown>, label: string, source: 
     rejectUnknownKeys(value, POSTER_KEYS, `${label}.poster`, source);
     const width = optionalInteger(value, "width", `${label}.poster.width`, 16, 8000, source);
     return width === undefined ? {} : { width };
+}
+
+function optionalStills(parent: Record<string, unknown>, source: string): DemoStillsConfig | boolean | undefined {
+    const value = own(parent, "stills");
+    if (value === undefined || typeof value === "boolean") {
+        return value;
+    }
+    if (!isRecord(value)) {
+        throw new Error(`${source}: "demo.stills" must be an object ({ output }) or true or false.`);
+    }
+    rejectUnknownKeys(value, STILLS_KEYS, "demo.stills", source);
+    const output = optionalString(value, "output", "demo.stills.output", source);
+    return output === undefined ? {} : { output };
 }
 
 function optionalGif(parent: Record<string, unknown>, label: string, source: string): DemoGifConfig | false | undefined {
@@ -275,6 +292,16 @@ export function resolveFilmSettings(config: DemoConfig, name: string, theme: "li
 /** The two folders of the `demo` section with their defaults, still relative to the plugin root. */
 export function demoFolders(config: DemoConfig): { outDir: string; output: string } {
     return { outDir: config.outDir ?? DEFAULT_DEMO_OUT_DIR, output: config.output ?? DEFAULT_OUTPUT_DIR };
+}
+
+/** Whether stills are published and where to, still relative to the plugin root; null when `demo.stills` is `false`. */
+export function stillsSettings(config: DemoConfig): { output: string } | null {
+    const { stills } = config;
+    if (stills === false) {
+        return null;
+    }
+    const folder = typeof stills === "object" ? stills.output : undefined;
+    return { output: folder ?? config.output ?? DEFAULT_OUTPUT_DIR };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

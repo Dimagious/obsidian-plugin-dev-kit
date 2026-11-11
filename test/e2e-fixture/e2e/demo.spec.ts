@@ -369,6 +369,76 @@ test.describe("the shot path", () => {
     });
 });
 
+test.describe("settle", () => {
+    /** Runs `source` in the page; it goes over as text because the kit's TypeScript has no DOM types. */
+    const inWindow = (win: Page, source: string): Promise<unknown> => win.evaluate(`(() => { ${source} })()`);
+    /**
+     * A page that is busy for `busyMs` and then adds a full-window block of `color` with this id: the body changes
+     * every 100 ms (inside settle()'s 150 ms quiet window, like a view that renders in steps), the block lands last.
+     * A change that is only scheduled further ahead than the quiet window cannot be seen coming, so it is not what
+     * settle() is for.
+     */
+    const addLater = (win: Page, id: string, color: string, busyMs: number): Promise<unknown> =>
+        inWindow(
+            win,
+            `let ticks = ${String(Math.round(busyMs / 100))};
+             const timer = setInterval(() => {
+                 ticks -= 1;
+                 if (ticks > 0) { document.body.dataset.opdkTick = String(ticks); return; }
+                 clearInterval(timer);
+                 const el = document.createElement("div"); el.id = ${JSON.stringify(id)}; el.style.cssText = "position:fixed;inset:0;z-index:99999;background:${color}"; document.body.append(el);
+             }, 100);`,
+        );
+    const present = (win: Page, id: string): Promise<boolean> => win.evaluate(`document.getElementById(${JSON.stringify(id)}) !== null`);
+
+    test("waits through a page that changes in steps, and an endless animation does not hold it up", async ({ obsidian, win }) => {
+        await obsidian.openFile("Welcome.md", { mode: "source" });
+        await inWindow(
+            win,
+            `const style = document.createElement("style"); style.textContent = "@keyframes opdk-spin { to { transform: rotate(360deg) } }"; document.head.append(style);
+             const spinner = document.createElement("div"); spinner.style.cssText = "position:fixed;left:0;top:0;width:10px;height:10px;animation:opdk-spin 1s linear infinite"; document.body.append(spinner);`,
+        );
+        await addLater(win, "opdk-late", "red", 500);
+        expect(await present(win, "opdk-late")).toBe(false);
+        await obsidian.settle();
+        // Without settle() the block would not be there yet: it lands 500 ms after the call above, in steps 100 ms apart.
+        expect(await present(win, "opdk-late")).toBe(true);
+    });
+
+    test("fails naming settle(), the budget and the way out while the page keeps changing, and root watches only a calm part", async ({ obsidian, win }) => {
+        await obsidian.openFile("Welcome.md", { mode: "source" });
+        await inWindow(
+            win,
+            `const calm = document.createElement("div"); calm.id = "opdk-calm"; document.body.append(calm);
+             const busy = document.createElement("div"); busy.id = "opdk-busy"; document.body.append(busy);
+             setInterval(() => { busy.textContent = String(performance.now()); }, 20);`,
+        );
+        await expect(obsidian.settle()).rejects.toThrow(/settle\(\): the page was not quiet for 150 ms within 3000 ms \(the DOM changed \d+ ms ago\)\. Raise timeouts\.helpers\.ui/);
+        await obsidian.settle({ root: "#opdk-calm" });
+        await expect(obsidian.settle({ root: "#opdk-nope" })).rejects.toThrow('settle(): nothing matches root "#opdk-nope"');
+        await expect(obsidian.settle({ quietMs: 3000 })).rejects.toThrow(/quietMs \(3000 ms\) is not below the wait budget/);
+    });
+
+    test("a still and a shot with settle: true wait for the page first; without it they are taken as the page is", async ({ obsidian, demo, win }) => {
+        await obsidian.openFile("Welcome.md", { mode: "source" });
+        await demo.cleanUi();
+        await addLater(win, "opdk-late-still", "#d4145a", 500);
+        const early = await demo.still("early");
+        expect(await present(win, "opdk-late-still")).toBe(false);
+        const settled = await demo.still("settled", { settle: true });
+        expect(await present(win, "opdk-late-still")).toBe(true);
+        expect(fs.readFileSync(early.file).equals(fs.readFileSync(settled.file))).toBe(false);
+
+        const film = demo.film({ kind: "desktop", name: "settle-film" });
+        await addLater(win, "opdk-late-shot", "#1456d4", 500);
+        await film.shot({ hold: 1 });
+        expect(await present(win, "opdk-late-shot")).toBe(false);
+        await film.shot({ hold: 1, settle: true });
+        expect(await present(win, "opdk-late-shot")).toBe(true);
+        expect(readFilm("settle-film").frames).toHaveLength(2);
+    });
+});
+
 test.describe.serial("a name two tests share", () => {
     test("the first test writes a film and a still", async ({ obsidian, demo }) => {
         await obsidian.openFile("Welcome.md", { mode: "source" });

@@ -24,7 +24,7 @@ import {
 } from "./manifest.js";
 import { resolveName, type ThemeMode } from "./names.js";
 import type { ResolvedDemoOptions } from "./options.js";
-import { assertFilmFree, assertStillFree, writeFilmOwner, writeStillOwner, type Owner } from "./ownership.js";
+import { assertFilmFree, assertStillFree, STILLS_DIR, writeFilmOwner, writeStillOwner, type Owner } from "./ownership.js";
 import {
     applyObsidianUi,
     CURSOR_SVG,
@@ -61,7 +61,6 @@ const TYPING_SLACK_MS = 50;
 const POLL_MS = 50;
 const CLEAN_UI_KEYS = ["ribbon", "statusBar", "tabHeaders", "viewHeader", "inlineTitle", "sidebars"];
 const FILMS_DIR = "films";
-const STILLS_DIR = "stills";
 
 /** What the demo fixture needs from the test: the window, the shared CDP session, and the resolved options. */
 export interface DemoDeps {
@@ -71,6 +70,8 @@ export interface DemoDeps {
     readonly setTheme: (options: ThemeOptions) => Promise<void>;
     /** Folds both side panels and waits until they are folded (`obsidian.collapseSidebars()`). */
     readonly collapseSidebars: () => Promise<void>;
+    /** Waits until the page stops changing (`obsidian.settle()`); runs before the freeze of a shot that asks for it. */
+    readonly settle: () => Promise<void>;
     readonly options: ResolvedDemoOptions;
     /** How long a target may take to become visible. The session's `timeouts.helpers.ui`. */
     readonly uiTimeoutMs: number;
@@ -109,6 +110,7 @@ interface CaptureParams {
     readonly clip: Locator | DemoRect | undefined;
     readonly padding: number;
     readonly forbidden: readonly string[];
+    readonly settle: boolean;
 }
 
 function isLocator(target: Locator | DemoRect): target is Locator {
@@ -131,6 +133,13 @@ async function attempt(action: () => Promise<unknown>): Promise<{ error: unknown
 
 function errorText(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+function assertSettle(settle: unknown, what: string): boolean {
+    if (settle !== undefined && typeof settle !== "boolean") {
+        throw new Error(`${what}: settle must be true or false, got ${JSON.stringify(settle)}.`);
+    }
+    return settle ?? false;
 }
 
 function assertClipPadding(clip: unknown, padding: number): void {
@@ -260,6 +269,10 @@ export function createDemo(deps: DemoDeps): DemoController {
         const before = await setViewport({ width: params.preset?.cssWidth, height: params.preset?.cssHeight, scale: params.scale });
         let captured: { png: Buffer; size: Size };
         try {
+            // After the preset's resize, so the reflow it causes is waited for, and before the freeze, which ends animations.
+            if (params.settle) {
+                await deps.settle();
+            }
             captured = await captureFrozen(params);
         } catch (error) {
             // A preset resizes the window for one picture; put it back, and keep the shot's error when that fails too.
@@ -333,8 +346,9 @@ export function createDemo(deps: DemoDeps): DemoController {
                 const clip = shotOptions.clip ?? state.clip;
                 const padding = shotOptions.padding ?? state.padding;
                 assertClipPadding(clip, padding);
+                const settle = assertSettle(shotOptions.settle, what);
                 await setCursor(state.cursor);
-                const { png, size } = await capture({ what, scale, preset: undefined, clip, padding, forbidden: state.forbidden });
+                const { png, size } = await capture({ what, scale, preset: undefined, clip, padding, forbidden: state.forbidden, settle });
                 const frame: FilmFrame = { file: frameFileName(index), hold, caption };
                 // Checks the size against the first frame before anything is written.
                 const next = addFrame(state.manifest, frame, size);
@@ -358,6 +372,7 @@ export function createDemo(deps: DemoDeps): DemoController {
         const padding = stillOptions.padding ?? 0;
         assertClipPadding(stillOptions.clip, padding);
         const scale = preset?.scale ?? assertScale(stillOptions.scale ?? options.scale, `still "${fileName}"`);
+        const settle = assertSettle(stillOptions.settle, `still "${fileName}"`);
         await setCursor(true);
         const { png, size } = await capture({
             what: `still "${fileName}"`,
@@ -366,6 +381,7 @@ export function createDemo(deps: DemoDeps): DemoController {
             clip: stillOptions.clip,
             padding,
             forbidden: mergeSelectors(options.forbiddenSelectors, stillOptions.forbiddenSelectors),
+            settle,
         });
         fs.mkdirSync(stillsDir, { recursive: true });
         const file = path.join(stillsDir, `${fileName}.png`);
