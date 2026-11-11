@@ -55,6 +55,11 @@ export interface HelperOptions {
 
 export interface HelperKit {
     readonly helpers: ObsidianHelpers;
+    /**
+     * The window's one CDP session, opened on first use. The demo module shoots through it: Chromium keeps the device
+     * metrics of `mobile()` per session, and a second session that captures at another density drops them.
+     */
+    cdpSession(): Promise<CDPSession>;
     /** Detaches the CDP session the IME and mobile helpers opened. The window itself is closed by the session. */
     dispose(): Promise<void>;
 }
@@ -499,6 +504,7 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
     }
 
     return {
+        cdpSession: session,
         helpers: {
             openSettings,
             closeSettings,

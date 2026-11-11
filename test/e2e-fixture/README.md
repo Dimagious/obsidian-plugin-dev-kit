@@ -22,6 +22,8 @@ that no build step stands between a change in the kit and this run.
 
 `e2e/helpers.spec.ts` runs every helper of the `obsidian` fixture against these plugins and the vault's notes (`Properties.md` has properties, `Long.md` ends in a block that draws only when it scrolls into view). Both plugins are `isDesktopOnly: false` so that the mobile helper can load them.
 
+`e2e/demo.spec.ts` and `e2e/demo-foreign-vault.spec.ts` run every feature of the `demo` fixture (films, stills and presets, overlays, clean UI, frozen time, themes, the privacy guard, the freeze before a shot). They write into a temp folder that they remove.
+
 `npx playwright test -c test/e2e-fixture/playwright.config.ts --list` lists the specs without launching anything.
 
 ## Checking the failure artifacts

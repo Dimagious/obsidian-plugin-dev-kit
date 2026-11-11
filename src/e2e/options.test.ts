@@ -18,6 +18,8 @@ describe("resolveOptions: defaults", () => {
         expect(resolved.helperTimeouts).toEqual({ settings: 15_000, metadataCache: 45_000, compose: 5_000, theme: 5_000, ui: 10_000 });
         expect(resolved.staleCheckDirs).toEqual(["/work/plugin"]);
         expect(resolved.sweepAfterHours).toBe(2);
+        expect(resolved.seedVaultSource).toBe("option");
+        expect(resolved.demo).toEqual({ outDir: path.resolve("/work/plugin", ".opdk/demo"), scale: 2, forbiddenSelectors: [] });
     });
 });
 
@@ -35,6 +37,7 @@ describe("resolveOptions: values", () => {
                 timeouts: { ready: 90_000, helpers: { metadataCache: 120_000, ui: 20_000 } },
                 staleBuildCheck: false,
                 sweepAfterHours: 6,
+                demo: { outDir: "shots", scale: 1, forbiddenSelectors: [".key"] },
             },
             context,
         );
@@ -48,6 +51,12 @@ describe("resolveOptions: values", () => {
         expect(resolved.helperTimeouts).toEqual({ settings: 15_000, metadataCache: 120_000, compose: 5_000, theme: 5_000, ui: 20_000 });
         expect(resolved.staleCheckDirs).toEqual([]);
         expect(resolved.sweepAfterHours).toBe(6);
+        expect(resolved.demo).toEqual({ outDir: "/work/plugin/shots", scale: 1, forbiddenSelectors: [".key"] });
+    });
+
+    it("rejects a bad demo option naming the key", () => {
+        expect(() => resolveOptions({ ...base, demo: { outdir: "x" } }, context)).toThrow('unknown key "demo.outdir"');
+        expect(() => resolveOptions({ ...base, demo: { scale: 9 } }, context)).toThrow('"demo.scale"');
     });
 
     it("lets sweepAfterHours be switched off", () => {
@@ -93,12 +102,14 @@ describe("resolveOptions: env overrides", () => {
     it("OPDK_E2E_VAULT replaces the seed vault", () => {
         const resolved = resolveOptions(base, { cwd: "/work/plugin", env: { OPDK_E2E_VAULT: "../demo-vault" } });
         expect(resolved.seedVault).toBe("/work/demo-vault");
+        expect(resolved.seedVaultSource).toBe("env");
     });
 
     it("an empty OPDK_E2E_VAULT is ignored", () => {
         expect(resolveOptions(base, { cwd: "/work/plugin", env: { OPDK_E2E_VAULT: "" } }).seedVault).toBe(
             path.resolve("/work/plugin", "e2e/vault"),
         );
+        expect(resolveOptions(base, { cwd: "/work/plugin", env: { OPDK_E2E_VAULT: "" } }).seedVaultSource).toBe("option");
     });
 
     it("OBSIDIAN_VERSION wins over the version option", () => {

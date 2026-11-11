@@ -1,3 +1,4 @@
+import path from "node:path";
 import {
     _electron,
     expect,
@@ -12,8 +13,11 @@ import {
 } from "@playwright/test";
 import { sweepAtWorkerStart } from "./cleanup.js";
 import { createElectronProbe } from "./electron-binary.js";
+import { createDemo } from "./demo/create-demo.js";
+import { defaultNameText } from "./demo/names.js";
+import type { DemoHelpers } from "./demo/types.js";
 import { createFixtureFunctions } from "./fixtures.js";
-import { createHelpers } from "./helpers/create-helpers.js";
+import { createHelpers, type HelperKit } from "./helpers/create-helpers.js";
 import type { ObsidianHelpers } from "./helpers/types.js";
 import { gateSkipReason, isGateOpen } from "./gate.js";
 import { resolveOptions, type ObsidianTestOptions } from "./options.js";
@@ -31,11 +35,15 @@ export interface ObsidianFixtures {
     vault: VaultHandle;
     /** Helpers for settings, commands, files, the editor, themes, mobile and fakes, bound to this window. */
     obsidian: ObsidianHelpers;
+    /** Films and stills of the window with overlays, a clean UI, frozen time and themes; see `DemoHelpers`. Only a test that asks for it pays for it. */
+    demo: DemoHelpers;
 }
 
 /** Internal: the one fixture the three above are views of, so setup and teardown happen in one place. */
 interface InternalFixtures {
     opdkSession: ObsidianSession;
+    /** The helpers of the window with their one CDP session, shared by `obsidian` and `demo`. */
+    opdkHelpers: HelperKit;
 }
 
 interface InternalWorkerFixtures {
@@ -106,10 +114,39 @@ export function createObsidianTest(options: ObsidianTestOptions): ObsidianTestKi
         vault: async ({ opdkSession }, use) => {
             await use(opdkSession.vault);
         },
-        obsidian: async ({ win }, use) => {
-            const kit = createHelpers(win, { readyTimeoutMs: resolved.timeouts.ready, timeouts: resolved.helperTimeouts });
-            await use(kit.helpers);
-            await kit.dispose();
+        opdkHelpers: [
+            async ({ win }, use) => {
+                const kit = createHelpers(win, { readyTimeoutMs: resolved.timeouts.ready, timeouts: resolved.helperTimeouts });
+                await use(kit);
+                await kit.dispose();
+            },
+            { box: true },
+        ],
+        obsidian: async ({ opdkHelpers }, use) => {
+            await use(opdkHelpers.helpers);
+        },
+        demo: async ({ win, opdkHelpers }, use, testInfo) => {
+            const controller = createDemo({
+                win,
+                cdp: () => opdkHelpers.cdpSession(),
+                setTheme: (themeOptions) => opdkHelpers.helpers.setTheme(themeOptions),
+                options: resolved.demo,
+                uiTimeoutMs: resolved.helperTimeouts.ui,
+                seedVault: resolved.seedVault,
+                seedVaultSource: resolved.seedVaultSource,
+                cwd: resolved.cwd,
+                testTitle: defaultNameText({ titlePath: testInfo.titlePath, project: testInfo.project.name, projectCount: testInfo.config.projects.length }),
+                source: {
+                    testId: testInfo.testId,
+                    title: testInfo.titlePath.slice(1).join(" "),
+                    file: path.relative(resolved.cwd, testInfo.file).split(path.sep).join("/"),
+                },
+                // Workers are children of the process that runs the invocation, so its pid tells the runs apart.
+                runId: String(process.ppid),
+            });
+            await use(controller.demo);
+            // After a normal return the outcome is on `testInfo`, as in the session fixture.
+            controller.finish({ status: testInfo.status });
         },
     });
     // The one cast: `extend` returns a type that also lists the internal fixtures, and TestType is invariant in its

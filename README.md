@@ -17,11 +17,11 @@ Every Obsidian plugin needs the same tooling around its code: a bundle that also
 | Release | Version sync between `package.json`, `manifest.json` and `versions.json`, tag checks, and a reusable GitHub release workflow with build provenance |
 | Unit tests | A Vitest preset with coverage thresholds, and DOM helpers Obsidian adds (`createEl`, `createDiv`, `setText`) |
 | End-to-end tests | Playwright in a real Obsidian through Electron: an isolated vault per test, the trust dialog never shown, readiness by plugin state instead of sleeps, a check of which Obsidian version ran, a trace and a video of the Obsidian window for failures, and helpers for settings, commands, the editor, IME composition, the mobile layout and fakes. Launch over CDP and a mode for recording tests by hand with the Playwright Inspector are planned |
-| Demo recording | A visible cursor that moves like a person's, subtitles, slow typing and pauses, plus a script that cuts the take and adds a voice-over per scene with ffmpeg, then exports MP4 and GIF |
+| Demo recording | A visible cursor that moves like a person's, subtitles, slow typing and pauses, plus a script that cuts the take with ffmpeg and exports MP4 and GIF |
 | Integration tests | A preset for [obsidian-integration-testing](https://github.com/mnaoumov/obsidian-integration-testing): the same smoke tests on the latest public and catalyst builds, and on Android |
 | Agent skills | One Claude Code skill per module, so a coding agent working in your plugin knows how to use the kit |
 
-Your plugin keeps only what is its own: specs, the seed vault, demo scenes and voice-over text.
+Your plugin keeps only what is its own: specs, the seed vault and demo scenes.
 
 ## Install (planned)
 

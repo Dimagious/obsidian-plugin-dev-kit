@@ -51,11 +51,11 @@ afterEach(() => {
     expect(current?.unbounded).toEqual([]);
 });
 
-function setUp(readyTimeoutMs = 30_000): { fake: FakeHelperWindow; helpers: ReturnType<typeof createHelpers>["helpers"]; dispose: () => Promise<void> } {
+function setUp(readyTimeoutMs = 30_000): { fake: FakeHelperWindow; helpers: ReturnType<typeof createHelpers>["helpers"]; kit: ReturnType<typeof createHelpers>; dispose: () => Promise<void> } {
     const fake = createFakeHelperWindow();
     current = fake;
     const kit = createHelpers(fake.win, { readyTimeoutMs, timeouts: TIMEOUTS });
-    return { fake, helpers: kit.helpers, dispose: () => kit.dispose() };
+    return { fake, helpers: kit.helpers, kit, dispose: () => kit.dispose() };
 }
 
 describe("settings", () => {
@@ -451,6 +451,14 @@ describe("compose", () => {
         expect(fake.log.filter((entry) => entry === "newCDPSession")).toHaveLength(1);
         await dispose();
         expect(fake.log.at(-1)).toBe("cdp.detach");
+    });
+
+    it("hands out its CDP session to the demo module: the one the compositions use, opened once", async () => {
+        const { fake, helpers, kit } = composeSetUp();
+        const first = await kit.cdpSession();
+        expect(await kit.cdpSession()).toBe(first);
+        await helpers.editor().compose("a");
+        expect(fake.log.filter((entry) => entry === "newCDPSession")).toHaveLength(1);
     });
 
     it("clicks the editor first when focus is outside it, and does not when it is inside", async () => {

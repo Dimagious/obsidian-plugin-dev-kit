@@ -1,4 +1,6 @@
 import path from "node:path";
+import { resolveDemoOptions, type DemoOptions, type ResolvedDemoOptions } from "./demo/options.js";
+import type { SeedVaultSource } from "./demo/privacy.js";
 import { isExplicitVersion, normalizeVersion } from "./version.js";
 
 /** One plugin to install into the test vault. */
@@ -81,6 +83,8 @@ export interface ObsidianTestOptions {
     readonly staleBuildCheck?: boolean;
     /** Remove `opdk-e2e-*` temp folders older than this many hours when a worker starts. `false` disables it. Default 2. */
     readonly sweepAfterHours?: number | false;
+    /** Where the `demo` fixture writes films and stills, the pixel density it shoots at, and the selectors that must never be in a picture. */
+    readonly demo?: DemoOptions;
 }
 
 export const DEFAULT_TIMEOUTS = { launch: 45_000, ready: 30_000, close: 5_000, trace: 60_000 } as const;
@@ -91,6 +95,8 @@ export const DEFAULT_SWEEP_HOURS = 2;
 export interface ResolvedOptions {
     readonly cwd: string;
     readonly seedVault: string;
+    /** Whether `seedVault` is the option or the `OPDK_E2E_VAULT` override. Capturing from an override needs `allowForeignVault`. */
+    readonly seedVaultSource: SeedVaultSource;
     /** Absolute plugin folders, in install order. */
     readonly pluginDirs: readonly string[];
     readonly data: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
@@ -104,6 +110,7 @@ export interface ResolvedOptions {
     /** Absolute folders of the plugins whose build is checked for staleness; empty when `OPDK_E2E_ALLOW_STALE_BUILD=1`. */
     readonly staleCheckDirs: readonly string[];
     readonly sweepAfterHours: number | false;
+    readonly demo: ResolvedDemoOptions;
 }
 
 const OPTION_KEYS = [
@@ -117,6 +124,7 @@ const OPTION_KEYS = [
     "timeouts",
     "staleBuildCheck",
     "sweepAfterHours",
+    "demo",
 ];
 const PLUGIN_KEYS = ["dir", "staleBuildCheck"];
 const TIMEOUT_KEYS = ["launch", "ready", "close", "trace", "helpers"];
@@ -142,11 +150,13 @@ export function resolveOptions(value: unknown, context: ResolveContext): Resolve
     const { cwd, env } = context;
     const seedFromOption = requireString(value, "seedVault");
     const envVault = env.OPDK_E2E_VAULT;
-    const seedVault = path.resolve(cwd, envVault !== undefined && envVault !== "" ? envVault : seedFromOption);
+    const fromEnv = envVault !== undefined && envVault !== "";
+    const seedVault = path.resolve(cwd, fromEnv ? envVault : seedFromOption);
     const plugins = resolvePlugins(value, cwd);
     return {
         cwd,
         seedVault,
+        seedVaultSource: fromEnv ? "env" : "option",
         pluginDirs: plugins.map((plugin) => plugin.dir),
         data: resolveData(value),
         window: resolveWindow(value),
@@ -157,6 +167,7 @@ export function resolveOptions(value: unknown, context: ResolveContext): Resolve
         helperTimeouts: resolveHelperTimeouts(value),
         staleCheckDirs: resolveStaleCheckDirs(value, plugins, cwd, env),
         sweepAfterHours: resolveSweep(value),
+        demo: resolveDemoOptions(own(value, "demo"), cwd),
     };
 }
 
