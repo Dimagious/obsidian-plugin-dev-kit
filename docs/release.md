@@ -79,8 +79,8 @@ For CI and for the minute before a release. Exit 1 with one `✗` line and a hin
 
 | Group | What it checks |
 |---|---|
-| `versions` | `manifest.json`, `package.json` and `package-lock.json` (both version fields) hold the same `x.y.z` version, with no `v` and no pre-release. With `--tag <name>`, or `GITHUB_REF_NAME` when `GITHUB_REF_TYPE=tag`, the tag is that version. A missing lockfile is a warning |
-| `versions.json` | The file exists and is an object; the current version maps to the manifest's `minAppVersion`; `minAppVersion` never goes down as versions go up (errors). A key or value that is not a version is a warning, as in the official action |
+| `versions` | `manifest.json`, `package.json` and `package-lock.json` (both version fields) hold the same `x.y.z` version, with no `v` and no pre-release. With `--tag <name>`, or `GITHUB_REF_NAME` when `GITHUB_REF_TYPE=tag`, the tag is that version. A missing lockfile is a warning. `package.json`, `package-lock.json` and `manifest.json` must also be written the way `JSON.stringify` writes them (their own indent, final newline, consistent line endings): `opdk release <bump>` rewrites them and refuses a file it cannot write back as it is |
+| `versions.json` | The file exists and is an object; the current version maps to the manifest's `minAppVersion`; `minAppVersion` never goes down as versions go up (errors), and the file is formatted the way `JSON.stringify` writes it, so a one-line `{"1.7.1": "1.5.0"}` fails with a `node -e` command that rewrites it (Prettier would leave it on one line). A key or value that is not a version is a warning, as in the official action |
 | `manifest` | The rules of the official [`obsidianmd/obsidian-workflows`](https://github.com/obsidianmd/obsidian-workflows) action (v1.2.3): required fields, `id`, `name` and `description` rules, an `author` without an email or a URL, HTTPS URLs, `isDesktopOnly` a boolean, version not `0.0.0`, `minAppVersion` a version |
 | `changelog` | `CHANGELOG.md` has a `## [X.Y.Z]` section with at least one entry |
 | `build` | A production build into temp folders (your `main.js` and `styles.css` are not touched) passes the Node-only bundle check. Warns when `scripts.build` (else `build:plugin`, else `compile`) does not run `opdk build` |
@@ -323,9 +323,23 @@ What the kit replaces is the same in all three plugins; what stays is each plugi
 - Dashy keeps its own schema version policy and its "instructions review" gate: run them before `opdk release`, because the release needs a clean tree. Its `build:skill` output names the plugin version and its CI runs `build:skill -- --check`, while the release commit holds only the version files. So after `opdk release`, run `npm run build:skill` and `npm run build:reference` and commit the result, or CI fails. The `npm run release:zip` step in Dashy's `ci.yml` goes away together with `make-zip.cjs`. A GitHub Pages workflow on the same tag keeps working; the release wait ignores it.
 - Both need `scripts.build` to run `opdk build` and `uses: ...@<full commit SHA of the kit>` in place of their workflow steps.
 
+**All three plugins, in `ci.yml` and `package.json`** (each `ci.yml` runs `node scripts/assert-versions.cjs`, `npm run release:zip` and uploads `<plugin>-*.zip` with the bundle):
+
+- Replace the `node scripts/assert-versions.cjs` step with `npx opdk release check --no-build --no-api`. Branch CI already installs and runs `npm run build` as a step of its own, so `--no-build` skips the build, asset and reproducibility checks, which would build twice more, and `--no-api` skips the `minAppVersion` check against the Obsidian API, which needs a type-aware lint pass. What stays: the version files agree, `versions.json`, the manifest rules, the CHANGELOG section and the format of the JSON files the release rewrites. The full check (build, assets, reproducibility, API) runs in the release workflow on the tag and in `opdk release <bump>` before anything is committed. Drop both flags to run the full check in branch CI as well, at the price of the two extra builds and the type-aware pass.
+- Remove the `Pack plugin zip` step (`npm run release:zip`) and the `<plugin>-*.zip` line from the artifact `path:` list.
+- In `package.json`, rewrite `release:check` by replacing `node scripts/version-sync.cjs` with `opdk release check` (it builds, so a trailing `npm run build` is redundant), and remove `release:zip` (all three), `release` (Dashy and Snipsy; Garmy has none) and `release:audit` (Dashy and Snipsy; Garmy has none). `release:check` keeps the plugin's own steps (scorecard and tests; Dashy and Garmy also lint and typecheck).
+
 **Snipsy:**
 
-- Create `versions.json` before the first `opdk release check`: `{ "<current version>": "<minAppVersion from manifest.json>" }`. `opdk release <bump>` also creates a missing file, but `check` in CI fails without it.
+- Create `versions.json` before the first `opdk release check`, in the format the kit writes (two-space indent, final newline), not on one line:
+
+  ```json
+  {
+    "1.7.1": "1.5.0"
+  }
+  ```
+
+  `opdk release <bump>` also creates a missing file, but `check` fails without it. `check` also fails on a one-line file, because the release rewrites it and refuses a file it cannot write back as it is. Prettier keeps a one-entry object on one line, so use the `node -e` command in the hint of that error (it writes LF line endings, so a CRLF file that is misformatted for another reason becomes LF).
 - Its `scripts/version-sync.cjs`, `assert-versions.cjs`, `make-zip.cjs` and `release-audit.cjs` (three of them, `version-sync.cjs`, `make-zip.cjs` and `release-audit.cjs`, with the plugin id written into them) are replaced the same way, and `scripts/assert-versions.cjs` never compared the tag with the manifest; the workflow now does.
 - Its `build` script has to run `opdk build`.
 - Releases have shipped no zip since 2026-05 (its ADR 0002, 2026-05-14), which is also the kit's default. The attestation it added after the scorecard flagged its absence is now made, and verified, by the flow.

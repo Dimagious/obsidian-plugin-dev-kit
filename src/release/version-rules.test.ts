@@ -51,7 +51,12 @@ describe("checkVersionSync", () => {
 
     it("says what is wrong with a v-prefixed tag", () => {
         const problems = checkVersionSync(sources(), "v1.2.3");
-        expect(problems[0]?.hint).toContain('with no "v"');
+        expect(problems.map((problem) => problem.message)).toEqual(['tag "v1.2.3" does not match manifest.json version 1.2.3: Obsidian release tags have no "v" prefix.']);
+        expect(problems[0]?.hint).toContain("the tag must be 1.2.3");
+    });
+
+    it("does not blame the prefix when the tag differs for another reason", () => {
+        expect(messages(checkVersionSync(sources(), "v1.2.4"))).toEqual(['tag "v1.2.4" does not match manifest.json version 1.2.3.']);
     });
 });
 

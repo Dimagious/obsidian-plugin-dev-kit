@@ -72,6 +72,10 @@ jobs:
             exit 1
           fi
           version="$(node -p "require('./manifest.json').version")"
+          if [ "$TAG" = "v$version" ]; then
+            echo "::error::The tag $TAG is not the version in manifest.json ($version): Obsidian release tags have no \"v\" prefix, so the tag must be $version. Tags are never moved: release a new version."
+            exit 1
+          fi
           if [ "$TAG" != "$version" ]; then
             echo "::error::The tag $TAG is not the version in manifest.json ($version). Obsidian looks for a release tagged exactly like the manifest version. Tags are never moved: release a new version."
             exit 1

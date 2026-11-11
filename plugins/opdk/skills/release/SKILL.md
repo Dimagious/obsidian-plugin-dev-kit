@@ -26,14 +26,14 @@ Flags: `--no-build`, `--no-reproducible`, `--no-api` (check and bump), `--tag` (
 
 ## What the check covers
 
-`versions` (manifest, package.json, lockfile, tag), `versions.json` (exists, current version maps to `minAppVersion`, never lowered), `manifest` (the official action's rules), `changelog` (a `## [X.Y.Z]` section with an entry), `build` (production build and the Node-only check), `assets`, `reproducible` (working tree against the committed tree, byte for byte) and `api` (`minAppVersion` against the API the code calls; needs `npm ci`). `opdk scan` is separate.
+`versions` (manifest, package.json, lockfile, tag), `versions.json` (exists, current version maps to `minAppVersion`, never lowered; it and the other JSON files the release rewrites must be in `JSON.stringify` format), `manifest` (the official action's rules), `changelog` (a `## [X.Y.Z]` section with an entry), `build` (production build and the Node-only check), `assets`, `reproducible` (working tree against the committed tree, byte for byte) and `api` (`minAppVersion` against the API the code calls; needs `npm ci`). `opdk scan` is separate.
 
 Reading failures:
 
 - `reproducible` mismatch or "the committed tree does not build": a build input is untracked or ignored, or the output holds a path of this machine. Commit or fix it. pnpm, Yarn PnP and a repository without commits fall back to two builds of the working tree with a warning. `export-ignore` and Git LFS inputs make the comparison differ.
 - `build` warning that `scripts.build` does not run `opdk build`: make it run `opdk build` (the directory rebuilds with that script, and the push flow compares the assets with an `opdk build` of the tag).
 - `api` reports nothing for a plugin that surely uses new API: a tsconfig `paths` entry may point `obsidian` at a stub, which the rule cannot see through.
-- `versions.json` missing: create `{ "<version>": "<minAppVersion>" }`. An existing entry is never rewritten.
+- `versions.json` missing: create it in the multi-line format the kit writes (two-space indent, one entry per line, final newline; `opdk release <bump>` creates it when missing, but `check` fails without it). An existing entry is never rewritten.
 - A changelog problem: entries belong under `## [Unreleased]` before a release; `opdk release <bump>` moves them.
 
 ## The push flow and its stops
@@ -72,4 +72,4 @@ Inputs: `node-version` (default `"22"`) and `zip` (default `false`; add `--zip` 
 
 ## Migrating a plugin's scripts
 
-Replace `version-sync.cjs` and `assert-versions.cjs` with `opdk release`, delete `make-zip.cjs` and `release-audit.cjs` (no zip by default), replace the plugin's `release.yml` with the caller above, make `scripts.build` run `opdk build`. The kit's workflow runs the release check and the build, not the plugin's tests or lint: keep those in branch CI. Plugin-specific steps (generated files, a MAJOR-bump checklist) stay in the plugin and run before `opdk release`, because it needs a clean tree and its release commit holds only the version bump. A generated file that names the plugin version (Dashy's `build:skill` and `build:reference` output, checked in CI with `--check`) has to be regenerated and committed after `opdk release`, or CI fails. Snipsy has no `versions.json` yet: create it first.
+Replace `version-sync.cjs` and `assert-versions.cjs` with `opdk release`, delete `make-zip.cjs` and `release-audit.cjs` (no zip by default), replace the plugin's `release.yml` with the caller above, make `scripts.build` run `opdk build`. The kit's workflow runs the release check and the build, not the plugin's tests or lint: keep those in branch CI. Plugin-specific steps (generated files, a MAJOR-bump checklist) stay in the plugin and run before `opdk release`, because it needs a clean tree and its release commit holds only the version bump. A generated file that names the plugin version (Dashy's `build:skill` and `build:reference` output, checked in CI with `--check`) has to be regenerated and committed after `opdk release`, or CI fails. Snipsy has no `versions.json` yet: create it first, multi-line (two-space indent, final newline), not on one line.

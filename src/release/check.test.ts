@@ -25,6 +25,11 @@ function releasablePlugin(): PluginFixture {
     return created;
 }
 
+/** A JSON file the way opdk writes it: the check refuses one on a single line. */
+function pretty(value: unknown): string {
+    return `${JSON.stringify(value, null, 2)}\n`;
+}
+
 async function check(options: { flags?: CheckFlags; tag?: string; config?: OpdkConfig } = {}): Promise<{ code: number; out: string; err: string }> {
     const current = plugin ?? releasablePlugin();
     const ctx = createContext(current.dir);
@@ -82,7 +87,7 @@ describe("skipping", () => {
 describe("failures", () => {
     it("fails on a version that differs, one ✗ line with a hint", async () => {
         const created = releasablePlugin();
-        created.write("package.json", JSON.stringify({ name: "p", version: "1.0.1" }));
+        created.write("package.json", pretty({ name: "p", version: "1.0.1" }));
         const result = await check({ flags: { ...NO_API, build: false } });
         expect(result.code).toBe(1);
         expect(result.err).toContain("✗ check   versions: package.json is 1.0.1 but manifest.json is 1.0.0.");
@@ -94,12 +99,33 @@ describe("failures", () => {
     it("fails when the tag differs from the version", async () => {
         const result = await check({ tag: "v1.0.0", flags: { ...NO_API, build: false } });
         expect(result.code).toBe(1);
-        expect(result.err).toContain('versions: tag "v1.0.0" does not match manifest.json version 1.0.0.');
+        expect(result.err).toContain('versions: tag "v1.0.0" does not match manifest.json version 1.0.0: Obsidian release tags have no "v" prefix.');
+    });
+
+    it("fails on a file that the release would refuse to rewrite, and passes again in the written format", async () => {
+        const created = releasablePlugin();
+        const cases: [string, string, string][] = [
+            ["versions.json", '{"1.0.0": "1.5.0"}', "versions.json: versions.json is not formatted"],
+            ["package.json", '{"name":"fixture-release","version":"1.0.0","private":true,"scripts":{"build":"opdk build"}}', "versions: package.json is not formatted"],
+            ["package-lock.json", '{"name":"fixture-release","version":"1.0.0","lockfileVersion":3,"packages":{"":{"name":"fixture-release","version":"1.0.0"}}}', "versions: package-lock.json is not formatted"],
+            ["manifest.json", JSON.stringify(VALID_MANIFEST), "versions: manifest.json is not formatted"],
+        ];
+        for (const [name, bad, expected] of cases) {
+            const good = readFileSync(path.join(created.dir, name), "utf8");
+            created.write(name, bad);
+            const failed = await check({ flags: { ...NO_API, build: false } });
+            expect(failed.code, name).toBe(1);
+            expect(failed.err, name).toContain(expected);
+            expect(failed.err, name).toContain("node -e");
+            expect(failed.err, name).toContain("1 problem(s), not ready to release.");
+            created.write(name, good);
+            expect((await check({ flags: { ...NO_API, build: false } })).code, name).toBe(0);
+        }
     });
 
     it("reports every problem, not only the first", async () => {
         const created = releasablePlugin();
-        created.write("manifest.json", JSON.stringify({ ...VALID_MANIFEST, name: "Obsidian Words", version: "1.0.0" }));
+        created.write("manifest.json", pretty({ ...VALID_MANIFEST, name: "Obsidian Words", version: "1.0.0" }));
         created.write("versions.json", "{}");
         created.write("CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n- Something.\n");
         const result = await check({ flags: { ...NO_API, build: false } });
@@ -112,7 +138,7 @@ describe("failures", () => {
 
     it("prints warnings as ! lines that do not fail the check", async () => {
         const created = releasablePlugin();
-        created.write("manifest.json", JSON.stringify({ ...VALID_MANIFEST, homepage: "https://example.com" }));
+        created.write("manifest.json", pretty({ ...VALID_MANIFEST, homepage: "https://example.com" }));
         const result = await check({ flags: { ...NO_API, build: false } });
         expect(result.code).toBe(0);
         expect(result.out).toContain('! check   manifest: manifest.json: unknown field "homepage".');
@@ -145,7 +171,7 @@ describe("failures", () => {
         expect(failed.err).toContain("build: main.js cannot run on mobile.");
         expect(failed.err).toContain("- ");
 
-        created.write("manifest.json", JSON.stringify({ ...VALID_MANIFEST, isDesktopOnly: true }));
+        created.write("manifest.json", pretty({ ...VALID_MANIFEST, isDesktopOnly: true }));
         const passed = await check();
         expect(passed.code).toBe(0);
         expect(passed.out).toMatch(/build: production build of src\/main\.ts: main\.js \d+\.\d KiB\n/);
@@ -161,7 +187,7 @@ describe("failures", () => {
 
     it("fails when the manifest next to a bundle built outside the root is another one", async () => {
         const created = releasablePlugin();
-        created.write("dist/manifest.json", JSON.stringify({ ...VALID_MANIFEST, version: "0.9.0" }));
+        created.write("dist/manifest.json", pretty({ ...VALID_MANIFEST, version: "0.9.0" }));
         const result = await check({ config: { build: { outfile: "dist/main.js" } }, flags: { ...NO_API, reproducible: false } });
         expect(result.code).toBe(1);
         expect(result.err).toContain("assets: the manifest.json next to dist/main.js differs from the one at the plugin root.");

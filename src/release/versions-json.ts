@@ -1,5 +1,5 @@
 import { errorProblem, warningProblem, type Problem } from "./problems.js";
-import { asRecord, type Loaded } from "./json.js";
+import { asRecord, findFormatIssue, type Loaded } from "./json.js";
 import { compareVersions, isSemver } from "./semver.js";
 
 const GROUP = "versions.json";
@@ -18,14 +18,7 @@ const GROUP = "versions.json";
  */
 export function checkVersionsJson(loaded: Loaded, version: string, minAppVersion: string | undefined): Problem[] {
     if (loaded.kind === "missing") {
-        const mapped = minAppVersion ?? "<minAppVersion from manifest.json>";
-        return [
-            errorProblem(
-                GROUP,
-                "versions.json is missing.",
-                `Create it next to manifest.json: { "${version}": "${mapped}" }. \`opdk release <patch|minor|major>\` adds each new version.`,
-            ),
-        ];
+        return [errorProblem(GROUP, "versions.json is missing.", missingHint(version, minAppVersion))];
     }
     if (loaded.kind === "invalid") {
         return [errorProblem(GROUP, `versions.json is not valid JSON: ${loaded.message}.`, "Fix the syntax.")];
@@ -35,6 +28,11 @@ export function checkVersionsJson(loaded: Loaded, version: string, minAppVersion
         return [errorProblem(GROUP, "versions.json must be an object mapping plugin versions to minimum app versions.", `Write { "${version}": "1.5.0" }.`)];
     }
     const problems: Problem[] = [];
+    // `opdk release <bump>` rewrites this file and refuses one it cannot write back as it is: say so before release day.
+    const issue = findFormatIssue(loaded.text, loaded.value, "versions.json");
+    if (issue !== undefined) {
+        problems.push(errorProblem(GROUP, issue.message, issue.hint));
+    }
     for (const [key, value] of Object.entries(versions)) {
         if (!isSemver(key)) {
             problems.push(warningProblem(GROUP, `key "${key}" is not a version like 1.2.3.`, "Remove or fix the entry."));
@@ -47,12 +45,26 @@ export function checkVersionsJson(loaded: Loaded, version: string, minAppVersion
     return problems;
 }
 
+/**
+ * The hint for a missing file: a `node -e` command that writes it in the format the release writes back (two-space
+ * indent, LF, final newline). It sits inside double quotes in the shell, so the script has no `$`, backtick, `!` or
+ * inner double quote. The file name and the values must never contain quotes; versions are validated semver, so they
+ * cannot.
+ */
+function missingHint(version: string, minAppVersion: string | undefined): string {
+    if (minAppVersion === undefined || !isSemver(version) || !isSemver(minAppVersion)) {
+        return "Create it next to manifest.json as an object that maps the plugin version to minAppVersion, written with JSON.stringify (two-space indent, final newline). `opdk release <patch|minor|major>` creates it too.";
+    }
+    const script = `require('fs').writeFileSync('versions.json', JSON.stringify({ '${version}': '${minAppVersion}' }, null, 2) + '\\n')`;
+    return `Create it next to manifest.json with \`node -e "${script}"\`. \`opdk release <patch|minor|major>\` creates it too.`;
+}
+
 function checkCurrent(versions: Record<string, unknown>, version: string, minAppVersion: string | undefined): Problem[] {
     if (minAppVersion === undefined) {
         return [errorProblem(GROUP, `manifest.json has no minAppVersion, so ${version} cannot be mapped in versions.json.`, 'Add "minAppVersion" to manifest.json.')];
     }
     if (!Object.hasOwn(versions, version)) {
-        return [errorProblem(GROUP, `versions.json has no entry for ${version}.`, `Add "${version}": "${minAppVersion}". \`opdk release <patch|minor|major>\` does it for a new release.`)];
+        return [errorProblem(GROUP, `versions.json has no entry for ${version}.`, `Add "${version}": "${minAppVersion}" as a new line in the same format (two-space indent, one entry per line), or let \`opdk release <patch|minor|major>\` add it for a new release.`)];
     }
     const mapped = versions[version];
     if (mapped !== minAppVersion) {

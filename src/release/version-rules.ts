@@ -67,11 +67,17 @@ export function checkVersionSync(sources: VersionSources, tag?: string): Problem
         }
     }
     if (tag !== undefined && typeof reference === "string" && tag !== reference) {
-        const hint =
-            tag === `v${reference}`
-                ? `Obsidian looks for a release tagged exactly like the manifest version, so the tag must be ${reference} with no "v".`
-                : `Tag the commit ${reference}, or fix the version in manifest.json.`;
-        problems.push(errorProblem(GROUP, `tag "${tag}" does not match manifest.json version ${reference}.`, hint));
+        if (tag === `v${reference}`) {
+            problems.push(
+                errorProblem(
+                    GROUP,
+                    `tag "${tag}" does not match manifest.json version ${reference}: Obsidian release tags have no "v" prefix.`,
+                    `Obsidian looks for a release tagged exactly like the manifest version, so the tag must be ${reference}.`,
+                ),
+            );
+        } else {
+            problems.push(errorProblem(GROUP, `tag "${tag}" does not match manifest.json version ${reference}.`, `Tag the commit ${reference}, or fix the version in manifest.json.`));
+        }
     }
     return problems;
 }

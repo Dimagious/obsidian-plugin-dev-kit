@@ -6,7 +6,7 @@ import { checkBuildScript } from "./build-script.js";
 import { extractCommittedTree, type OverlayFile } from "./committed-tree.js";
 import { createRunGit, type RunGit } from "./git.js";
 import { CleanupSet, guardInterrupt, type InterruptHooks } from "./interrupt.js";
-import { asRecord } from "./json.js";
+import { asRecord, findFormatIssue } from "./json.js";
 import { checkManifestRules } from "./manifest-rules.js";
 import { CHECK_GROUPS, errorProblem, hasErrors, type CheckGroup, type GroupResult, type Problem } from "./problems.js";
 import { loadProjectFiles, valueOf, type ProjectFiles } from "./project-files.js";
@@ -50,15 +50,23 @@ const SKIPPED: Partial<Record<CheckGroup, (flags: CheckFlags) => string | undefi
 
 function fileProblems(files: ProjectFiles): Problem[] {
     const problems: Problem[] = [];
+    // manifest.json is never missing or invalid here (callers return earlier), so only its format check applies.
     const names: [string, ProjectFiles["packageJson"], boolean][] = [
         ["package.json", files.packageJson, true],
         ["package-lock.json", files.lock, false],
+        ["manifest.json", files.manifest, false],
     ];
     for (const [name, loaded, required] of names) {
         if (loaded.kind === "invalid") {
             problems.push(errorProblem("versions", `${name} is not valid JSON: ${loaded.message}.`, "Fix the syntax."));
         } else if (loaded.kind === "missing" && required) {
             problems.push(errorProblem("versions", `${name} is missing.`, "Run opdk from the plugin root."));
+        } else if (loaded.kind === "ok") {
+            // `opdk release <bump>` rewrites this file and refuses one it cannot write back as it is: say so before release day.
+            const issue = findFormatIssue(loaded.text, loaded.value, name);
+            if (issue !== undefined) {
+                problems.push(errorProblem("versions", issue.message, issue.hint));
+            }
         }
     }
     return problems;

@@ -1,9 +1,13 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type { Loaded } from "./json.js";
+import { loadJson, type Loaded } from "./json.js";
 import { hasErrors } from "./problems.js";
 import { checkVersionsJson } from "./versions-json.js";
 
-const ok = (value: unknown): Loaded => ({ kind: "ok", text: JSON.stringify(value), value });
+const ok = (value: unknown): Loaded => ({ kind: "ok", text: `${JSON.stringify(value, null, 2)}\n`, value });
 const messages = (loaded: Loaded, version = "1.2.0", ...minApp: [string | undefined] | []): string[] =>
     checkVersionsJson(loaded, version, minApp.length === 0 ? "1.5.0" : minApp[0]).map((problem) => problem.message);
 
@@ -15,7 +19,34 @@ describe("checkVersionsJson", () => {
     it("fails with a hint to create the file when it is missing", () => {
         const [problem] = checkVersionsJson({ kind: "missing" }, "1.2.0", "1.5.0");
         expect(problem?.message).toBe("versions.json is missing.");
-        expect(problem?.hint).toContain('{ "1.2.0": "1.5.0" }');
+        expect(problem?.hint).toContain("node -e");
+        expect(problem?.hint).toContain("'1.2.0': '1.5.0'");
+    });
+
+    it("writes a file that passes the check when the missing-file hint is run as it says", () => {
+        const dir = mkdtempSync(path.join(tmpdir(), "opdk-versions-json-"));
+        try {
+            const hint = checkVersionsJson({ kind: "missing" }, "1.2.0", "1.5.0")[0]?.hint ?? "";
+            const command = /`(node -e [^`]+)`/.exec(hint)?.[1] ?? "";
+            expect(command).not.toBe("");
+            execFileSync("sh", ["-c", command], { cwd: dir });
+            expect(readFileSync(path.join(dir, "versions.json"), "utf8")).toBe('{\n  "1.2.0": "1.5.0"\n}\n');
+            expect(checkVersionsJson(loadJson(path.join(dir, "versions.json")), "1.2.0", "1.5.0")).toEqual([]);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it("gives a command-free hint when minAppVersion is unknown", () => {
+        const hint = checkVersionsJson({ kind: "missing" }, "1.2.0", undefined)[0]?.hint ?? "";
+        expect(hint).not.toContain("node -e");
+        expect(hint).toContain("minAppVersion");
+    });
+
+    it("tells a missing entry to be added in the same format", () => {
+        const hint = checkVersionsJson(ok({ "1.0.0": "1.5.0" }), "1.2.0", "1.5.0")[0]?.hint ?? "";
+        expect(hint).toContain("as a new line in the same format");
+        expect(hint).not.toContain('"1.2.0": "1.5.0" }');
     });
 
     it("fails on invalid JSON and on something that is not an object", () => {
@@ -32,6 +63,14 @@ describe("checkVersionsJson", () => {
             'warning: the value of "1.1.0" is not a version like 1.5.0.',
         ]);
         expect(hasErrors(found)).toBe(false);
+    });
+
+    it("fails, with a hint that is not prettier, when the file is valid but not written the way opdk writes it", () => {
+        const text = '{"1.2.0": "1.5.0"}';
+        const found = checkVersionsJson({ kind: "ok", text, value: JSON.parse(text) }, "1.2.0", "1.5.0");
+        expect(found.map((problem) => problem.message)).toEqual([expect.stringContaining("versions.json is not formatted the way JSON.stringify writes it")]);
+        expect(found[0]?.severity).toBe("error");
+        expect(found[0]?.hint).toContain("node -e");
     });
 
     it("fails when the current version has no entry", () => {
