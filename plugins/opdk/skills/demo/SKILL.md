@@ -1,6 +1,6 @@
 ---
 name: demo
-description: Use when making a demo film, GIF, MP4, poster or README/listing screenshot of an Obsidian plugin that uses obsidian-plugin-dev-kit (opdk), when writing a spec with the `demo` fixture (`demo.film`, `film.shot`, `demo.still`, `demo.tap`, `demo.typeSlowly`, `demo.caption`, `demo.cleanUi`, `demo.freezeTime`, `demo.themes`), when `opdk demo` fails or warns ("no films", "refused", "forbidden selector", "loop does not close", "held for less than one GIF frame", "not found on PATH", "libx264"), or when migrating a plugin's own capture or film scripts to the kit.
+description: Make a demo film, GIF, MP4, poster or README and listing screenshot of an Obsidian plugin that uses obsidian-plugin-dev-kit (opdk) with `opdk demo` and the `demo` fixture (`demo.film`, `film.shot`, `demo.still`, `demo.caption`, `demo.cleanUi`, `demo.themes`). Use it to film a feature, record a phone layout, capture themed stills, fix `opdk demo` messages ("no films", "refused", "forbidden selector", "loop does not close", "not found on PATH", "libx264"), or to replace a plugin's own capture scripts. Not for ordinary Playwright tests (e2e).
 ---
 
 # opdk demo module

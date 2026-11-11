@@ -1,0 +1,16 @@
+{
+  "name": "obsidian-plugin-dev-kit",
+  "owner": {
+    "name": "Dimagious"
+  },
+  "metadata": {
+    "description": "Claude Code skills for building, scanning, testing and filming Obsidian plugins with obsidian-plugin-dev-kit."
+  },
+  "plugins": [
+    {
+      "name": "opdk",
+      "source": "./plugins/opdk",
+      "description": "Agent skills for obsidian-plugin-dev-kit (opdk): build, scan, test end to end and film demos of Obsidian plugins."
+    }
+  ]
+}
