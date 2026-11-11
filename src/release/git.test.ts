@@ -1,9 +1,12 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createReleaseRepo, hermeticGitEnv, type ReleaseRepo } from "../test-support/release-fixture.js";
 import { collectFacts, createRunGit, remoteEnvironment, repositoryFreeEnvironment } from "./git.js";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { testTmpRoot } from "../test-support/test-tmp.js";
+
+// Real git with a bare origin per test: each test spawns a dozen git processes, which is slow under load.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 let repo: ReleaseRepo | undefined;
 afterEach(() => {
