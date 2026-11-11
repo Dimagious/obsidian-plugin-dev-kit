@@ -30,6 +30,7 @@ import {
     readEditorSelection,
     readEditorText,
     readFakeCalls,
+    reloadApp,
     removeFake,
     removeNotices,
     runCommandById,
@@ -785,6 +786,71 @@ describe("mobile and desktop", () => {
         await helpers.desktop();
         expect(state.reloads).toBe(0);
         expect(fake.cdp).toHaveLength(1);
+    });
+});
+
+describe("reload", () => {
+    function reloadSetUp(): ReturnType<typeof setUp> {
+        const context = setUp(12_345);
+        const { fake } = context;
+        fake.onEvaluate(enabledPluginIds, () => ["p1", "p2"]);
+        fake.onEvaluate(markBeforeReload, () => fake.log.push("marked"));
+        fake.onEvaluate(reloadApp, () => {
+            fake.log.push("reload");
+            return Promise.reject(new Error("page.evaluate: Execution context was destroyed, most likely because of a navigation"));
+        });
+        fake.onWait(isReloaded, (_arg, options) => fake.log.push(`reloaded:${JSON.stringify(options)}`));
+        fake.onWait(isReady, (ids, options) => fake.log.push(`ready:${JSON.stringify(ids)}:${JSON.stringify(options)}`));
+        return context;
+    }
+
+    it("marks the old page, reloads, waits until it is gone, then waits for every plugin again", async () => {
+        const { fake, helpers } = reloadSetUp();
+        await helpers.reload();
+        expect(fake.log).toEqual(["marked", "reload", 'reloaded:{"polling":50,"timeout":12345}', 'ready:["p1","p2"]:{"polling":50,"timeout":12345}']);
+        expect(fake.cdp).toEqual([]);
+    });
+
+    it("accepts a reload command that returns normally", async () => {
+        const { fake, helpers } = reloadSetUp();
+        fake.onEvaluate(reloadApp, () => "started");
+        await expect(helpers.reload()).resolves.toBeUndefined();
+    });
+
+    it("fails naming the command when this Obsidian has none, without waiting for a reload", async () => {
+        const { fake, helpers } = reloadSetUp();
+        fake.onEvaluate(reloadApp, () => "missing");
+        await expect(helpers.reload()).rejects.toThrow("reload(): this Obsidian has no app:reload command");
+        expect(fake.log).toEqual(["marked"]);
+    });
+
+    it("fails fast with its own message when Obsidian refuses the command", async () => {
+        const { fake, helpers } = reloadSetUp();
+        fake.onEvaluate(reloadApp, () => "refused");
+        await expect(helpers.reload()).rejects.toThrow("Obsidian refused to run the app:reload command");
+        expect(fake.log).toEqual(["marked"]);
+    });
+
+    it("says what to raise when the old page never goes away", async () => {
+        const { fake, helpers } = reloadSetUp();
+        fake.onWait(isReloaded, () => {
+            throw new Error("Timeout");
+        });
+        await expect(helpers.reload()).rejects.toThrow("did not reload within 12345 ms after reload(). Raise timeouts.ready");
+    });
+
+    it("lets a real failure of the page call through", async () => {
+        const { fake, helpers } = reloadSetUp();
+        fake.onEvaluate(reloadApp, () => Promise.reject(new TypeError("boom")));
+        await expect(helpers.reload()).rejects.toThrow("boom");
+    });
+
+    it("fails with the readiness error when a plugin does not come back", async () => {
+        const { fake, helpers } = reloadSetUp();
+        fake.onWait(isReady, () => {
+            throw new Error("Timeout 12345ms exceeded");
+        });
+        await expect(helpers.reload()).rejects.toThrow("Obsidian was not ready after 12345 ms.");
     });
 });
 

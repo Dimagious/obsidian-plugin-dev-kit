@@ -33,6 +33,7 @@ import {
     readEditorSelection,
     readEditorText,
     readFakeCalls,
+    reloadApp,
     removeFake,
     removeNotices,
     runCommandById,
@@ -370,29 +371,46 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
     }
 
     /**
-     * Switches the emulation and waits for the reload it causes. `emulateMobile()` reloads the window, so the call
-     * that starts it never returns; that rejection is the only one accepted. The flag set before the call tells the
-     * old page from the new one, and then the phase 1 readiness wait makes sure every plugin has loaded again.
+     * Runs `start`, which reloads the window, and waits until the new page is up. The call that starts a reload
+     * never returns; that rejection is the only one accepted. The flag set before the call tells the old page from
+     * the new one, and then the phase 1 readiness wait makes sure every plugin has loaded again.
      */
-    async function switchEmulation(on: boolean): Promise<void> {
+    async function reloadWindow(start: () => Promise<void>, timeoutMessage: string): Promise<void> {
         const ids = await win.evaluate(enabledPluginIds);
         await win.evaluate(markBeforeReload);
         try {
-            await win.evaluate(switchMobileEmulation, on);
+            await start();
         } catch (error) {
             if (!isReloadRejection(error)) {
                 throw error;
             }
         }
-        await orFail(
-            () => win.waitForFunction(isReloaded, undefined, { polling: POLL_MS, timeout: options.readyTimeoutMs }),
+        await orFail(() => win.waitForFunction(isReloaded, undefined, { polling: POLL_MS, timeout: options.readyTimeoutMs }), timeoutMessage);
+        await waitForReady(win, ids, options.readyTimeoutMs);
+    }
+
+    /** Switches the emulation (`emulateMobile()` reloads the window) and waits for the reload and the body class. */
+    async function switchEmulation(on: boolean): Promise<void> {
+        await reloadWindow(
+            () => win.evaluate(switchMobileEmulation, on),
             `The window did not reload within ${String(options.readyTimeoutMs)} ms after the mobile emulation was switched ${on ? "on" : "off"}. Raise timeouts.ready, or check that app.emulateMobile exists in this Obsidian.`,
         );
-        await waitForReady(win, ids, options.readyTimeoutMs);
         await orFail(
             () => win.waitForFunction(isMobileApplied, on, { polling: POLL_MS, timeout: MOBILE_STATE_TIMEOUT_MS }),
             `The window reloaded, but its body ${on ? "lacks" : "still has"} the is-mobile class after ${String(MOBILE_STATE_TIMEOUT_MS)} ms.`,
         );
+    }
+
+    async function reload(): Promise<void> {
+        await reloadWindow(async () => {
+            const outcome = await win.evaluate(reloadApp);
+            if (outcome === "missing") {
+                throw new Error("reload(): this Obsidian has no app:reload command. The helper was verified on Obsidian 1.14.5.");
+            }
+            if (outcome === "refused") {
+                throw new Error("reload(): Obsidian refused to run the app:reload command (executeCommandById returned false). Check that the command is available in this window.");
+            }
+        }, `The window did not reload within ${String(options.readyTimeoutMs)} ms after reload(). Raise timeouts.ready, or check that the app:reload command works in this Obsidian.`);
     }
 
     /** The window width the last `mobile()` call applied; the layout (phone or tablet) was decided from it. */
@@ -499,6 +517,7 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
             collapseSidebars: () => setSidebars(true),
             expandSidebars: () => setSidebars(false),
             mobile,
+            reload,
             desktop,
             evaluate,
             replace,

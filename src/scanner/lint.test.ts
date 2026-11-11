@@ -1,7 +1,7 @@
 import { ESLint } from "eslint";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPluginFixture, type PluginFixture } from "../test-support/plugin-fixture.js";
-import { isOutsideProject, NO_INPUTS_MESSAGE, PROJECT_SERVICE_MESSAGE, runScannerLint, toFindings } from "./lint.js";
+import { DEFAULT_PROJECT_CLASH_MESSAGE, isDefaultProjectClash, isOutsideProject, NO_INPUTS_MESSAGE, PROJECT_SERVICE_MESSAGE, runScannerLint, toFindings } from "./lint.js";
 import { createScannerConfig } from "./scanner-config.js";
 
 // Real ESLint, git and esbuild runs: they miss the 5 s default when suites share the machine. Per file, so the global default stays.
@@ -107,6 +107,52 @@ describe("runScannerLint", () => {
         );
     });
 
+    it("lints eslint.config.ts with types when the tsconfig has no include and so covers it already", async () => {
+        plugin.write("tsconfig.json", JSON.stringify({ compilerOptions: { target: "ES2020", lib: ["ES2020", "DOM"], module: "ESNext", moduleResolution: "Bundler", strict: true, noEmit: true, types: [] } }));
+        plugin.write("src/main.ts", "export const a = 1;\n");
+        plugin.write("eslint.config.ts", "const parsed = JSON.parse('1');\nexport default [parsed];\n");
+        const outcome = await runScannerLint(plugin.dir, ["src/main.ts", "eslint.config.ts"]);
+        expect(outcome.findings.some((finding) => finding.rule === "parse-error"), JSON.stringify(outcome.findings)).toBe(false);
+        expect(outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`)).toContain(
+            "eslint.config.ts:1 @typescript-eslint/no-unsafe-assignment",
+        );
+        expect(outcome.untyped).toBe(0);
+    });
+
+    it("lints eslint.config.js with types when an allowJs tsconfig includes it", async () => {
+        plugin.write(
+            "tsconfig.json",
+            JSON.stringify({ compilerOptions: { target: "ES2020", lib: ["ES2020", "DOM"], module: "ESNext", moduleResolution: "Bundler", allowJs: true, noEmit: true, types: [] }, include: ["**/*.js"] }),
+        );
+        plugin.write("eslint.config.js", "const parsed = JSON.parse('1');\nexport default [parsed];\n");
+        const outcome = await runScannerLint(plugin.dir, ["eslint.config.js"]);
+        expect(outcome.findings.some((finding) => finding.rule === "parse-error"), JSON.stringify(outcome.findings)).toBe(false);
+        expect(outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`)).toContain(
+            "eslint.config.js:1 @typescript-eslint/no-unsafe-assignment",
+        );
+    });
+
+    it("still lints eslint.config.js as a default project when no tsconfig covers it", async () => {
+        plugin.write("src/main.ts", "export const a = 1;\n");
+        plugin.write("eslint.config.js", "const parsed = JSON.parse('1');\nexport default [parsed];\n");
+        const outcome = await runScannerLint(plugin.dir, ["eslint.config.js"]);
+        expect(outcome.findings.some((finding) => finding.rule === "parse-error"), JSON.stringify(outcome.findings)).toBe(false);
+        expect(outcome.untyped).toBe(0);
+        expect(outcome.findings.map((finding) => finding.rule)).toContain("@typescript-eslint/no-unsafe-assignment");
+    });
+
+    it("pins typescript-eslint's wording for a default project that a tsconfig also covers", async () => {
+        plugin.write("tsconfig.json", JSON.stringify({ compilerOptions: { target: "ES2020", module: "ESNext", moduleResolution: "Bundler", noEmit: true, types: [] } }));
+        plugin.write("eslint.config.ts", "export default [];\n");
+        const eslint = new ESLint({
+            cwd: plugin.dir,
+            overrideConfigFile: true,
+            baseConfig: createScannerConfig({ cwd: plugin.dir, typeAware: true }),
+        });
+        const [result] = await eslint.lintFiles(["eslint.config.ts"]);
+        expect(result !== undefined && isDefaultProjectClash(result), JSON.stringify(result?.messages)).toBe(true);
+    });
+
     it("pins typescript-eslint's wording for a file outside the project", async () => {
         plugin.write("src/main.ts", "export const a = 1;\n");
         plugin.write("site/page.js", "export const a = 1;\n");
@@ -120,6 +166,23 @@ describe("runScannerLint", () => {
             result?.messages.some((message) => message.message.includes(PROJECT_SERVICE_MESSAGE)),
             JSON.stringify(result?.messages),
         ).toBe(true);
+    });
+});
+
+describe("isDefaultProjectClash", () => {
+    const resultWith = (message: string): ESLint.LintResult => ({ filePath: "/p/eslint.config.ts", messages: [{ ruleId: null, message }] }) as ESLint.LintResult;
+
+    it("recognises the clash and leaves other messages alone", () => {
+        expect(isDefaultProjectClash(resultWith(`Parsing error: /p/eslint.config.ts ${DEFAULT_PROJECT_CLASH_MESSAGE}.`))).toBe(true);
+        expect(isDefaultProjectClash(resultWith("Parsing error: ';' expected."))).toBe(false);
+    });
+});
+
+describe("toFindings", () => {
+    it("gives a message without a line the line 0, which prints without a position", () => {
+        const result = { filePath: "/p/a.ts", messages: [{ ruleId: null, message: "Parsing error: boom" }] } as ESLint.LintResult;
+        const [finding] = toFindings([result], "/p");
+        expect(finding).toMatchObject({ file: "a.ts", line: 0, rule: "parse-error" });
     });
 });
 
