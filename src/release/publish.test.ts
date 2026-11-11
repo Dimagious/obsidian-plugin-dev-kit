@@ -149,7 +149,7 @@ describe("runPublish", () => {
         expect(order.indexOf("run list")).toBeLessThan(order.indexOf("release edit"));
         expect(github.calls.filter((call) => call.startsWith("attestation verify"))).toHaveLength(3);
         expect(github.calls.find((call) => call.startsWith("release edit"))).toBe(`release edit 1.0.1 --repo ${SLUG} --draft=false --latest`);
-        expect(github.calls.find((call) => call.startsWith("attestation verify"))).toMatch(new RegExp(`--repo ${SLUG} --source-ref refs/tags/1.0.1 --source-digest ${s.commit}$`));
+        expect(github.calls.find((call) => call.startsWith("attestation verify"))).toMatch(new RegExp(`--repo ${SLUG} --signer-workflow Dimagious/obsidian-plugin-dev-kit/.github/workflows/release.yml --source-ref refs/tags/1.0.1 --source-digest ${s.commit}$`));
 
         const out = s.ctx.out.join("");
         expect(out).toContain(`✓ gh      ${SLUG}: signed in, admin access`);
@@ -159,6 +159,8 @@ describe("runPublish", () => {
         expect(out).toContain("✓ verify  attestations: main.js, manifest.json, styles.css verified");
         expect(out).toContain(`✓ release  1.0.1 is public and the latest release: https://github.com/${SLUG}/releases/tag/1.0.1`);
         expect(out).toContain("✓ git     pushed main (no force)");
+        // The run had finished before opdk looked: no wait to report.
+        expect(out).toContain("✓ wait    Release succeeded\n");
         expect(out).toContain(`workflow  https://github.com/${SLUG}/actions/runs/42`);
         expect(leftovers()).toEqual([]);
     });
@@ -431,9 +433,10 @@ describe("runPublish: the draft is checked before it is made public", () => {
     });
 
     it("refuses an attestation that does not verify", async () => {
-        await expectRefused((s) => {
-            s.github.unattested.add("styles.css");
+        const s = await expectRefused((current) => {
+            current.github.unattested.add("styles.css");
         }, "the attestation of styles.css does not verify: gh attestation verify failed: no attestations found");
+        expect(s.ctx.err.join("")).toContain("must be attested by Dimagious/obsidian-plugin-dev-kit/.github/workflows/release.yml for example/fixture at the tag 1.0.1");
     });
 
     it("stops when the release is still a draft after publishing", async () => {

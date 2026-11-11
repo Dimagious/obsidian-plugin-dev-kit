@@ -56,7 +56,8 @@ export async function waitForWorkflow(input: WaitInput): Promise<WorkflowRun> {
     for (;;) {
         const outcome = runOutcome(run);
         if (outcome === "success") {
-            reporter.success("wait", `${run.name === "" ? "workflow" : run.name} succeeded in ${minutes(clock.now() - watchStart)}`);
+            const waited = clock.now() - watchStart;
+            reporter.success("wait", `${run.name === "" ? "workflow" : run.name} succeeded${waited < 1_000 ? "" : ` in ${minutes(waited)}`}`);
             return run;
         }
         if (outcome === "failed") {

@@ -28,6 +28,13 @@ export interface VerifyInput {
     readonly reporter: Reporter;
 }
 
+/**
+ * The workflow that signs the attestations: the kit's reusable release workflow, not the plugin's caller workflow.
+ * The signing certificate of a job that runs a reusable workflow names that workflow, so `gh attestation verify --repo`
+ * alone refuses it ("verifying with issuer sigstore.dev", with no reason); the signer has to be named.
+ */
+export const KIT_RELEASE_WORKFLOW = "Dimagious/obsidian-plugin-dev-kit/.github/workflows/release.yml";
+
 const FIX = (version: string): string =>
     `Nothing was published. Do not edit the assets by hand: delete the draft on GitHub, fix the cause, and release a new patch version (the tag ${version} stays and is never moved).`;
 
@@ -79,9 +86,9 @@ export async function verifyRelease(input: VerifyInput): Promise<void> {
 
     for (const name of expected.attested) {
         try {
-            await gh.text(["attestation", "verify", path.join(input.dir, name), "--repo", repo, "--source-ref", `refs/tags/${facts.version}`, "--source-digest", facts.commit]);
+            await gh.text(["attestation", "verify", path.join(input.dir, name), "--repo", repo, "--signer-workflow", KIT_RELEASE_WORKFLOW, "--source-ref", `refs/tags/${facts.version}`, "--source-digest", facts.commit]);
         } catch (error) {
-            throw new StepFailure(`the attestation of ${name} does not verify: ${error instanceof Error ? error.message : String(error)}`, `${FIX(facts.version)} The release workflow must run actions/attest-build-provenance on main.js, manifest.json and styles.css.`);
+            throw new StepFailure(`the attestation of ${name} does not verify: ${error instanceof Error ? error.message : String(error)}`, `${FIX(facts.version)} The assets must be attested by ${KIT_RELEASE_WORKFLOW} for ${repo} at the tag ${facts.version}: the plugin's workflow must call it, and an old gh may not verify new attestations (update it).`);
         }
     }
     reporter.success("verify", `attestations: ${expected.attested.join(", ")} verified for ${repo} at ${facts.version}`);
