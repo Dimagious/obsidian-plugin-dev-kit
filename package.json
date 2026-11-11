@@ -33,7 +33,7 @@
   "files": [
     "bin",
     "dist",
-    "skills"
+    "plugins/opdk/skills"
   ],
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node scripts/write-build-info.mjs",
@@ -41,6 +41,7 @@
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run --coverage",
     "smoke": "bash scripts/pack-smoke.sh",
+    "plugin:validate": "node scripts/plugin-validate.mjs",
     "e2e:smoke": "playwright test -c test/e2e-fixture/playwright.config.ts",
     "prepare": "npm run build",
     "docs:media": "vhs docs/media/build.tape && vhs docs/media/build-check-fails.tape && vhs docs/media/scan.tape && vhs docs/media/scan-fails.tape",

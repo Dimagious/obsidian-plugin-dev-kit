@@ -1,6 +1,6 @@
 ---
 name: scanner
-description: Use when running or fixing `opdk scan` in an Obsidian plugin that uses obsidian-plugin-dev-kit (opdk), when the community plugin scorecard lists warnings (prefer-active-doc, prefer-window-timers, !important, :has, "assembles domain names"), when setting up eslint.config.js with `obsidianPlugin()`, or when migrating a plugin's scorecard-check.cjs and scanner.eslint.config.mjs to opdk.
+description: Lint an Obsidian plugin for the community plugin scorecard with `opdk scan` and fix its findings. Use it for scorecard or scanner warnings (prefer-active-doc, prefer-window-timers, !important, :has, "assembles domain names"), for setting up `eslint.config.js` with `obsidianPlugin()`, or for replacing a plugin's scorecard-check.cjs and scanner.eslint.config.mjs. Not for build or bundle errors (build), Playwright specs (e2e) or films and screenshots (demo).
 ---
 
 # opdk scanner module

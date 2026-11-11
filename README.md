@@ -68,6 +68,26 @@ The `demo` fixture records your plugin in the real Obsidian as a film of stills:
 
 Quick start: `demo.film({ kind: "phone", captions })` and `film.shot({ hold })` in a gated spec, then `npx opdk demo`. For captions beside the phone, set `layout: "phone-captions"` in the `demo` section of `opdk.config.mjs`. Details: [docs/demo.md](docs/demo.md).
 
+## Agent skills
+
+The repository is also a Claude Code plugin, `opdk`, with one skill per module so a coding agent working in your plugin knows the commands, the options and the traps of that module:
+
+| Skill | Use it for |
+| --- | --- |
+| `/opdk:build` | `opdk build`, `opdk build-css`, `opdk assert-bundle`, `opdk build --vault`, mobile-only bundle failures |
+| `/opdk:scanner` | `opdk scan`, community plugin scorecard warnings, `obsidianPlugin()` in `eslint.config.js` |
+| `/opdk:e2e` | Playwright specs in the real Obsidian, readiness and timeout failures, helpers |
+| `/opdk:demo` | demo films, GIFs, MP4s, posters and README screenshots, `opdk demo` messages |
+
+Claude picks a skill by its description, so you can also just ask ("film a demo GIF of my plugin"). Install from inside Claude Code:
+
+```text
+/plugin marketplace add Dimagious/obsidian-plugin-dev-kit
+/plugin install opdk@obsidian-plugin-dev-kit
+```
+
+No release has been tagged yet, so an installed plugin follows `main`: run `/plugin marketplace update obsidian-plugin-dev-kit`, then update the plugin, to get changes. Once releases exist, the plugin version follows the kit version and installed copies update when it changes; a fresh install takes `main` as it is then, which can be ahead of the latest tag. The plugin files live in `plugins/opdk/`. A copy of the skills matching the kit version you installed is in `node_modules/obsidian-plugin-dev-kit/plugins/opdk/skills/`; Claude Code loads them only through the plugin.
+
 ## Roadmap
 
 - [ ] Wave 1: build, scanner and lint, end-to-end harness, demo films
@@ -78,7 +98,8 @@ Quick start: `demo.film({ kind: "phone", captions })` and `film.shot({ hold })` 
 - [ ] Wave 2: release tooling and the reusable workflow
 - [ ] Wave 3: integration tests preset
 - [ ] Wave 4: unit-test helpers and Obsidian mocks
-- [ ] Agent skills for each module, written along with the module
+- [x] Agent skills for build, scanner, e2e and demo, installable as a Claude Code plugin
+- [ ] Agent skills for the modules that are still to come, written along with them
 
 Each module moves to Garmy first, then Dashy, then Snipsy. A plugin may change when it adopts a module (for example, Snipsy's bundle switches to the browser platform); each such change is listed in that plugin's changelog and checked by its end-to-end tests.
 

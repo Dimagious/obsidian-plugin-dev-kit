@@ -23,6 +23,15 @@ typescript_version="$(node -p "JSON.parse(require('node:fs').readFileSync('packa
 # The version of Playwright the e2e step below installs.
 playwright_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies['@playwright/test']")"
 
+# The agent skills ship in the tarball at the same path as in the repository.
+tarball_files="$(tar -tzf "$tmp/$tarball")"
+for skill_file in plugins/opdk/skills/*/SKILL.md; do
+    if ! grep -qx "package/$skill_file" <<<"$tarball_files"; then
+        echo "smoke: the tarball has no $skill_file" >&2
+        exit 1
+    fi
+done
+
 mkdir "$tmp/project"
 cd "$tmp/project"
 npm init -y >/dev/null
