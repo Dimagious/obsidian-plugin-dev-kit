@@ -15,7 +15,7 @@ const MAX_PAGES = 30;
 
 /**
  * The release of a tag, drafts included (`/releases/tags/<tag>` does not return a draft). Undefined when there is none.
- * Every page of the list is read, and a tag with two releases (a re-run of a failed workflow makes a second draft) stops
+ * Every page of the list is read, and a tag with two releases (a re-run of a failed workflow may leave a second draft) stops
  * the flow: verifying and publishing one of them would be a guess.
  */
 export async function fetchRelease(gh: RunGh, slug: RepoSlug, version: string): Promise<ReleaseInfo | undefined> {
@@ -33,7 +33,7 @@ export async function fetchRelease(gh: RunGh, slug: RepoSlug, version: string): 
     if (found.length > 1) {
         throw new StepFailure(
             `GitHub has ${String(found.length)} releases for the tag ${version}: ${found.map((release) => release.url).join(", ")}`,
-            `Keep the one you trust and delete the other(s) on GitHub (a re-run of a failed workflow creates a second draft), then run \`opdk release publish ${version}\`.`,
+            `Keep the one you trust and delete the other(s) on GitHub (a re-run of a failed workflow may leave a second draft), then run \`opdk release publish ${version}\`.`,
         );
     }
     return found[0];

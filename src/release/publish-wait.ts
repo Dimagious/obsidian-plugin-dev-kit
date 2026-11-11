@@ -32,7 +32,7 @@ const minutes = (ms: number): string => `${String(Math.max(1, Math.round(ms / 60
 export async function waitForWorkflow(input: WaitInput): Promise<WorkflowRun> {
     const { gh, slug, version, commit, reporter, clock } = input;
     const repo = slugText(slug);
-    const resume = `After fixing the cause, release a new patch version, or re-run the failed jobs on GitHub and then run \`opdk release publish ${version}\`. If the failed run left a draft release behind, delete that draft first: a re-run creates the release again and stops when it exists. The tag ${version} stays on origin.`;
+    const resume = `After fixing the cause, release a new patch version, or re-run the failed jobs on GitHub and then run \`opdk release publish ${version}\`. A failed run can leave a draft release behind: delete that draft before re-running, because a re-run creates the release again and may fail on the existing one. \`opdk release\` itself stops when it finds two releases for one tag. The tag ${version} stays on origin.`;
     const startedAt = clock.now();
     let run: WorkflowRun | undefined;
     while (run === undefined) {

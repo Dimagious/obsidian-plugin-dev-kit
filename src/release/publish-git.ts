@@ -93,11 +93,20 @@ export async function pushTag(run: RunGit, facts: TagFacts): Promise<"pushed" | 
 const REJECTED = /rejected|non-fast-forward|fetch first|failed to push some refs/i;
 
 /**
+ * A refusal by the server rather than a non-fast-forward: git's reason in parentheses for a protected branch or a
+ * repository rule, a server hook that declined the push, or GitHub's codes `GH006` / `GH013` as whole words. Only
+ * these exact phrases count, because the error text also carries the remote URL, whose owner or name may contain any
+ * word. It also contains "rejected", so it is told apart before the non-fast-forward case: pulling cannot fix it.
+ */
+const PROTECTED = /\((?:protected branch hook declined|push declined due to repository rule violations|pre-receive hook declined)\)|\bGH0(?:06|13)\b/;
+
+/**
  * Pushes the release commit to the default branch without force, not the local branch tip: later local commits are
  * not part of the release and stay local. When origin's branch already is that commit or contains it (an earlier run
  * got as far, or the merge was pushed by hand after a rejection), nothing is pushed. The release is public by now, so
  * a rejection (somebody pushed meanwhile) is reported as such, with the way out that keeps the tagged commit in the
- * history.
+ * history. A protected branch is reported separately, because merging origin's commits does not get the release commit
+ * past the rule.
  */
 export async function pushBranch(run: RunGit, facts: TagFacts): Promise<"pushed" | "already-there"> {
     const listed = await run(["ls-remote", "origin", `refs/heads/${facts.branch}`]);
@@ -114,6 +123,13 @@ export async function pushBranch(run: RunGit, facts: TagFacts): Promise<"pushed"
         return "pushed";
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        if (PROTECTED.test(message)) {
+            throw new StepFailure(
+                `origin refused the push of ${facts.branch} (a branch protection, a repository rule or a server hook). The release ${facts.version} is already public.`,
+                `Get the release commit ${facts.commit} onto ${facts.branch} the way the rule allows (a pull request, or an account that may bypass it); pulling will not help. The manifest on ${facts.branch} must reach the version ${facts.version} for Obsidian to offer it. The commit itself has to land (a squash or rebase merge makes another commit).`,
+                [message],
+            );
+        }
         if (REJECTED.test(message)) {
             throw new StepFailure(
                 `origin rejected the push of ${facts.branch}: it has commits that are not here. The release ${facts.version} is already public.`,

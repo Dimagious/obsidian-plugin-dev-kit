@@ -66,14 +66,15 @@ opdk release <patch|minor|major|X.Y.Z>  cuts a release. Preflight: inside a git 
     folders removed and nothing is committed (Ctrl+C exits with 130);
   - commits "chore(release): X.Y.Z" and creates the annotated tag X.Y.Z;
   - then the push flow (below), unless --no-push, which stops at the local tag.
-  --dry-run runs everything up to the commit, prints the diff, writes nothing to git and restores the files.
+  --dry-run runs everything up to the commit, prints the diff and restores the files: no commit or tag is
+  created, nothing is pushed and gh is never called, but it does fetch from origin and ask it for the tag (ls-remote).
 
 The push flow (also \`opdk release publish [X.Y.Z]\`, which starts from an existing local tag and continues
 after any stop; every step checks what is already done). It needs the GitHub CLI, signed in with write access
 to the repository origin points at (checked before anything is bumped), and a workflow in the plugin that
 runs on tag pushes and calls the kit's release workflow: uses: Dimagious/obsidian-plugin-dev-kit/.github/workflows/release.yml@<full
 commit SHA of the kit>. Call it, do not copy it: the attestations are checked against the kit's file. publish
-without a version uses the version in manifest.json; --dry-run never reaches GitHub, so it skips the gh check. The
+without a version uses the version in manifest.json; --dry-run never calls gh, so it skips the gh check. The
 plugin's build script (build, else build:plugin, else compile) must run \`opdk build\`: the assets are compared
 with an \`opdk build\` of the tag, and a plugin that builds some other way fails that comparison after the tag is
 already pushed. It:
@@ -96,7 +97,7 @@ already pushed. It:
   6. prints the release and run URLs.
   Every stop, and Ctrl+C (exit 130), prints what is on origin and the command to resume:
   opdk release publish X.Y.Z. A stop whose hint says to release a new version prints opdk release patch instead.
-  A failed workflow is fixed by a new patch version, or re-run on GitHub (delete a draft it left behind first)
+  A failed workflow is fixed by a new patch version, or re-run on GitHub (a failed run can leave a draft: delete it before re-running)
   and resumed; nothing is ever moved or deleted by opdk.
 
 opdk release notes [X.Y.Z]  prints the body of the "## [X.Y.Z]" section of the changelog (X.Y.Z defaults to
