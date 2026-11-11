@@ -161,6 +161,15 @@ fi
 rm src/late.ts
 git add -A
 
+echo "--- npx opdk release check (the fixture is no releasable plugin: it must fail, and the build step must still run)"
+release_status=0
+release_output="$(env -u FORCE_COLOR -u NO_COLOR -u GITHUB_ACTIONS npx --no -- opdk release check --no-api 2>&1)" || release_status=$?
+printf '%s\n' "$release_output"
+if [ "$release_status" -ne 1 ] || ! printf '%s' "$release_output" | grep -q 'versions.json is missing' || ! printf '%s' "$release_output" | grep -q 'production build of'; then
+    echo "smoke: opdk release check exited with $release_status, expected 1, 'versions.json is missing' and a passing build line" >&2
+    exit 1
+fi
+
 echo "--- npx opdk demo (no films recorded; Playwright and Electron are not installed, and the command must not need them)"
 demo_status=0
 demo_output="$(env -u FORCE_COLOR -u NO_COLOR -u GITHUB_ACTIONS npx --no -- opdk demo 2>&1)" || demo_status=$?

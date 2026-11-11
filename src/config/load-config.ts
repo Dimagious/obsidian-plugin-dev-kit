@@ -3,6 +3,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { validateBuildConfig } from "../build/config.js";
 import { validateDemoConfig } from "../demo/config.js";
+import { validateReleaseConfig } from "../release/config.js";
 import { validateScanConfig } from "../scanner/config.js";
 import { CONFIG_SECTIONS, type OpdkConfig } from "./types.js";
 
@@ -45,10 +46,12 @@ export function validateConfig(value: unknown, source: string): OpdkConfig {
     const build = Object.hasOwn(value, "build") ? value.build : undefined;
     const scan = Object.hasOwn(value, "scan") ? value.scan : undefined;
     const demo = Object.hasOwn(value, "demo") ? value.demo : undefined;
+    const release = Object.hasOwn(value, "release") ? value.release : undefined;
     return {
         ...(build !== undefined && { build: validateBuildConfig(build, source) }),
         ...(scan !== undefined && { scan: validateScanConfig(scan, source) }),
         ...(demo !== undefined && { demo: validateDemoConfig(demo, source) }),
+        ...(release !== undefined && { release: validateReleaseConfig(release, source) }),
     };
 }
 
