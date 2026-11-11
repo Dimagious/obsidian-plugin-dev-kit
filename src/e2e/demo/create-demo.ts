@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { CDPSession, Locator, Page } from "@playwright/test";
+import type { DeviceMetricsTracker } from "../helpers/device-metrics.js";
 import type { ThemeOptions } from "../helpers/types.js";
 import { isMobileApplied } from "../helpers/page-scripts.js";
 import { assertPadding, pixelSize, resolveClip, type DemoRect, type Size } from "./clip.js";
@@ -67,6 +68,8 @@ export interface DemoDeps {
     readonly win: Page;
     /** The helpers' CDP session. The capture must use this one: Chromium keeps device metrics per session, and a second session drops `mobile()`. */
     readonly cdp: () => Promise<CDPSession>;
+    /** The override tracker of that session (`obsidian.mobile()` sets through it too), so a repeated override is cleared first. */
+    readonly deviceMetrics: DeviceMetricsTracker;
     readonly setTheme: (options: ThemeOptions) => Promise<void>;
     /** Folds both side panels and waits until they are folded (`obsidian.collapseSidebars()`). */
     readonly collapseSidebars: () => Promise<void>;
@@ -142,6 +145,13 @@ function assertSettle(settle: unknown, what: string): boolean {
     return settle ?? false;
 }
 
+function assertCursor(cursor: unknown, what: string): boolean {
+    if (cursor !== undefined && typeof cursor !== "boolean") {
+        throw new Error(`${what}: cursor must be true (show the arrow) or false (hide it), got ${JSON.stringify(cursor)}.`);
+    }
+    return cursor ?? true;
+}
+
 function assertClipPadding(clip: unknown, padding: number): void {
     assertPadding(padding);
     if (padding > 0 && clip === undefined) {
@@ -210,14 +220,20 @@ export function createDemo(deps: DemoDeps): DemoController {
 
     /** Sets the window's CSS size and pixel ratio through the shared session; returns what was there, to put it back. */
     async function setViewport(want: { width: number | undefined; height: number | undefined; scale: number }): Promise<Viewport> {
-        const before = await win.evaluate(readViewport);
+        const reported = await win.evaluate(readViewport);
+        // Playwright's page.screenshot() drops the override from the page, but the session still counts it. The size it
+        // last set (a phone, after obsidian.mobile()) is what the window is meant to have, not what the page reports now.
+        const meant = deps.deviceMetrics.last();
+        const before: Viewport = meant === undefined ? reported : { width: meant.width, height: meant.height, scale: meant.deviceScaleFactor };
         const target: Viewport = { width: want.width ?? before.width, height: want.height ?? before.height, scale: want.scale };
-        if (target.width === before.width && target.height === before.height && target.scale === before.scale) {
+        if (target.width === reported.width && target.height === reported.height && target.scale === reported.scale) {
             return before;
         }
-        const session = await deps.cdp();
-        const override = (size: Viewport): Promise<unknown> =>
-            session.send("Emulation.setDeviceMetricsOverride", { width: size.width, height: size.height, deviceScaleFactor: size.scale, mobile: false });
+        // Chromium drops the override after Playwright's page.screenshot() (it captures beyond the viewport). The tracker
+        // clears the session's own first when a set would repeat its last one, which Chromium would ignore.
+        // Seen in the K-026 trial on a 1x display, where the next shot failed with "did not become ... at scale 2".
+        const override = (size: Viewport): Promise<void> =>
+            deps.deviceMetrics.set({ width: size.width, height: size.height, deviceScaleFactor: size.scale, mobile: false });
         try {
             await override(target);
             try {
@@ -293,10 +309,7 @@ export function createDemo(deps: DemoDeps): DemoController {
         const kind = assertKind(filmOptions.kind);
         const fps = assertFps(filmOptions.fps);
         const scale = assertScale(filmOptions.scale ?? options.scale, "film()");
-        const cursor = filmOptions.cursor ?? true;
-        if (typeof cursor !== "boolean") {
-            throw new Error(`film(): cursor must be true (show the arrow) or false (hide it), got ${JSON.stringify(cursor)}.`);
-        }
+        const cursor = assertCursor(filmOptions.cursor, "film()");
         const captions = assertCaptions(filmOptions.captions);
         const padding = filmOptions.padding ?? 0;
         assertClipPadding(filmOptions.clip, padding);
@@ -373,7 +386,9 @@ export function createDemo(deps: DemoDeps): DemoController {
         assertClipPadding(stillOptions.clip, padding);
         const scale = preset?.scale ?? assertScale(stillOptions.scale ?? options.scale, `still "${fileName}"`);
         const settle = assertSettle(stillOptions.settle, `still "${fileName}"`);
-        await setCursor(true);
+        const cursor = assertCursor(stillOptions.cursor, `still "${fileName}"`);
+        // Set for every picture, so a still that hides the arrow does not leave it hidden for the next film or still.
+        await setCursor(cursor);
         const { png, size } = await capture({
             what: `still "${fileName}"`,
             scale,

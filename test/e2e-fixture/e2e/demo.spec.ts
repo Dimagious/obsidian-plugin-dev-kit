@@ -220,6 +220,13 @@ test.describe("films of stills", () => {
         await win.locator(EDITOR).first().click();
         await loud.shot({ hold: 1 });
         expect(await arrow()).toBe("block");
+
+        // A still can ask for no arrow too, and its choice ends with it.
+        await win.locator(EDITOR).first().click();
+        await demo.still("no-arrow", { cursor: false });
+        expect(await arrow()).toBe("none");
+        await demo.still("with-arrow");
+        expect(await arrow()).toBe("block");
     });
 });
 
@@ -239,6 +246,35 @@ test.describe("stills", () => {
             expect({ preset, ...sizeOf(still.file) }).toEqual({ preset, ...size });
             expect(await viewport(win)).toEqual(before);
         }
+    });
+
+    // Scale 3, so a 2x display cannot hide the bug: there the page would report 2 after the drop, which is not 3.
+    test("a plain win.screenshot() between demo shots does not change the density of the next one", async ({ obsidian, demo, win }) => {
+        await obsidian.openFile("Welcome.md", { mode: "source" });
+        const film = demo.film({ kind: "desktop", scale: 3 });
+        const window = await viewport(win);
+        const first = await film.shot({ hold: 1 });
+        await win.screenshot();
+        const second = await film.shot({ hold: 1 });
+        await win.screenshot({ type: "jpeg" });
+        const still = await demo.still("after-plain-screenshot", { scale: 3 });
+        const expected = { width: window.width * 3, height: window.height * 3 };
+        expect(sizeOf(path.join(film.dir, first.file))).toEqual(expected);
+        expect(sizeOf(path.join(film.dir, second.file))).toEqual(expected);
+        expect(sizeOf(still.file)).toEqual(expected);
+    });
+
+    test("a plain win.screenshot() after obsidian.mobile() leaves the next phone shot at the phone size and the film's scale", async ({ obsidian, demo, win }) => {
+        await obsidian.mobile();
+        await obsidian.openFile("Welcome.md");
+        const film = demo.film({ kind: "phone", scale: 3 });
+        const first = await film.shot({ hold: 1 });
+        await win.screenshot();
+        const second = await film.shot({ hold: 1 });
+        const phone = { width: 390 * 3, height: 844 * 3 };
+        expect(sizeOf(path.join(film.dir, first.file))).toEqual(phone);
+        expect(sizeOf(path.join(film.dir, second.file))).toEqual(phone);
+        expect(await viewport(win)).toEqual({ width: 390, height: 844, scale: 3 });
     });
 
     test("a clip is a rectangle or an element, padded, and the picture is at the density asked for", async ({ obsidian, demo, win }) => {

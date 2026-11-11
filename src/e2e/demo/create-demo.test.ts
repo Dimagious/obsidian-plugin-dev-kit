@@ -4,6 +4,7 @@ import type { Locator } from "@playwright/test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFakeDemoWindow, fakePng, type FakeDemoWindow } from "../../test-support/demo-fakes.js";
 import { testTmpRoot } from "../../test-support/test-tmp.js";
+import { createDeviceMetricsTracker } from "../helpers/device-metrics.js";
 import { createDemo, type DemoController, type DemoDeps } from "./create-demo.js";
 import { parseFilmManifest } from "./manifest.js";
 import { resolveDemoOptions } from "./options.js";
@@ -25,9 +26,12 @@ afterEach(() => {
 });
 
 function setUp(overrides: Partial<DemoDeps> = {}): DemoController {
+    const cdp = overrides.cdp ?? (() => Promise.resolve(fake.cdpSession));
     return createDemo({
         win: fake.win,
-        cdp: () => Promise.resolve(fake.cdpSession),
+        cdp,
+        // The tracker sends through the same (possibly wrapped) session the demo shoots with, as the fixture wires it.
+        deviceMetrics: overrides.deviceMetrics ?? createDeviceMetricsTracker(cdp),
         setTheme: (options) => {
             themes.push(options.mode);
             return Promise.resolve();
@@ -257,6 +261,45 @@ describe("film cursor option", () => {
     });
 });
 
+describe("still cursor option", () => {
+    const cursorCalls = (): string[] => logged("overlay:").filter((entry) => entry.includes("cursorEnabled"));
+    const hide = 'overlay:{"method":"cursorEnabled","arg":false}';
+    const show = 'overlay:{"method":"cursorEnabled","arg":true}';
+
+    it("sends nothing for a still that keeps the arrow", async () => {
+        await setUp().demo.still("picture");
+        expect(cursorCalls()).toEqual([]);
+    });
+
+    it("hides the arrow before the capture of a cursor: false still", async () => {
+        const { demo } = setUp();
+        await demo.still("quiet", { cursor: false });
+        expect(cursorCalls()).toEqual([hide]);
+        expect(fake.log.indexOf(hide)).toBeLessThan(fake.log.indexOf("freeze"));
+    });
+
+    it("does not leak into the next still or film, and leaves a cursor: false film alone", async () => {
+        const { demo } = setUp();
+        await demo.still("quiet", { cursor: false });
+        await demo.still("loud");
+        const film = demo.film({ kind: "desktop" });
+        await film.shot({ hold: 1 });
+        expect(cursorCalls()).toEqual([hide, show]);
+        const quietFilm = demo.film({ kind: "desktop", name: "quiet-film", cursor: false });
+        await quietFilm.shot({ hold: 1 });
+        await demo.still("quiet-again", { cursor: false });
+        await quietFilm.shot({ hold: 1 });
+        expect(cursorCalls()).toEqual([hide, show, hide]);
+    });
+
+    it("rejects a cursor option that is not a boolean, before anything is written", async () => {
+        const { demo } = setUp();
+        await expect(demo.still("bad", { cursor: "no" as never })).rejects.toThrow(/still "bad": cursor must be true \(show the arrow\) or false \(hide it\), got "no"/);
+        expect(fs.existsSync(out("stills"))).toBe(false);
+        expect(cursorCalls()).toEqual([]);
+    });
+});
+
 describe("film kind guard", () => {
     it("refuses a phone film in a window that is not mobile, telling to call mobile()", async () => {
         const { demo } = setUp();
@@ -433,6 +476,68 @@ describe("still presets", () => {
         fake.forbiddenVisible.add(".x");
         await expect(demo.still("b", { preset: "social", forbiddenSelectors: [".x"] })).rejects.toThrow(/forbidden selector/);
         expect(fake.viewport).toEqual({ width: 1200, height: 800, scale: 1 });
+    });
+
+    it("clears the override first when the page lost the one this session sent (a plain win.screenshot() drops it)", async () => {
+        const session = fake.cdpSession;
+        let ignoreRepeat = false;
+        let last = "";
+        const { demo } = setUp({
+            cdp: () =>
+                Promise.resolve({
+                    ...session,
+                    send: (method: string, params?: unknown) => {
+                        // Chromium ignores a set that repeats the session's active override, until it is cleared.
+                        if (method === "Emulation.clearDeviceMetricsOverride") {
+                            fake.cdp.push({ method, params });
+                            last = "";
+                            return Promise.resolve({});
+                        }
+                        if (method === "Emulation.setDeviceMetricsOverride" && JSON.stringify(params) === last && ignoreRepeat) {
+                            fake.cdp.push({ method, params });
+                            return Promise.resolve({});
+                        }
+                        last = method === "Emulation.setDeviceMetricsOverride" ? JSON.stringify(params) : last;
+                        return rawSend(session, method, params);
+                    },
+                } as typeof session),
+        });
+        const film = demo.film({ kind: "desktop" });
+        await film.shot({ hold: 1 });
+        // What win.screenshot() does to the page, behind this session's back.
+        fake.viewport = { width: 1200, height: 800, scale: 1 };
+        ignoreRepeat = true;
+        await film.shot({ hold: 1 });
+        const sent = fake.cdp.map((c) => c.method).filter((m) => m.startsWith("Emulation."));
+        expect(sent).toEqual(["Emulation.setDeviceMetricsOverride", "Emulation.clearDeviceMetricsOverride", "Emulation.setDeviceMetricsOverride"]);
+    });
+
+    it("brings a phone film back to the phone size after a plain win.screenshot() dropped the override", async () => {
+        const tracker = createDeviceMetricsTracker(() => Promise.resolve(fake.cdpSession));
+        const { demo } = setUp({ deviceMetrics: tracker });
+        // obsidian.mobile(): the layout class and the override, sent through the shared tracker.
+        fake.mobile = true;
+        await tracker.set({ width: 390, height: 844, deviceScaleFactor: 2, mobile: false });
+        const film = demo.film({ kind: "phone" });
+        fake.cdp.length = 0;
+        await film.shot({ hold: 1 });
+        expect(fake.cdp.map((c) => c.method)).toEqual(["Page.captureScreenshot"]);
+        // What win.screenshot() does to the page: the override is gone, the session does not know.
+        fake.viewport = { width: 1200, height: 800, scale: 1 };
+        fake.cdp.length = 0;
+        await film.shot({ hold: 1 });
+        expect(manifestOf(film.name)).toMatchObject({ width: 780, height: 1688 });
+        expect(fake.viewport).toEqual({ width: 390, height: 844, scale: 2 });
+        expect(fake.cdp.map((c) => c.method)).toEqual(["Emulation.clearDeviceMetricsOverride", "Emulation.setDeviceMetricsOverride", "Page.captureScreenshot"]);
+    });
+
+    it("sends no clear when the override is new or the page still has it", async () => {
+        const { demo } = setUp();
+        const film = demo.film({ kind: "desktop" });
+        await film.shot({ hold: 1 });
+        await film.shot({ hold: 1 });
+        await demo.still("a", { scale: 3 });
+        expect(fake.cdp.filter((c) => c.method === "Emulation.clearDeviceMetricsOverride")).toEqual([]);
     });
 
     it("puts the window back when the preset size never arrives, and reports that error", async () => {

@@ -129,6 +129,7 @@ export function createObsidianTest(options: ObsidianTestOptions): ObsidianTestKi
             const controller = createDemo({
                 win,
                 cdp: () => opdkHelpers.cdpSession(),
+                deviceMetrics: opdkHelpers.deviceMetrics,
                 setTheme: (themeOptions) => opdkHelpers.helpers.setTheme(themeOptions),
                 collapseSidebars: () => opdkHelpers.helpers.collapseSidebars(),
                 settle: () => opdkHelpers.helpers.settle(),
