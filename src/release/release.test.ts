@@ -10,6 +10,7 @@ import { createRunGit } from "./git.js";
 import { runRelease } from "./release.js";
 import type { VersionSpec } from "./args.js";
 import type { OpdkConfig } from "../config/types.js";
+import { StepFailure } from "./publish-state.js";
 
 // Real git, esbuild and a bare origin per test: they miss the 5 s default when suites share the machine.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -92,7 +93,7 @@ describe("opdk release patch", () => {
         expect(result.out).toContain("✓ bump    manifest.json updated");
         expect(result.out).toContain("✓ check   fixture-release 1.0.1: ready to release.");
         expect(result.out).toContain('✓ git     committed "chore(release): 1.0.1" and created the annotated tag 1.0.1');
-        expect(result.out).toContain("nothing was pushed: the push flow is not built yet (phase 2). Push the tag first with `git push origin 1.0.1`, check the release it creates, then push the branch with `git push origin main`.");
+        expect(result.out).toContain("nothing was pushed (--no-push). Push the tag, wait for the workflow, verify and publish the release, then push the branch: `opdk release publish 1.0.1`");
     });
 
     it("supports minor, major and an exact version", async () => {
@@ -489,5 +490,65 @@ describe("Ctrl+C during the release check", () => {
 describe("the default flags", () => {
     it("run every check", () => {
         expect(ALL_CHECKS).toEqual({ build: true, reproducible: true, api: true });
+    });
+});
+
+describe("the push flow after the tag", () => {
+    const flags = FAST;
+
+    function withPush(current: ReleaseRepo, push: NonNullable<Parameters<typeof runRelease>[0]["push"]>, options: { dryRun?: boolean } = {}): Promise<number> {
+        const ctx = createContext(current.dir);
+        return runRelease({ cwd: current.dir, spec: patch, dryRun: options.dryRun ?? false, flags, config: {}, reporter: ctx.reporter, stdout: () => undefined, run: current.run, now: () => TODAY, push });
+    }
+
+    it("hands the version to the flow after the commit and the tag, and returns its exit code", async () => {
+        const current = freshRepo();
+        const publish = vi.fn((version: string) => {
+            // By now the commit and the annotated tag exist locally; nothing has reached origin.
+            expect(current.git("cat-file", "-t", version).trim()).toBe("tag");
+            expect(current.originGit("tag", "-l").trim()).toBe("1.0.0");
+            return Promise.resolve(7);
+        });
+        const ready = vi.fn(() => Promise.resolve());
+        expect(await withPush(current, { ready, publish })).toBe(7);
+        expect(ready).toHaveBeenCalledOnce();
+        expect(publish).toHaveBeenCalledWith("1.0.1");
+    });
+
+    it("stops before bumping anything when gh is not ready, and says how to stop at the tag", async () => {
+        const current = freshRepo();
+        const before = snapshot(current);
+        const ctx = createContext(current.dir);
+        const code = await runRelease({
+            cwd: current.dir,
+            spec: patch,
+            dryRun: false,
+            flags,
+            config: {},
+            reporter: ctx.reporter,
+            stdout: () => undefined,
+            run: current.run,
+            now: () => TODAY,
+            push: { ready: () => Promise.reject(new StepFailure("the GitHub CLI (gh) is not installed.", "Install it.")), publish: () => Promise.resolve(0) },
+        });
+        expect(code).toBe(1);
+        expect(ctx.err.join("")).toContain("✗ gh      the GitHub CLI (gh) is not installed.");
+        expect(ctx.err.join("")).toContain("Install it. Nothing was changed. Use --no-push to stop at the local tag.");
+        expect(snapshot(current)).toEqual(before);
+        expect(current.git("tag", "-l")).toBe("1.0.0\n");
+    });
+
+    it("does not check gh on a dry run and does not publish", async () => {
+        const current = freshRepo();
+        const ready = vi.fn(() => Promise.resolve());
+        const publish = vi.fn(() => Promise.resolve(0));
+        expect(await withPush(current, { ready, publish }, { dryRun: true })).toBe(0);
+        expect(ready).not.toHaveBeenCalled();
+        expect(publish).not.toHaveBeenCalled();
+    });
+
+    it("passes an unexpected error from the readiness check on", async () => {
+        const current = freshRepo();
+        await expect(withPush(current, { ready: () => Promise.reject(new Error("disk on fire")), publish: () => Promise.resolve(0) })).rejects.toThrow("disk on fire");
     });
 });

@@ -11,6 +11,7 @@ import { changelogPreflight, preflightProblems, unpushedWarning, type PreflightP
 import { DEFAULT_CHANGELOG, loadProjectFiles, valueOf, type ProjectFiles } from "./project-files.js";
 import { compareVersions } from "./semver.js";
 import { resolveVersion, type VersionSpec } from "./args.js";
+import { StepFailure } from "./publish-state.js";
 import { checkVersionSync } from "./version-rules.js";
 
 export interface ReleaseInput {
@@ -27,6 +28,15 @@ export interface ReleaseInput {
     readonly interrupt?: InterruptHooks;
     /** The clock, injected so the changelog date is fixed in tests. */
     readonly now: () => Date;
+    /** The push flow after the tag. Without it (`--no-push`, a test) the release stops at the local tag. */
+    readonly push?: PushFlow;
+}
+
+/** What `opdk release` needs from the push flow: a check before anything changes, and the flow itself after the tag. */
+export interface PushFlow {
+    /** Throws a `StepFailure` when the flow could not run (no gh, not signed in), so nothing is bumped for nothing. */
+    readonly ready: () => Promise<void>;
+    readonly publish: (version: string) => Promise<number>;
 }
 
 function fail(reporter: Reporter, step: string, problems: readonly PreflightProblem[]): number {
@@ -84,7 +94,7 @@ async function renderDiff(run: RunGit, plan: readonly PlannedFile[]): Promise<st
 /**
  * `opdk release <patch|minor|major|X.Y.Z>`, the local part: preflight, bump the version everywhere, move the
  * changelog entries, run the release check on the result, then commit `chore(release): X.Y.Z` and create the
- * annotated tag `X.Y.Z`. Nothing is pushed. With `dryRun` the files are restored and nothing reaches git.
+ * annotated tag `X.Y.Z`, then hands over to the push flow when there is one. With `dryRun` the files are restored and nothing reaches git.
  */
 export async function runRelease(input: ReleaseInput): Promise<number> {
     const { cwd, spec, dryRun, flags, config, reporter, run } = input;
@@ -111,6 +121,16 @@ export async function runRelease(input: ReleaseInput): Promise<number> {
     const fileIssues = [...filesProblems(files, current, version), ...changelogPreflight(files.changelog, changelogFile)];
     if (fileIssues.length > 0) {
         return fail(reporter, "bump", fileIssues);
+    }
+    if (input.push !== undefined && !dryRun) {
+        try {
+            await input.push.ready();
+        } catch (error) {
+            if (error instanceof StepFailure) {
+                return fail(reporter, "gh", [{ message: error.message, hint: `${error.hint} Nothing was changed. Use --no-push to stop at the local tag.` }]);
+            }
+            throw error;
+        }
     }
     const unpushed = unpushedWarning(facts);
     if (unpushed !== undefined) {
@@ -170,10 +190,9 @@ export async function runRelease(input: ReleaseInput): Promise<number> {
         }
     }
     reporter.success("git", `committed "chore(release): ${version}" and created the annotated tag ${version}`);
-    const branch = facts.defaultBranch ?? "<default branch>";
-    reporter.info(
-        "git",
-        `nothing was pushed: the push flow is not built yet (phase 2). Push the tag first with \`git push origin ${version}\`, check the release it creates, then push the branch with \`git push origin ${branch}\`.`,
-    );
+    if (input.push !== undefined) {
+        return input.push.publish(version);
+    }
+    reporter.info("git", `nothing was pushed (--no-push). Push the tag, wait for the workflow, verify and publish the release, then push the branch: \`opdk release publish ${version}\``);
     return 0;
 }

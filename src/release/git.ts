@@ -27,7 +27,7 @@ export function repositoryFreeEnvironment(env: NodeJS.ProcessEnv): NodeJS.Proces
 }
 
 /** Commands that talk to the remote: they must fail with a message instead of waiting for a password on the terminal. */
-const REMOTE_COMMANDS = new Set(["fetch", "ls-remote"]);
+const REMOTE_COMMANDS = new Set(["fetch", "ls-remote", "push"]);
 
 /**
  * The real thing. `baseEnv` is the process environment unless a test passes a hermetic one; the user's git config

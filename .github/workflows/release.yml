@@ -1,0 +1,147 @@
+name: Release
+
+# Reusable release workflow for Obsidian plugins that use the kit. A plugin calls it from a tiny workflow of its own:
+#
+#   name: Release
+#   on:
+#     push:
+#       tags: ['*.*.*']
+#   permissions:
+#     contents: write
+#     id-token: write
+#     attestations: write
+#   jobs:
+#     release:
+#       uses: Dimagious/obsidian-plugin-dev-kit/.github/workflows/release.yml@<full commit SHA or tag of the kit>
+#
+# It refuses a tag that is not the manifest version or is not built on the default branch, runs `opdk release check`,
+# builds with the plugin's own build script, attests main.js, manifest.json and styles.css (when it exists), and creates
+# a DRAFT release named after the tag with the changelog section as notes. It never publishes: `opdk release` (or
+# `opdk release publish X.Y.Z`) verifies the draft and attestations from the owner's machine, publishes it, and only
+# then pushes the branch, so the default-branch manifest never points at a release that does not exist.
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version used to install and build.
+        type: string
+        default: "22"
+      zip:
+        description: Also attach <plugin id>-<version>.zip (main.js, manifest.json, styles.css). Off by default; Obsidian does not read it.
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      # Full history: the ancestry check below needs origin/<default branch>.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+
+      # The branch is pushed after the release, so the release commit is ahead of the default branch by design:
+      # the tip of the default branch must be an ancestor of the tagged commit, not the other way round.
+      - name: Refuse a tag that is not the manifest version or not built on the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            echo "::error::This workflow runs for a pushed tag, not for $GITHUB_REF_TYPE $GITHUB_REF_NAME."
+            exit 1
+          fi
+          version="$(node -p "require('./manifest.json').version")"
+          if [ "$TAG" != "$version" ]; then
+            echo "::error::The tag $TAG is not the version in manifest.json ($version). Obsidian looks for a release tagged exactly like the manifest version. Tags are never moved: release a new version."
+            exit 1
+          fi
+          if [ -z "$DEFAULT_BRANCH" ] || ! git rev-parse --verify --quiet "refs/remotes/origin/$DEFAULT_BRANCH" > /dev/null; then
+            echo "::error::Cannot find the default branch (origin/$DEFAULT_BRANCH) to compare the tag with."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "refs/remotes/origin/$DEFAULT_BRANCH" "$GITHUB_SHA"; then
+            echo "::error::The tag $TAG is not built on top of origin/$DEFAULT_BRANCH. Someone pushed to $DEFAULT_BRANCH after the release commit was made, or the tag was cut from another branch. Release again from an up-to-date $DEFAULT_BRANCH."
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Release check
+        run: node_modules/.bin/opdk release check --tag "$TAG"
+
+      # The community directory rebuilds main.js with the first of these scripts, so the release is built with it too.
+      - name: Build
+        run: |
+          set -euo pipefail
+          script="$(node -e "const s = require('./package.json').scripts || {}; console.log(['build', 'build:plugin', 'compile'].find((name) => typeof s[name] === 'string') || '')")"
+          if [ -z "$script" ]; then
+            echo "::error::package.json has none of the scripts build, build:plugin, compile."
+            exit 1
+          fi
+          npm run "$script"
+
+      - name: Collect the assets
+        id: assets
+        run: |
+          set -euo pipefail
+          for file in main.js manifest.json; do
+            if [ ! -s "$file" ]; then
+              echo "::error::The build did not leave $file in the plugin root."
+              exit 1
+            fi
+          done
+          files="main.js manifest.json"
+          if [ -f styles.css ]; then
+            files="$files styles.css"
+          fi
+          {
+            echo "subjects<<EOF"
+            for file in $files; do echo "$file"; done
+            echo "EOF"
+            echo "files=$files"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ steps.assets.outputs.subjects }}
+
+      - name: Zip
+        if: ${{ inputs.zip }}
+        env:
+          FILES: ${{ steps.assets.outputs.files }}
+        run: |
+          set -euo pipefail
+          id="$(node -p "require('./manifest.json').id")"
+          # shellcheck disable=SC2086
+          zip "$RUNNER_TEMP/$id-$TAG.zip" $FILES
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FILES: ${{ steps.assets.outputs.files }}
+          ZIP: ${{ inputs.zip }}
+        run: |
+          set -euo pipefail
+          node_modules/.bin/opdk release notes "$TAG" > "$RUNNER_TEMP/notes.md"
+          # shellcheck disable=SC2206
+          assets=($FILES)
+          if [ "$ZIP" = "true" ]; then
+            assets+=("$RUNNER_TEMP/$(node -p "require('./manifest.json').id")-$TAG.zip")
+          fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" "${assets[@]}"
