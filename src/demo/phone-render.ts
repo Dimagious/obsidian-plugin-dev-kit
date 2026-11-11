@@ -8,14 +8,20 @@ import { readPngSize } from "../e2e/demo/png.js";
 import { buildPhonePage, captionSteps, PAGE_HEIGHT, PAGE_SCALE, PAGE_WIDTH, type PhoneLayout } from "./phone-layout.js";
 
 /**
- * The whole Electron side of the phone layout: a window that never shows, an empty page. Playwright drives it, so
+ * The whole Electron side of the phone layout: a window the user never sees, an empty page. Playwright drives it, so
  * nothing here knows about frames. `OPDK_COMPOSE_USERDATA` keeps Electron's profile out of the user's home.
+ *
+ * On Linux the window must be shown: Chromium on X11 does not paint a hidden window, so `Page.captureScreenshot`
+ * waits forever (GitHub's ubuntu runner under xvfb, and arm64 Docker). It is shown far off-screen and unfocusable,
+ * so nobody sees it. macOS paints a hidden window, so there it stays hidden and nothing flashes.
  */
 const MAIN_SCRIPT = `const { app, BrowserWindow } = require("electron");
 if (process.env.OPDK_COMPOSE_USERDATA) app.setPath("userData", process.env.OPDK_COMPOSE_USERDATA);
 if (app.dock) app.dock.hide();
 app.whenReady().then(() => {
-    const win = new BrowserWindow({ width: ${String(PAGE_WIDTH)}, height: ${String(PAGE_HEIGHT)}, show: false, useContentSize: true, webPreferences: { backgroundThrottling: false } });
+    const linux = process.platform === "linux";
+    const placement = linux ? { show: true, x: -20000, y: -20000, focusable: false } : { show: false };
+    const win = new BrowserWindow({ width: ${String(PAGE_WIDTH)}, height: ${String(PAGE_HEIGHT)}, ...placement, useContentSize: true, webPreferences: { backgroundThrottling: false } });
     void win.loadURL("about:blank");
 });
 `;
