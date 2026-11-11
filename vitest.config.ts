@@ -16,6 +16,8 @@ export default defineConfig({
                 "src/index.ts",
                 "src/eslint/index.ts",
                 "src/e2e/index.ts",
+                "src/vitest/index.ts",
+                "src/vitest/dom/index.ts",
                 // Type declarations only.
                 "src/**/*.d.ts",
                 // Binds the CLI to process.argv/stdout/exit code; covered by `npm run smoke`.
