@@ -1,0 +1,182 @@
+name: Plugin CI
+
+# Reusable CI workflow for Obsidian plugins that use the kit. Call it, do not copy it. A plugin calls it from the `ci.yml`
+# of its own, pins the kit to a full commit SHA, and keeps its own steps (generated-file checks, coverage services) in a
+# second job:
+#
+#   name: ci
+#   on:
+#     push:
+#       branches: [main]
+#     pull_request:
+#   concurrency:
+#     group: ci-${{ github.ref }}
+#     cancel-in-progress: true
+#   permissions:
+#     contents: read
+#   jobs:
+#     kit:
+#       uses: Dimagious/obsidian-plugin-dev-kit/.github/workflows/plugin-ci.yml@<full commit SHA of the kit>
+#     plugin:
+#       runs-on: ubuntu-24.04
+#       steps:
+#         - ...
+#
+# One job, read-only: `contents: read` and nothing else, so no step here can push, release or sign. Every input is a
+# switch or a plain value, never a command, so a caller cannot make this workflow run a string it passed in. Each step
+# runs the plugin's own npm script or the kit's `opdk` from `node_modules/.bin`, so a missing kit fails the job instead
+# of being fetched from the registry. Concurrency is the caller's: a reusable workflow cannot cancel the caller's runs.
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version used to install, test and build.
+        type: string
+        default: "22"
+      runs-on:
+        description: Runner label. Pinned by default, see docs/ci.md for why it is not ubuntu-latest.
+        type: string
+        default: ubuntu-24.04
+      lint:
+        description: Run `npm run lint`. Skipped with a notice when package.json has no lint script.
+        type: boolean
+        default: true
+      typecheck:
+        description: Run `npm run typecheck`, or `tsc --noEmit` when package.json has no typecheck script.
+        type: boolean
+        default: true
+      test:
+        description: Run `npm run test`.
+        type: boolean
+        default: true
+      scan:
+        description: Run `opdk scan`, the community plugin scanner.
+        type: boolean
+        default: true
+      release-check:
+        description: Run `opdk release check --no-build --no-api` (versions, manifest rules, CHANGELOG, versions.json).
+        type: boolean
+        default: true
+      build:
+        description: Run `npm run build`.
+        type: boolean
+        default: true
+      upload-bundle:
+        description: Upload main.js, manifest.json and styles.css (when it exists) as the artifact `<plugin id>-bundle`. Needs the build step.
+        type: boolean
+        default: true
+      coverage-artifact:
+        description: Upload `coverage/**` as the artifact `<plugin id>-coverage`.
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The npm cache is restored here because this job is read-only: it holds no token that can write to the
+      # repository, so a poisoned cache cannot reach a release. (release.yml turns the cache off for that reason.)
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+
+      # The id names the artifacts. It comes from manifest.json, never from the caller, and is checked because it ends
+      # up in an artifact name.
+      - name: Read the plugin id
+        id: plugin
+        run: |
+          set -euo pipefail
+          id="$(node -p "require('./manifest.json').id")"
+          if ! [[ "$id" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::manifest.json has an id that is empty or not safe to use in an artifact name: $id"
+            exit 1
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        if: inputs.lint
+        run: |
+          set -euo pipefail
+          if node -e "process.exit(typeof (require('./package.json').scripts || {}).lint === 'string' ? 0 : 1)"; then
+            npm run lint
+          else
+            echo "::notice::package.json has no lint script, so the lint step is skipped. Add one, or pass lint: false to silence this."
+          fi
+
+      # Without a typecheck script the TypeScript of the plugin's own node_modules checks tsconfig.json. Never npx, so
+      # a plugin without TypeScript fails here instead of downloading one.
+      - name: Typecheck
+        if: inputs.typecheck
+        run: |
+          set -euo pipefail
+          if node -e "process.exit(typeof (require('./package.json').scripts || {}).typecheck === 'string' ? 0 : 1)"; then
+            npm run typecheck
+          elif [ -x node_modules/.bin/tsc ]; then
+            node_modules/.bin/tsc --noEmit
+          else
+            echo "::error::package.json has no typecheck script and node_modules/.bin/tsc does not exist. Add a typecheck script, install typescript, or pass typecheck: false."
+            exit 1
+          fi
+
+      - name: Unit tests
+        if: inputs.test
+        run: npm run test
+
+      - name: Scanner
+        if: inputs.scan
+        run: node_modules/.bin/opdk scan
+
+      # --no-build: the build step below builds once. --no-api: the type-aware minAppVersion check is left to the
+      # release itself, whose workflow runs the full `opdk release check` on the tag.
+      - name: Release check
+        if: inputs.release-check
+        run: node_modules/.bin/opdk release check --no-build --no-api
+
+      - name: Build
+        if: inputs.build
+        run: npm run build
+
+      # upload-artifact only fails when NO file matches, so a build that left a manifest.json and no main.js would
+      # upload "successfully". Check the two required files here.
+      - name: Check the bundle
+        if: inputs.upload-bundle
+        run: |
+          set -euo pipefail
+          for file in main.js manifest.json; do
+            if [ ! -s "$file" ]; then
+              echo "::error::The plugin root has no $file to upload. Enable the build input, or make the build script write main.js to the plugin root."
+              exit 1
+            fi
+          done
+
+      - name: Upload the plugin bundle
+        if: inputs.upload-bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.plugin.outputs.id }}-bundle
+          path: |
+            main.js
+            manifest.json
+            styles.css
+          if-no-files-found: error
+
+      - name: Upload the coverage report
+        if: inputs.coverage-artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.plugin.outputs.id }}-coverage
+          path: coverage/**
+          if-no-files-found: error
