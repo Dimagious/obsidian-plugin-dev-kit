@@ -8,9 +8,6 @@ export default {
         mp4: false,
         poster: false,
         gif: { width: 900 },
-        // The film ends where it began. The loop check still sees a difference of one level out of 255 in the
-        // active line's background (invisible), so the check is off.
-        loop: "off",
         layout: "phone-captions",
         phone: { title: "obsidian-plugin-dev-kit" },
     },

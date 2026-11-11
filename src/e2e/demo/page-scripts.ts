@@ -9,12 +9,14 @@ export type OverlayCall =
     | { method: "caption"; arg: string | null }
     | { method: "pointer"; arg: "cursor" | "tap" }
     | { method: "hidePointer"; arg: null }
+    | { method: "cursorEnabled"; arg: boolean }
     | { method: "clean"; arg: { statusBar: boolean; tabHeaders: boolean } };
 
 interface OverlayApi {
     caption(text: string | null): void;
     pointer(kind: "cursor" | "tap"): void;
     hidePointer(): void;
+    cursorEnabled(enabled: boolean): void;
     clean(hide: { statusBar: boolean; tabHeaders: boolean }): void;
 }
 
@@ -117,6 +119,8 @@ export function installOverlay(assets: { cssText: string; cursorSvg: string }): 
         y?: number;
         kind?: "cursor" | "tap";
         hidden?: boolean;
+        /** The cursor arrow is off for the film being shot; mouse moves do not bring it back. */
+        cursorOff?: boolean;
         hideStatusBar?: boolean;
         hideTabHeaders?: boolean;
     }
@@ -148,7 +152,7 @@ export function installOverlay(assets: { cssText: string; cursorSvg: string }): 
         const y = `${String(state.y ?? 0)}px`;
         cursor.style.left = tap.style.left = x;
         cursor.style.top = tap.style.top = y;
-        cursor.style.display = placed && state.kind !== "tap" ? "block" : "none";
+        cursor.style.display = placed && state.kind !== "tap" && state.cursorOff !== true ? "block" : "none";
         tap.style.display = placed && state.kind === "tap" ? "block" : "none";
         caption.textContent = state.caption ?? "";
         caption.style.display = state.caption !== undefined && state.caption !== "" ? "block" : "none";
@@ -212,6 +216,10 @@ export function installOverlay(assets: { cssText: string; cursorSvg: string }): 
             save({ hidden: true });
             render();
         },
+        cursorEnabled: (enabled) => {
+            save({ cursorOff: !enabled });
+            render();
+        },
         clean: (hide) => {
             save({ hideStatusBar: hide.statusBar, hideTabHeaders: hide.tabHeaders });
             render();
@@ -239,6 +247,9 @@ export function runOverlay(call: OverlayCall): boolean {
             break;
         case "hidePointer":
             api.hidePointer();
+            break;
+        case "cursorEnabled":
+            api.cursorEnabled(call.arg);
             break;
         case "clean":
             api.clean(call.arg);

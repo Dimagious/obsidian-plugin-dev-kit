@@ -18,27 +18,39 @@ export function budgetVerdict(bytes: number, budget: { warnBytes: number; failBy
     return bytes > budget.warnBytes ? "warn" : "ok";
 }
 
-const POSTER_SUFFIX = "-poster.png";
-
-/** The film a media file in the output folder belongs to, or null when it is not one of the kit's outputs. */
-export function filmOfOutput(file: string): string | null {
-    if (file.endsWith(POSTER_SUFFIX)) {
-        return file.slice(0, -POSTER_SUFFIX.length);
-    }
-    if (file.endsWith(".mp4") || file.endsWith(".gif")) {
-        return file.slice(0, -4);
-    }
-    return null;
+export interface StaleOutputs {
+    /** Recorded files whose film has no manifest any more (renamed or deleted test). */
+    readonly goneFilms: string[];
+    /** Recorded files of a film that still exists and encoded cleanly this run without writing them (an output turned off, or moved). */
+    readonly notWritten: string[];
 }
 
-/** Media in the output folder whose film has no manifest any more (renamed or deleted test). Sorted; nothing is deleted. */
-export function findStaleOutputs(files: readonly string[], currentFilms: ReadonlySet<string>): string[] {
-    return files
-        .filter((file) => {
-            const film = filmOfOutput(file);
-            return film !== null && !currentFilms.has(film);
-        })
-        .sort();
+/**
+ * Media the kit published earlier (`published`: output path to film name, from the record) that is still on disk and
+ * that no film produces any more: its film has no manifest (`currentFilms` lists the films that do), or its film
+ * encoded without failures in this run (`encoded`) and did not write it (`written`: output path to film name). A film
+ * that failed or was not selected proves nothing about its files. Sorted; nothing is deleted. Files the kit never wrote
+ * are not in the record, so pictures that merely share the folder are never named.
+ */
+export function findStaleOutputs(
+    published: Readonly<Record<string, string>>,
+    currentFilms: ReadonlySet<string>,
+    exists: (file: string) => boolean,
+    current: { readonly encoded: ReadonlySet<string>; readonly written: Readonly<Record<string, string>> },
+): StaleOutputs {
+    const goneFilms: string[] = [];
+    const notWritten: string[] = [];
+    for (const [file, film] of Object.entries(published)) {
+        if (!exists(file)) {
+            continue;
+        }
+        if (!currentFilms.has(film)) {
+            goneFilms.push(file);
+        } else if (current.encoded.has(film) && !Object.hasOwn(current.written, file)) {
+            notWritten.push(file);
+        }
+    }
+    return { goneFilms: goneFilms.sort(), notWritten: notWritten.sort() };
 }
 
 /** Problems with the pixel density a film was shot at, from its manifest alone. */
@@ -92,8 +104,19 @@ export interface FrameDifference {
     readonly ratio: number;
 }
 
-/** Compares two raw RGBA buffers of `width` x `height`; null when they are identical. */
-export function compareFrames(a: Buffer, b: Buffer, width: number, height: number): FrameDifference | null {
+/**
+ * Largest difference per colour channel (of 255) that still counts as the same pixel. Video-grade antialiasing and
+ * compositing noise (a caret fade, a subpixel shift of text) stays within a few shades; Dashy's loop differed by 0.9%
+ * of the pixels at one shade and looked identical. 8 is invisible to the eye and far below a real change (a changed
+ * label, a toggled control, a moved highlight differ by dozens of shades).
+ */
+export const CHANNEL_TOLERANCE = 8;
+
+/**
+ * Compares two raw RGBA buffers of `width` x `height`; null when every pixel matches within `tolerance` per channel
+ * (alpha included). Differences above it are reported as a box and a share, as before.
+ */
+export function compareFrames(a: Buffer, b: Buffer, width: number, height: number, tolerance: number = CHANNEL_TOLERANCE): FrameDifference | null {
     const size = width * height * 4;
     if (a.length !== size || b.length !== size) {
         throw new Error(`Cannot compare frames: expected ${String(size)} bytes of ${String(width)} x ${String(height)} RGBA, got ${String(a.length)} and ${String(b.length)}.`);
@@ -109,7 +132,7 @@ export function compareFrames(a: Buffer, b: Buffer, width: number, height: numbe
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             const at = (y * width + x) * 4;
-            if (a.readUInt32LE(at) !== b.readUInt32LE(at)) {
+            if (pixelsDiffer(a, b, at, tolerance)) {
                 count++;
                 minX = Math.min(minX, x);
                 maxX = Math.max(maxX, x);
@@ -118,7 +141,19 @@ export function compareFrames(a: Buffer, b: Buffer, width: number, height: numbe
             }
         }
     }
+    if (count === 0) {
+        return null;
+    }
     return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1, ratio: count / (width * height) };
+}
+
+function pixelsDiffer(a: Buffer, b: Buffer, at: number, tolerance: number): boolean {
+    for (let channel = 0; channel < 4; channel++) {
+        if (Math.abs((a[at + channel] ?? 0) - (b[at + channel] ?? 0)) > tolerance) {
+            return true;
+        }
+    }
+    return false;
 }
 
 export function describeLoopDifference(difference: FrameDifference): string {

@@ -34,7 +34,7 @@ test.afterAll(() => {
 });
 
 interface LivePage {
-    app: { vault: { getConfig(key: string): unknown } };
+    app: { vault: { getConfig(key: string): unknown }; workspace: { leftSplit: { collapsed: boolean }; rightSplit: { collapsed: boolean } } };
     moment(): { format(pattern: string): string };
     document: {
         body: { classList: { contains(name: string): boolean } };
@@ -113,6 +113,9 @@ test.describe("films of stills", () => {
     test("phone film: the tap dot shrinks while pressed, and frames are 2x of the phone", async ({ obsidian, demo, win }) => {
         const wrongKind = demo.film({ kind: "desktop", name: "wrong-kind" });
         await obsidian.mobile();
+        await demo.cleanUi();
+        const drawers = await inPage(win, (page) => [page.app.workspace.leftSplit.collapsed, page.app.workspace.rightSplit.collapsed]);
+        expect(drawers).toEqual([true, true]);
         await expect(wrongKind.shot({ hold: 1 })).rejects.toThrow(/desktop film but the window is in the mobile emulation/);
         await obsidian.openFile("Welcome.md");
         const window = await viewport(win);
@@ -145,7 +148,6 @@ test.describe("films of stills", () => {
         await obsidian.openFile("Welcome.md", { mode: "source" });
         await demo.freezeTime(new Date("2026-03-14T09:26:00"));
         await demo.cleanUi();
-        await obsidian.collapseSidebars();
         await demo.caption("Still here after the reload");
         await demo.moveAndClick(win.locator(EDITOR).first());
         const film = demo.film({ kind: "desktop" });
@@ -165,6 +167,7 @@ test.describe("films of stills", () => {
             cursorShown: page.document.getElementById("opdk-cursor")?.style.display,
             statusBarHidden: page.document.documentElement.classList.contains("opdk-hide-status-bar"),
             tabHeadersHidden: page.document.documentElement.classList.contains("opdk-hide-tab-headers"),
+            sidebarsCollapsed: [page.app.workspace.leftSplit.collapsed, page.app.workspace.rightSplit.collapsed],
         }));
         expect(after).toEqual({
             time: "2026-03-14 09:26",
@@ -176,9 +179,10 @@ test.describe("films of stills", () => {
             cursorShown: "block",
             statusBarHidden: true,
             tabHeadersHidden: true,
+            sidebarsCollapsed: [true, true],
         });
         await expect(win.locator(".status-bar")).toBeHidden();
-        await expect(win.locator(".workspace-tab-header-container").first()).toBeHidden();
+        await expect(win.locator(".mod-root .workspace-tab-header-container").first()).toBeHidden();
         await expect(win.locator(".workspace-ribbon.mod-left")).toBeHidden();
 
         await film.shot({ hold: 1 });
@@ -190,7 +194,32 @@ test.describe("films of stills", () => {
         // Showing everything again is the same call with false.
         await demo.cleanUi({ ribbon: false, statusBar: false, tabHeaders: false, viewHeader: false, inlineTitle: false });
         await expect(win.locator(".status-bar")).toBeVisible();
-        await expect(win.locator(".workspace-tab-header-container").first()).toBeVisible();
+        await expect(win.locator(".mod-root .workspace-tab-header-container").first()).toBeVisible();
+    });
+
+    test("cleanUi folds the sidebars unless told not to, and cursor: false keeps the arrow out after real clicks", async ({ obsidian, demo, win }) => {
+        await obsidian.openFile("Welcome.md", { mode: "source" });
+        await obsidian.expandSidebars();
+        const folded = (): Promise<boolean[]> => inPage(win, (page) => [page.app.workspace.leftSplit.collapsed, page.app.workspace.rightSplit.collapsed]);
+        await demo.cleanUi({ sidebars: false });
+        expect(await folded()).toEqual([false, false]);
+        await demo.cleanUi();
+        expect(await folded()).toEqual([true, true]);
+
+        const arrow = (): Promise<string | undefined> => inPage(win, (page) => page.document.getElementById("opdk-cursor")?.style.display);
+        const film = demo.film({ kind: "desktop", cursor: false });
+        await demo.moveAndClick(win.locator(EDITOR).first());
+        await film.shot({ hold: 1 });
+        expect(await arrow()).toBe("none");
+        // A plain Playwright click moves the mouse; the arrow must stay off.
+        await win.locator(EDITOR).first().click();
+        await film.shot({ hold: 1 });
+        expect(await arrow()).toBe("none");
+
+        const loud = demo.film({ kind: "desktop", name: "with-cursor" });
+        await win.locator(EDITOR).first().click();
+        await loud.shot({ hold: 1 });
+        expect(await arrow()).toBe("block");
     });
 });
 

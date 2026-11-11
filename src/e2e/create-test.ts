@@ -130,6 +130,7 @@ export function createObsidianTest(options: ObsidianTestOptions): ObsidianTestKi
                 win,
                 cdp: () => opdkHelpers.cdpSession(),
                 setTheme: (themeOptions) => opdkHelpers.helpers.setTheme(themeOptions),
+                collapseSidebars: () => opdkHelpers.helpers.collapseSidebars(),
                 options: resolved.demo,
                 uiTimeoutMs: resolved.helperTimeouts.ui,
                 seedVault: resolved.seedVault,

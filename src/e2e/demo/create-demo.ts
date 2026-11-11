@@ -59,7 +59,7 @@ const DEFAULT_TYPE_DELAY_MS = 40;
 /** Per key press, on top of the delay: Playwright's own work for one key. */
 const TYPING_SLACK_MS = 50;
 const POLL_MS = 50;
-const CLEAN_UI_KEYS = ["ribbon", "statusBar", "tabHeaders", "viewHeader", "inlineTitle"];
+const CLEAN_UI_KEYS = ["ribbon", "statusBar", "tabHeaders", "viewHeader", "inlineTitle", "sidebars"];
 const FILMS_DIR = "films";
 const STILLS_DIR = "stills";
 
@@ -69,6 +69,8 @@ export interface DemoDeps {
     /** The helpers' CDP session. The capture must use this one: Chromium keeps device metrics per session, and a second session drops `mobile()`. */
     readonly cdp: () => Promise<CDPSession>;
     readonly setTheme: (options: ThemeOptions) => Promise<void>;
+    /** Folds both side panels and waits until they are folded (`obsidian.collapseSidebars()`). */
+    readonly collapseSidebars: () => Promise<void>;
     readonly options: ResolvedDemoOptions;
     /** How long a target may take to become visible. The session's `timeouts.helpers.ui`. */
     readonly uiTimeoutMs: number;
@@ -96,6 +98,7 @@ interface FilmState {
     readonly clip: Locator | DemoRect | undefined;
     readonly padding: number;
     readonly forbidden: readonly string[];
+    readonly cursor: boolean;
     kindChecked: boolean;
 }
 
@@ -144,6 +147,8 @@ export function createDemo(deps: DemoDeps): DemoController {
     const films = new Map<string, FilmState>();
     let theme: ThemeMode | null = null;
     let overlayReady: Promise<void> | undefined;
+    /** What the page's overlay was last told about the cursor arrow; it is shown until a film asks otherwise. */
+    let cursorEnabled = true;
 
     /** Installs the overlay in every later document (reload, mobile, desktop) and in the one that is up now. */
     function ensureOverlay(): Promise<void> {
@@ -159,6 +164,14 @@ export function createDemo(deps: DemoDeps): DemoController {
         await ensureOverlay();
         if (!(await win.evaluate(runOverlay, call))) {
             throw new Error(`The demo overlay is missing from this document (${call.method}). Its init script runs in every document of the window; was the window replaced?`);
+        }
+    }
+
+    /** Switches the cursor arrow for the pictures that follow; a call that changes nothing sends nothing. */
+    async function setCursor(enabled: boolean): Promise<void> {
+        if (enabled !== cursorEnabled) {
+            await overlay({ method: "cursorEnabled", arg: enabled });
+            cursorEnabled = enabled;
         }
     }
 
@@ -267,6 +280,10 @@ export function createDemo(deps: DemoDeps): DemoController {
         const kind = assertKind(filmOptions.kind);
         const fps = assertFps(filmOptions.fps);
         const scale = assertScale(filmOptions.scale ?? options.scale, "film()");
+        const cursor = filmOptions.cursor ?? true;
+        if (typeof cursor !== "boolean") {
+            throw new Error(`film(): cursor must be true (show the arrow) or false (hide it), got ${JSON.stringify(cursor)}.`);
+        }
         const captions = assertCaptions(filmOptions.captions);
         const padding = filmOptions.padding ?? 0;
         assertClipPadding(filmOptions.clip, padding);
@@ -287,6 +304,7 @@ export function createDemo(deps: DemoDeps): DemoController {
             clip: filmOptions.clip,
             padding,
             forbidden: mergeSelectors(options.forbiddenSelectors, filmOptions.forbiddenSelectors),
+            cursor,
             kindChecked: false,
         };
         films.set(name, state);
@@ -315,6 +333,7 @@ export function createDemo(deps: DemoDeps): DemoController {
                 const clip = shotOptions.clip ?? state.clip;
                 const padding = shotOptions.padding ?? state.padding;
                 assertClipPadding(clip, padding);
+                await setCursor(state.cursor);
                 const { png, size } = await capture({ what, scale, preset: undefined, clip, padding, forbidden: state.forbidden });
                 const frame: FilmFrame = { file: frameFileName(index), hold, caption };
                 // Checks the size against the first frame before anything is written.
@@ -339,6 +358,7 @@ export function createDemo(deps: DemoDeps): DemoController {
         const padding = stillOptions.padding ?? 0;
         assertClipPadding(stillOptions.clip, padding);
         const scale = preset?.scale ?? assertScale(stillOptions.scale ?? options.scale, `still "${fileName}"`);
+        await setCursor(true);
         const { png, size } = await capture({
             what: `still "${fileName}"`,
             scale,
@@ -432,7 +452,8 @@ export function createDemo(deps: DemoDeps): DemoController {
             viewHeader: cleanOptions.viewHeader ?? true,
             inlineTitle: cleanOptions.inlineTitle ?? true,
         };
-        for (const [key, value] of Object.entries(hide)) {
+        const sidebars = cleanOptions.sidebars ?? true;
+        for (const [key, value] of Object.entries({ ...hide, sidebars })) {
             if (typeof value !== "boolean") {
                 throw new Error(`cleanUi(): ${key} must be true (hide) or false (show), got ${JSON.stringify(value)}.`);
             }
@@ -443,6 +464,9 @@ export function createDemo(deps: DemoDeps): DemoController {
             throw new Error("cleanUi(): this Obsidian has no app.vault.setConfig. The helper was verified on Obsidian 1.14.5.");
         }
         await overlay({ method: "clean", arg: { statusBar: hide.statusBar, tabHeaders: hide.tabHeaders } });
+        if (sidebars) {
+            await deps.collapseSidebars();
+        }
     }
 
     async function freezeTime(date: Date | string | number): Promise<void> {

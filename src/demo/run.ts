@@ -14,9 +14,10 @@ import {
 } from "./config.js";
 import { buildConcatList, gifArgs, locateFfmpeg, mp4Args, posterArgs, rawFrameArgs, resolveGifWidth } from "./ffmpeg.js";
 import { createFfmpegTool, probeFfmpeg, type FfmpegTool } from "./ffmpeg-run.js";
-import { assertFrameFiles, listFilms, listOutputFiles, moveFile, type FoundFilm } from "./films.js";
+import { assertFrameFiles, listFilms, moveFile, type FoundFilm } from "./films.js";
 import { PAGE_HEIGHT, PAGE_SCALE, PAGE_WIDTH, resolvePhoneLayout } from "./phone-layout.js";
 import type { ComposeParams } from "./phone-render.js";
+import { PUBLISHED_FILE, readPublished, sameRecord, updatePublished, writePublished, type PublishedRecord } from "./published.js";
 
 const STEP = "demo";
 
@@ -62,6 +63,8 @@ export interface DemoRunOptions {
 
 interface FilmOutcome {
     readonly written: string[];
+    /** Absolute paths of the files moved into the output folder, for the record of what the kit published. */
+    readonly files: string[];
     readonly warnings: string[];
     readonly failures: { message: string; hint?: string }[];
 }
@@ -112,14 +115,21 @@ export async function runDemo(options: DemoRunOptions): Promise<number> {
     const ffmpeg = await deps.locateFfmpeg(options.env, planned.some((item) => item.settings.mp4));
     fs.mkdirSync(output, { recursive: true });
 
+    const written: Record<string, string> = {};
+    // Films that encoded without a failure: only they can say that a recorded file of theirs is no longer produced.
+    const encoded = new Set<string>();
     for (const { film, settings } of planned) {
         const outcome = await encodeFilm({ film, settings, ffmpeg, deps, options, output });
+        for (const file of outcome.files) {
+            written[projectPath(options.cwd, file)] = film.name;
+        }
         if (outcome.failures.length > 0) {
             failed = true;
             for (const failure of outcome.failures) {
                 reporter.failure(STEP, `${film.name}: ${failure.message}`, failure.hint === undefined ? {} : { hint: failure.hint });
             }
         } else {
+            encoded.add(film.name);
             reporter.success(STEP, `${film.name}: ${outcome.written.join(", ")}`);
         }
         for (const warning of outcome.warnings) {
@@ -130,11 +140,51 @@ export async function runDemo(options: DemoRunOptions): Promise<number> {
     for (const warning of pairWarnings(listing.complete.map((film) => film.manifest))) {
         reporter.warn(STEP, warning);
     }
-    const stale = findStaleOutputs(listOutputFiles(output), known);
-    if (stale.length > 0) {
-        reporter.warn(STEP, `${folders.output} holds media of films that no longer exist: ${stale.join(", ")}. Delete them if they are obsolete; the command never removes files.`);
-    }
+    reportStale({ outDir, cwd: options.cwd, written, encoded, known, reporter });
     return failed ? 1 : 0;
+}
+
+/** The record's key for a file: relative to the project, with `/` on every platform. */
+function projectPath(cwd: string, file: string): string {
+    return path.relative(cwd, file).split(path.sep).join("/");
+}
+
+/**
+ * Warns about media the kit itself published on an earlier run that no film produces any more (the film is gone, or
+ * it encoded cleanly this run without writing the file), then saves the record with this
+ * run's files. Only recorded files are named: a folder like docs/screens holds pictures the kit never wrote. With no
+ * record yet nothing is stale. A record that cannot be read is reported and replaced, so one bad file does not hide
+ * the stale check for good.
+ */
+function reportStale(params: {
+    outDir: string;
+    cwd: string;
+    written: PublishedRecord;
+    encoded: ReadonlySet<string>;
+    known: ReadonlySet<string>;
+    reporter: Reporter;
+}): void {
+    const { outDir, reporter } = params;
+    const exists = (file: string): boolean => fs.existsSync(path.resolve(params.cwd, file));
+    let previous: PublishedRecord = {};
+    let readable = true;
+    try {
+        previous = readPublished(outDir);
+    } catch (error) {
+        readable = false;
+        reporter.warn(STEP, `${error instanceof Error ? error.message : String(error)}; ignoring it and writing a new one in ${path.join(outDir, PUBLISHED_FILE)}.`);
+    }
+    const stale = findStaleOutputs(previous, params.known, exists, { encoded: params.encoded, written: params.written });
+    if (stale.goneFilms.length > 0) {
+        reporter.warn(STEP, `media published by an earlier run of this command belongs to films that no longer exist: ${stale.goneFilms.join(", ")}. Delete them if they are obsolete; the command never removes files.`);
+    }
+    if (stale.notWritten.length > 0) {
+        reporter.warn(STEP, `media published by an earlier run of this command is no longer written by its film (an output turned off, or moved): ${stale.notWritten.join(", ")}. Delete them if they are obsolete; the command never removes files.`);
+    }
+    const next = updatePublished(previous, params.written, exists);
+    if (!readable || !sameRecord(previous, next)) {
+        writePublished(outDir, next);
+    }
 }
 
 /** `x-light` without `x-dark` (or the other way round): the pair was meant to be both. */
@@ -165,7 +215,7 @@ interface EncodeParams {
 
 /** Never throws for a problem with one film: the problem goes into `failures`, so the other films still run. */
 async function encodeFilm(params: EncodeParams): Promise<FilmOutcome> {
-    const outcome: FilmOutcome = { written: [], warnings: [], failures: [] };
+    const outcome: FilmOutcome = { written: [], files: [], warnings: [], failures: [] };
     const { settings } = params;
     const work = fs.mkdtempSync(path.join(params.options.tmpDir ?? os.tmpdir(), "opdk-demo-"));
     try {
@@ -255,6 +305,7 @@ async function encodeInto(params: EncodeParams, settings: FilmSettings, work: st
         await ffmpeg.run(args(temporary));
         const finished = path.join(output, fileName);
         moveFile(temporary, finished);
+        outcome.files.push(finished);
         return finished;
     };
 

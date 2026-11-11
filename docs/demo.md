@@ -28,7 +28,7 @@ A film of stills makes timing a property of the script (`hold`) and not of the m
 | `demo.typeSlowly(text)`, `demo.typeSlowly(target, text)` | Types key by key, 40 ms apart by default |
 | `demo.caption(text \| null)` | A caption bar at the bottom of the window, drawn into every frame until changed |
 | `demo.beat(seconds)`, `demo.hideCursor()` | A deliberate pause for pacing a Playwright video of a test (the kit films stills only), and hiding the cursor or tap dot |
-| `demo.cleanUi(options?)` | Hides the ribbon, status bar, tab headers, view header and inline title |
+| `demo.cleanUi(options?)` | Hides the ribbon, status bar, tab headers, view header and inline title, and folds both sidebars |
 | `demo.freezeTime(date)` | Fixes the window's clock |
 | `demo.themes(["light", "dark"], scene)` | Runs a scene once per theme and names the output `-light` and `-dark` |
 
@@ -121,18 +121,21 @@ A film is encoded only when its recording test passed. A test that failed, timed
 
 ## Recording a film
 
-`demo.film({ kind, name?, fps?, captions?, clip?, padding?, scale?, forbiddenSelectors?, allowForeignVault? })` starts a film and empties its folder, `<outDir>/films/<name>/`, so a retake replaces the frames of the earlier run.
+`demo.film({ kind, name?, fps?, captions?, clip?, padding?, scale?, cursor?, forbiddenSelectors?, allowForeignVault? })` starts a film and empties its folder, `<outDir>/films/<name>/`, so a retake replaces the frames of the earlier run.
 
 - `kind` is `"phone"` for a film shot in the mobile emulation (`obsidian.mobile()`) and `"desktop"` for one without it. A shot fails when the window is in the other state.
 - `name` defaults to the describe titles and the test title (and the project name when the config has several projects), lower case with dashes. Two tests of one run that get the same name fail with the other test's title, and so do two stills of one name. A later run is a retake and replaces them.
 - `fps` is the rate the MP4 is encoded at, 1 to 60, default 15.
 - `scale` is device pixels per CSS pixel, a whole number from 1 to 4. The default is `demo.scale` of the fixture options, 2.
+- `cursor` is `true` by default; `false` keeps the cursor arrow out of this film's frames (see below).
 
 `film.shot({ hold, caption?, clip?, padding? })` takes one frame. Call it after the assertion that the app is in the state the frame should show: nothing in a shot waits for the app.
 
 **Holds.** `hold` is seconds on screen and must be above 0. A film of stills takes its timing from `hold` and from nothing else. By default the GIF runs at 10 fps at most (`gif.fps` changes it), so a hold shorter than one GIF frame (0.1 s) can be skipped by the GIF; `opdk demo` warns and names the frame. For typing, take a shot every few characters with a hold of 0.4 to 0.6 s and a longer one at the end, as the film above does.
 
 **Pacing.** Two to four seconds per step reads well; one second per step is too fast to read a caption. Hold the first and the last frame a little longer than the rest.
+
+**Loops.** A GIF repeats, so the film should end on the state it began with. The loop check compares the first and last frame (see Checks). The usual causes of a warning are a caption bar or the cursor arrow that is in the last frame and not in the first: clear them before the last shot (`demo.caption(null)`, `demo.hideCursor()`, or `cursor: false` for the film) so the last frame matches the first. A tour that goes through several screens does not return to the start on purpose; set `loop: "off"` for it in `demo.films.<name>`.
 
 **Captions.** There are two kinds, and they are different things:
 
@@ -141,9 +144,11 @@ A film is encoded only when its recording test passed. A test that failed, timed
 
 **Tap or click.** On a phone use `demo.tap(target)`: a small dot appears on the target, presses (it shrinks while the finger is down) and goes away after the finger is up. `tap(target, { whilePressed: () => film.shot({ hold: 0.3 }) })` takes a frame of the press. On the desktop use `demo.moveAndClick(target)`: the cursor travels in 14 steps and clicks. Both fail when the target is not visible. `typeSlowly(target, text)` clicks the target with the cursor first, so on a phone focus the field with `tap` and call `typeSlowly(text)`, which fails when nothing editable has focus. `hideCursor()` hides the cursor or the dot until the mouse moves again, for a frame that should show none.
 
+**The cursor follows every mouse action.** The arrow is drawn wherever Playwright's mouse is, so a plain `click()`, `check()`, `selectOption()` or `hover()` moves it too, not only `moveAndClick()`. A film that never meant to show a cursor then has an arrow at the place of the last click. Pass `cursor: false` to `demo.film()` and the arrow stays hidden in that film's frames, however the page was clicked. The setting belongs to the film: a later film or still of the same test without it shows the arrow again. The tap dot of a phone film is not affected.
+
 **Pauses in a recorded take.** `demo.beat(seconds)` is a deliberate pause for the viewer of a recording. It is for pacing a Playwright video of a test; the kit films stills only, so use `hold`. It takes seconds (Snipsy's `beat` took milliseconds) and throws above 60. The helpers do not pause by themselves.
 
-**A clean UI.** `demo.cleanUi()` hides the ribbon, the view header and the inline title through Obsidian's own settings (saved at once, because `reload()` reloads without saving) and the status bar and tab headers through a class on the page. It survives `reload()`, `mobile()` and `desktop()`. Each call sets all five parts, so `cleanUi({ statusBar: false })` hides the other four and shows the status bar, and the last call decides. Overlays, the hidden parts and the frozen time all survive a reload, and a film goes on across it.
+**A clean UI.** `demo.cleanUi()` hides the ribbon, the view header and the inline title through Obsidian's own settings (saved at once, because `reload()` reloads without saving) and the status bar and tab headers through a class on the page. It also folds the left and right sidebars (`obsidian.collapseSidebars()`, waiting until they are folded): a frame with the file explorer open loses a fifth of its width to it. `cleanUi({ sidebars: false })` leaves the sidebars as they are. It survives `reload()`, `mobile()` and `desktop()`. Each call sets the five hidden parts, so `cleanUi({ statusBar: false })` hides the other four and shows the status bar, and the last call decides. Nothing is put back afterwards: the window is closed with the test. The sidebars are folded once and not unfolded by a later call. Overlays, the hidden parts and the frozen time all survive a reload, and a film goes on across it.
 
 **Frozen time.** `demo.freezeTime(date)` fixes `new Date()`, `Date.now()` and `moment()` of the window at `date`; timers keep running. A date string without a time zone is read in the time zone of the machine and shown in it, so the same test gives the same text everywhere; a string with `Z` or an offset shows a different wall clock time in another zone. Caveats: the dates of files in Obsidian's explorer and in search come from the file system and are not frozen, and code that measures elapsed time with `Date.now()` sees none pass.
 
@@ -204,7 +209,7 @@ The default vault is the plugin's own seed vault, so a film made without any of 
 | `<name>.gif` | its own palette (`palettegen stats_mode=diff`, bayer dithering), 128 colours, 10 fps (the film's fps when that is lower), as wide as the frames up to 1000 px, never upscaled |
 | `<name>-poster.png` | the film's first frame at the frame's resolution, so a site's `<video poster>` is as sharp as the video |
 
-Without names every complete film is encoded. A name that is not a film fails. Each file is encoded to a temporary name in a work folder and moved into the output folder when it is complete, so a failed encode leaves the previous good file. The command never deletes media. Frames go through ffmpeg's concat demuxer with a duration per frame; the last frame is listed again, so its whole hold plays, and the encode is capped at the sum of the holds.
+Without names every complete film is encoded. Every file a run writes is recorded in `<outDir>/published.json` for the stale-media check, which names a recorded file that is still on disk when its film is gone, or when its film encoded cleanly in this run without writing it (an output turned off with `mp4: false`, or moved with `demo.output`). A name that is not a film fails. Each file is encoded to a temporary name in a work folder and moved into the output folder when it is complete, so a failed encode leaves the previous good file. The command never deletes media. Frames go through ffmpeg's concat demuxer with a duration per frame; the last frame is listed again, so its whole hold plays, and the encode is capped at the sum of the holds.
 
 ### The phone layout
 
@@ -219,10 +224,10 @@ The page is rendered in a bare hidden Electron window from the plugin's own `ele
 | ffmpeg | found through `OPDK_FFMPEG` when set (no fallback), otherwise `PATH`, and (for the MP4) `libx264` is checked before any work, with the install command in the message | fails |
 | ffmpeg errors | a non-zero exit fails the film with the tail of stderr, and so does an exit 0 that printed errors (ffmpeg exits 0 after skipping a frame it cannot decode); an encode that runs for 10 minutes is killed | fails |
 | size | a file above 2 MB warns, above 10 MB fails (GitHub's limit for images and GIFs attached to issues and pull requests); `budget` changes both | warns, fails |
-| loop | the film's last recorded frame should equal its first, or the GIF jumps when it repeats; the warning names the box where they differ | warns; `loop: "fail"` fails, `"off"` skips |
+| loop | the film's last recorded frame should equal its first, or the GIF jumps when it repeats; pixels whose channels differ by 8 of 255 or less count as equal, and the warning names the box and share of the pixels that differ more | warns; `loop: "fail"` fails, `"off"` skips |
 | short holds | a frame held for less than one GIF frame can be skipped; the warning names the frame | warns |
 | density | frames shot below scale 2, or a frame size that does not match the scale | warns |
-| stale media | media in the output folder with no film behind it, listed and never deleted | warns |
+| stale media | media this command wrote on an earlier run (recorded in `<outDir>/published.json`) that is still on disk and that no film produces any more: its film is gone, or its film encoded cleanly in this run without writing the file (an output turned off or moved). A film that failed or was not selected proves nothing about its files. Listed and never deleted | warns |
 | theme pairs | a `-light` or `-dark` film whose partner is missing | warns |
 
 Warnings print as `!` lines and leave the exit code alone. Exit 1 on anything that fails: no films, a name that is not a film, an incomplete film named on the command line, no complete film at all, an unusable manifest, a missing ffmpeg, an encode, a file over the fail limit and `loop: "fail"`.
@@ -235,7 +240,6 @@ The kit's own film (`npm run docs:media:demo`), then two failures:
 $ opdk demo demo
 · demo    demo: composing 8 frames beside their captions in Electron
 ✓ demo    demo: gif 141 KB
-! demo    docs/media holds media of films that no longer exist: build-check-fails.gif, build.gif, e2e.gif, scan-fails.gif, scan.gif. Delete them if they are obsolete; the command never removes files.
 $ opdk demo nosuch
 ✗ demo    no film named "nosuch" in /path/to/plugin/.opdk/demo/films
             Films there: demo
@@ -244,7 +248,13 @@ $ OPDK_FFMPEG=/nonexistent/ffmpeg opdk demo
 ✗ opdk: command "demo" failed: OPDK_FFMPEG=/nonexistent/ffmpeg cannot run (/nonexistent/ffmpeg could not run (spawn /nonexistent/ffmpeg ENOENT).). Point it at a working ffmpeg binary or unset it to use PATH.
 ```
 
-The stale-media line is there because the kit keeps its other GIFs in `docs/media`, next to `demo.gif`; a plugin that keeps unrelated GIFs in the output folder sees the same line on every run.
+A film that was renamed or deleted leaves its files behind, and the next run says so:
+
+```text
+! demo    media published by an earlier run of this command belongs to films that no longer exist: docs/screens/old-name.gif, docs/screens/old-name.mp4. Delete them if they are obsolete; the command never removes files.
+```
+
+Only files `opdk demo` itself wrote are named. The record is `<outDir>/published.json` (output path to film name); it is created by the first run, so a project that has just updated sees no stale warning until its films have been encoded once. A file that was deleted drops out of the record on the next run. Unrelated pictures in the output folder are never listed. The record sits in `outDir`, next to the raw frames, and is not meant to be committed.
 
 ## Configuration
 
@@ -290,7 +300,7 @@ A film needs the real Obsidian, so recording belongs on a machine that has it. `
 
 ## Migrating from a plugin's own scripts
 
-1. Install the kit, ffmpeg and (for the e2e fixture) the e2e dependencies ([docs/e2e.md](e2e.md)). Add `.opdk/` to `.gitignore`.
+1. Install the kit, ffmpeg and (for the e2e fixture) the e2e dependencies ([docs/e2e.md](e2e.md)). Add `.opdk/` to `.gitignore`. To move the kit to a newer tag run `npm install -D "github:Dimagious/obsidian-plugin-dev-kit#<tag>"`. Editing the tag in `package.json` and running a plain `npm install` keeps the old entry in `package-lock.json`, and the old version stays installed.
 2. Rewrite the recording specs on the `demo` fixture: a film of stills (`demo.film`, `film.shot`) in place of a screen recording or a screenshot loop, `demo.moveAndClick`, `demo.tap`, `demo.typeSlowly`, `demo.caption`, `demo.cleanUi`, `demo.freezeTime`, `demo.themes`.
 3. Move the encoding settings to the `demo` section of `opdk.config.mjs` and delete the plugin's encoder script.
 4. Run the specs and `opdk demo`, compare the files with the old ones and list the differences in the plugin's CHANGELOG.
@@ -331,7 +341,8 @@ Snipsy (`scripts/build-demo.sh`):
 - `opdk demo` does not copy or process stills.
 - A retake is not byte-identical: pictures come from a real Obsidian, so a pixel here and there can differ between runs.
 - `freezeTime` does not freeze the file dates in the explorer, and code that measures elapsed time sees none pass.
-- The loop check compares the first and last frame exactly, so a difference of one shade out of 255 counts. The kit's own film sets `loop: "off"` for this reason.
+- The loop check treats a pixel as equal when each channel differs by at most 8 of 255, so noise below that is not reported. A tour that does not end where it began still warns; see **Loops**.
+- A frame can hold network content (a page that loads data when it runs, a remote image), which differs between takes and can fail the loop check. For a stable film replace the plugin's fetching function with `obsidian.replace()` and return fixture data ([docs/e2e.md](e2e.md)).
 
 ## Credits
 

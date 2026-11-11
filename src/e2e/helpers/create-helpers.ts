@@ -38,6 +38,7 @@ import {
     removeNotices,
     runCommandById,
     runWithApp,
+    saveWorkspaceLayout,
     scrollThroughElement,
     setSidebarsCollapsed,
     switchMobileEmulation,
@@ -372,6 +373,11 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
             await win.waitForFunction(areSidebarsCollapsed, collapsed, { polling: 50, timeout: timeouts.ui });
         } catch (error) {
             throw new Error(`The side panels were not ${collapsed ? "collapsed" : "expanded"} ${String(timeouts.ui)} ms after ${verb}(). Raise timeouts.helpers.ui if the window is slow.`, { cause: error });
+        }
+        try {
+            await win.evaluate(saveWorkspaceLayout);
+        } catch (error) {
+            throw new Error(`${verb}(): saving the workspace layout failed, so a reload() would bring the side panels back.`, { cause: error });
         }
     }
 

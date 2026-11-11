@@ -123,6 +123,7 @@ export interface ObsidianHelpers {
      * Collapses the left and right side panels and waits until both are collapsed, so the note pane gets the whole
      * window (a 390 px viewport is then 390 px of note, not of sidebars). It is a helper of its own, not an option of
      * `readingView()`, because it is about the window layout and also serves source and live mode and screenshots.
+     * It then writes the workspace layout to disk, so a `reload()` right after it keeps the panels folded.
      */
     collapseSidebars(): Promise<void>;
     /** The inverse of `collapseSidebars()`: expands both side panels and waits until they are expanded. */

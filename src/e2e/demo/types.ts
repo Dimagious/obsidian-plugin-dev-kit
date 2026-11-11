@@ -36,6 +36,13 @@ export interface FilmOptions extends CaptureOptions {
     readonly captions?: readonly string[];
     /** Device pixels per CSS pixel. Default: `demo.scale` of the options, 2. */
     readonly scale?: number;
+    /**
+     * Show the cursor arrow in this film's frames. Default true. The arrow follows every mouse action of Playwright
+     * (`click()`, `check()`, `selectOption()`, `hover()`), not only `demo.moveAndClick()`, so a film that never meant to
+     * show a cursor has it at the place of the last click. `false` keeps it hidden in this film's frames, however the
+     * page was clicked. The tap dot of a phone film is not affected.
+     */
+    readonly cursor?: boolean;
 }
 
 export interface ShotOptions {
@@ -78,7 +85,8 @@ export interface StillResult {
 
 /**
  * Which parts of the UI `demo.cleanUi()` hides. `true`, the default of every key, hides the part; `false` shows it.
- * Each call sets all five, so the last call decides.
+ * Each call sets the first five, so the last call decides. `sidebars` is different: it only folds the panels, once,
+ * and `false` leaves them as they are.
  */
 export interface CleanUiOptions {
     readonly ribbon?: boolean;
@@ -89,6 +97,8 @@ export interface CleanUiOptions {
     readonly viewHeader?: boolean;
     /** The note title above the text. */
     readonly inlineTitle?: boolean;
+    /** Folds the left and right side panels (the file explorer, the outline). `false` keeps them as they are. */
+    readonly sidebars?: boolean;
 }
 
 export interface TypeSlowlyOptions {
@@ -136,7 +146,7 @@ export interface DemoHelpers {
 
     /**
      * Hides parts of the UI that distract from a picture, using Obsidian's own settings where they exist and a class on
-     * the page for the status bar and the tab headers. It survives `reload()`, `mobile()` and `desktop()`.
+     * the page for the status bar and the tab headers, and folds both side panels. It survives `reload()`, `mobile()` and `desktop()`.
      */
     cleanUi(options?: CleanUiOptions): Promise<void>;
     /**
