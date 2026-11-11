@@ -87,6 +87,12 @@ export interface StillOptions extends CaptureOptions {
      * or raise `quietMs` (call `obsidian.settle({ quietMs })` yourself).
      */
     readonly settle?: boolean;
+    /**
+     * Show the cursor arrow in this still. Default true: the arrow sits at the place of the last mouse action, whether it
+     * came from `demo.moveAndClick()` or a plain Playwright click. `false` keeps it out of this still only; the next
+     * film or still decides for itself.
+     */
+    readonly cursor?: boolean;
 }
 
 export interface StillResult {

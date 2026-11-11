@@ -3,6 +3,7 @@ import type { HelperTimeouts } from "../options.js";
 import { waitForReady } from "../readiness.js";
 import { commandDeclinedMessage, commandNotFoundMessage, toPlaywrightKeys } from "./commands.js";
 import { planComposition } from "./ime.js";
+import { createDeviceMetricsTracker, type DeviceMetricsTracker } from "./device-metrics.js";
 import { deviceMetrics, isReloadRejection, type MobileOptions } from "./mobile.js";
 import {
     applyTheme,
@@ -66,6 +67,8 @@ export interface HelperKit {
      * metrics of `mobile()` per session, and a second session that captures at another density drops them.
      */
     cdpSession(): Promise<CDPSession>;
+    /** The device metrics override of that session. `mobile()`, `desktop()` and the demo's shots all set it through this one. */
+    readonly deviceMetrics: DeviceMetricsTracker;
     /** Detaches the CDP session the IME and mobile helpers opened. The window itself is closed by the session. */
     dispose(): Promise<void>;
 }
@@ -117,6 +120,8 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
         cdp ??= await win.context().newCDPSession(win);
         return cdp;
     }
+
+    const metricsTracker = createDeviceMetricsTracker(session);
 
     const press = async (keys: string): Promise<void> => {
         await win.keyboard.press(toPlaywrightKeys(keys));
@@ -467,18 +472,18 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
 
     async function mobile(mobileOptions: MobileOptions = {}): Promise<void> {
         const metrics = deviceMetrics(mobileOptions);
-        const cdpSession = await session();
         // The size first: whether Obsidian shows the phone or the tablet layout is decided when it loads, from the
         // viewport at that moment. The window may be larger than the screen allows, the override is not.
-        await cdpSession.send("Emulation.setDeviceMetricsOverride", metrics);
+        await metricsTracker.set(metrics);
         await waitForWidth(metrics.width);
         // Also when the window is mobile already but with another size (or one this helper did not set): the layout
         // class follows the size only at load, so it has to load again.
         if (!(await win.evaluate(isMobileApplied, true)) || mobileWidth !== metrics.width) {
             await switchEmulation(true);
         }
-        // The override survives the reload; sending it again costs nothing and does not rely on that.
-        await cdpSession.send("Emulation.setDeviceMetricsOverride", metrics);
+        // The override survives the reload; sending it again costs nothing and does not rely on that. Sent plainly:
+        // the tracker already holds these metrics, and a clear before a set of the same ones would be noise here.
+        await (await session()).send("Emulation.setDeviceMetricsOverride", metrics);
         await waitForWidth(metrics.width);
         mobileWidth = metrics.width;
     }
@@ -487,7 +492,7 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
         if (await win.evaluate(isMobileApplied, true)) {
             await switchEmulation(false);
         }
-        await (await session()).send("Emulation.clearDeviceMetricsOverride");
+        await metricsTracker.clear();
     }
 
     // The overloads of ObsidianHelpers.evaluate: with and without an `arg`. `App` is the caller's type of `window.app`.
@@ -542,6 +547,7 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
 
     return {
         cdpSession: session,
+        deviceMetrics: metricsTracker,
         helpers: {
             openSettings,
             closeSettings,

@@ -81,6 +81,9 @@ export function createFakeDemoWindow(): FakeDemoWindow {
                 fake.viewport = { width: p.width, height: p.height, scale: p.deviceScaleFactor };
                 return Promise.resolve({});
             }
+            if (method === "Emulation.clearDeviceMetricsOverride") {
+                return Promise.resolve({});
+            }
             if (method === "Page.captureScreenshot") {
                 const p = params as { clip?: { width: number; height: number; scale: number } };
                 const scale = fake.captureScaleOverride ?? fake.viewport.scale;

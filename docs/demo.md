@@ -34,6 +34,8 @@ A film of stills makes timing a property of the script (`hold`) and not of the m
 
 Every shot first freezes the page (after `obsidian.settle()` when the shot passes `settle: true`, see **Settling**): CSS transitions end, running animations finish (endless ones are paused for the picture and played again), the caret and the CodeMirror cursor layer are hidden, and two animation frames are awaited. Then the picture is taken through the same CDP session as the `obsidian` helpers, so it keeps the mobile emulation.
 
+A plain `win.screenshot()` in the same test is fine, but the picture it takes is at the display's density (1x on a 1x display), not the fixture's. Playwright's screenshot drops the device metrics override from the page. The next `film.shot()` or `demo.still()` restores size and scale, on the desktop and after `obsidian.mobile()` alike: a phone film comes back at the phone size the session last set, at the film's scale (live tests: `a plain win.screenshot() between demo shots does not change the density of the next one` and `... after obsidian.mobile() leaves the next phone shot ...`). A second `obsidian.mobile()` after a plain screenshot restores the phone size as well. Use `demo.still()` for pictures that are published.
+
 ## Quick start
 
 1. Install `ffmpeg`. `opdk demo` uses `OPDK_FFMPEG` when set (no fallback), otherwise `PATH`. macOS: `brew install ffmpeg`; Debian or Ubuntu: `sudo apt install ffmpeg`; Windows: `winget install ffmpeg`. The MP4 needs the `libx264` encoder, which the common builds have.
@@ -146,7 +148,7 @@ A film is encoded only when its recording test passed. A test that failed, timed
 
 **Tap or click.** On a phone use `demo.tap(target)`: a small dot appears on the target, presses (it shrinks while the finger is down) and goes away after the finger is up. `tap(target, { whilePressed: () => film.shot({ hold: 0.3 }) })` takes a frame of the press. On the desktop use `demo.moveAndClick(target)`: the cursor travels in 14 steps and clicks. Both fail when the target is not visible. `typeSlowly(target, text)` clicks the target with the cursor first, so on a phone focus the field with `tap` and call `typeSlowly(text)`, which fails when nothing editable has focus. `hideCursor()` hides the cursor or the dot until the mouse moves again, for a frame that should show none.
 
-**The cursor follows every mouse action.** The arrow is drawn wherever Playwright's mouse is, so a plain `click()`, `check()`, `selectOption()` or `hover()` moves it too, not only `moveAndClick()`. A film that never meant to show a cursor then has an arrow at the place of the last click. Pass `cursor: false` to `demo.film()` and the arrow stays hidden in that film's frames, however the page was clicked. The setting belongs to the film: a later film or still of the same test without it shows the arrow again. The tap dot of a phone film is not affected.
+**The cursor follows every mouse action.** The arrow is drawn wherever Playwright's mouse is, so a plain `click()`, `check()`, `selectOption()` or `hover()` moves it too, not only `moveAndClick()`. A film that never meant to show a cursor then has an arrow at the place of the last click. Pass `cursor: false` to `demo.film()` and the arrow stays hidden in that film's frames, however the page was clicked. The setting belongs to the film: a later film or still of the same test without it shows the arrow again. The tap dot of a phone film is not affected. `demo.still(name, { cursor: false })` does the same for one still and, like the film's setting, does not carry over to the next picture (the workaround `demo.hideCursor()` also works, until the mouse moves again).
 
 **Pauses in a recorded take.** `demo.beat(seconds)` is a deliberate pause for the viewer of a recording. It is for pacing a Playwright video of a test; the kit films stills only, so use `hold`. It takes seconds (Snipsy's `beat` took milliseconds) and throws above 60. The helpers do not pause by themselves.
 
@@ -160,7 +162,7 @@ A film is encoded only when its recording test passed. A test that failed, timed
 
 ### Stills
 
-`demo.still(name, { preset?, clip?, padding?, scale?, settle? })` writes `<outDir>/stills/<name>.png`, replacing an earlier one. A preset gives exactly its pixels, puts the window at the CSS size that produces them and puts it back afterwards. A preset cannot be combined with `clip` or `scale`.
+`demo.still(name, { preset?, clip?, padding?, scale?, settle?, cursor? })` writes `<outDir>/stills/<name>.png`, replacing an earlier one. A preset gives exactly its pixels, puts the window at the CSS size that produces them and puts it back afterwards. A preset cannot be combined with `clip` or `scale`.
 
 | Preset | Pixels | For |
 |---|---|---|

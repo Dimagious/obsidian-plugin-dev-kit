@@ -767,6 +767,29 @@ describe("mobile and desktop", () => {
         expect(fake.cdp).toHaveLength(4);
     });
 
+    it("a repeated mobile() after a screenshot dropped the override clears first, so the phone size comes back", async () => {
+        const { fake, helpers, state } = mobileSetUp(false);
+        await helpers.mobile();
+        const before = fake.cdp.length;
+        // What win.screenshot() does to the page: nothing is sent, the session still counts its override as active.
+        await helpers.mobile();
+        expect(state.reloads).toBe(1);
+        expect(fake.cdp.slice(before).map((command) => command.method.replace("Emulation.", ""))).toEqual([
+            "clearDeviceMetricsOverride",
+            "setDeviceMetricsOverride",
+            "setDeviceMetricsOverride",
+        ]);
+    });
+
+    it("desktop() clears the override and forgets it, so a later identical mobile() sends no clear of its own", async () => {
+        const { fake, helpers } = mobileSetUp(false);
+        await helpers.mobile();
+        await helpers.desktop();
+        const before = fake.cdp.length;
+        await helpers.mobile();
+        expect(fake.cdp.slice(before).map((command) => command.method.replace("Emulation.", ""))).toEqual(["setDeviceMetricsOverride", "setDeviceMetricsOverride"]);
+    });
+
     it("reloads again for a second call with another width, so the phone or tablet layout follows the size", async () => {
         const { fake, helpers, state } = mobileSetUp(false);
         await helpers.mobile({ width: 800 });
