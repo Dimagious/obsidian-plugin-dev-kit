@@ -15,6 +15,7 @@ Every Obsidian plugin needs the same tooling around its code: a bundle that also
 | Build | esbuild for the browser platform, so the bundle works on mobile, plus a check that fails if Node-only code gets into `main.js`; CSS build; copy into a dev vault in watch mode |
 | Scanner and lint | `opdk scan` runs the community plugin scanner's ESLint configuration and its CSS, source and manifest checks before you release, with `eslint-plugin-obsidianmd` pinned in one place; `obsidianPlugin()` gives your own `eslint.config.js` the same base |
 | Release | `opdk release check` for CI and before a tag: versions in `package.json`, `manifest.json`, `package-lock.json` and `versions.json`, the manifest rules of the official Obsidian action, a CHANGELOG section, a production build built twice (working tree and committed tree) and compared, and the `minAppVersion` against the API the code calls. `opdk release patch` (or `minor`, `major`, `X.Y.Z`) bumps the files, moves the `[Unreleased]` notes under the new version, commits and tags, pushes only the tag, waits for the kit's reusable GitHub workflow, verifies its draft release (files, bytes against a local build of the tag, notes, build provenance), publishes it and only then pushes the branch. Release notes come from the CHANGELOG, and no zip is made unless asked |
+| Reusable CI | `plugin-ci.yml`, a reusable GitHub workflow: lint, typecheck, tests, `opdk scan`, `opdk release check`, build and bundle upload, with a read-only token, actions pinned to commit SHAs and a pinned runner |
 | Unit tests | A Vitest preset with coverage thresholds, and DOM helpers Obsidian adds (`createEl`, `createDiv`, `setText`) |
 | End-to-end tests | Playwright in a real Obsidian through Electron: an isolated vault per test, the trust dialog never shown, readiness by plugin state instead of sleeps, a check of which Obsidian version ran, a trace and a video of the Obsidian window for failures, and helpers for settings, commands, the editor, IME composition, the mobile layout and fakes. Launch over CDP and a mode for recording tests by hand with the Playwright Inspector are planned |
 | Demo films | Films of stills from the real Obsidian: a frozen UI, a visible cursor or tap dot, captions, slow typing, light and dark themes, and a privacy guard that refuses to film a vault that is not the plugin's own; `opdk demo` encodes them to MP4, GIF and poster with ffmpeg, can put a phone film beside its captions, and copies stills (shot at a fixed density) for the README and listings. No audio |
@@ -91,6 +92,28 @@ jobs:
 
 then `npx opdk release check` to see what would stop a release, and `npx opdk release patch` to cut one (it needs the GitHub CLI signed in with write access, and `scripts.build` must run `opdk build`). Details, every stop and how to resume: [docs/release.md](docs/release.md).
 
+## Continuous integration
+
+`.github/workflows/plugin-ci.yml` is a reusable workflow that checks a plugin on every push and pull request: lint, typecheck, unit tests, `opdk scan`, `opdk release check`, the build, and an upload of the bundle as `<plugin id>-bundle`. The three plugins each kept a 45 to 75 line `ci.yml` that had drifted (Snipsy's never ran its lint script). Here the job has a read-only token, every action is pinned to a commit SHA, the runner is pinned to `ubuntu-24.04` instead of `ubuntu-latest`, and the inputs are switches, never commands. Steps that belong to one plugin stay in a second job of its own `ci.yml`.
+
+Quick start: call it from the plugin's `ci.yml`, pinned to a full commit SHA of the kit,
+
+```yaml
+# .github/workflows/ci.yml
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  kit:
+    uses: Dimagious/obsidian-plugin-dev-kit/.github/workflows/plugin-ci.yml@<full commit SHA of the kit>
+```
+
+Dashy's default branch is `master`, so its caller uses `branches: [master]`. Inputs (all optional): `node-version`, `runs-on`, and a boolean per step (`lint`, `typecheck`, `test`, `scan`, `release-check`, `build`, `upload-bundle`, `coverage-artifact`). Inputs, what each step runs, how to add plugin-specific steps and what changes for each plugin: [docs/ci.md](docs/ci.md).
+
 ## Agent skills
 
 The repository is also a Claude Code plugin, `opdk`, with one skill per module so a coding agent working in your plugin knows the commands, the options and the traps of that module:
@@ -123,7 +146,7 @@ No release has been tagged yet, so an installed plugin follows `main`: run `/plu
   - [x] Release: `opdk release check`, `opdk release <bump>`, `opdk release publish`, `opdk release notes`, the reusable `release.yml`
   - [ ] Unit-test preset
   - [ ] Docs site
-  - [ ] Reusable CI
+  - [x] Reusable CI: `plugin-ci.yml`
 - [ ] Wave 3: integration tests preset
 - [ ] Wave 4: CDP launch mode, if a plugin needs the shipped Obsidian binary
 - [x] Agent skills for build, scanner, e2e, demo and release, installable as a Claude Code plugin
