@@ -78,27 +78,31 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # The npm cache is restored here because this job is read-only: it holds no token that can write to the
-      # repository, so a poisoned cache cannot reach a release. (release.yml turns the cache off for that reason.)
+      # The npm cache is on here. Any job can write the Actions cache whatever its `permissions` say, so read-only is not
+      # the reason. The reasons are: nothing this job builds is shipped, and npm checks cached tarballs against the hashes
+      # in package-lock.json. release.yml, whose build is attested and shipped, restores no cache.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ inputs.node-version }}
           cache: npm
 
       # The id names the artifacts. It comes from manifest.json, never from the caller, and is checked because it ends
-      # up in an artifact name.
+      # up in an artifact name. A non-string id (a number, an object) is read as empty and rejected.
       - name: Read the plugin id
         id: plugin
         run: |
           set -euo pipefail
-          id="$(node -p "require('./manifest.json').id")"
-          if ! [[ "$id" =~ ^[A-Za-z0-9._-]+$ ]]; then
-            echo "::error::manifest.json has an id that is empty or not safe to use in an artifact name: $id"
+          id="$(node -p "const v=require('./manifest.json').id; typeof v==='string'?v:''")"
+          if [ -z "$id" ] || [ "$id" = "." ] || [ "$id" = ".." ] || ! [[ "$id" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::manifest.json has an id that is missing, not a string, or not safe to use in an artifact name. Use letters, digits, dots, dashes and underscores."
             exit 1
           fi
           echo "id=$id" >> "$GITHUB_OUTPUT"

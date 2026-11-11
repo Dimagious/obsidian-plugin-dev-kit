@@ -94,7 +94,7 @@ then `npx opdk release check` to see what would stop a release, and `npx opdk re
 
 ## Continuous integration
 
-`.github/workflows/plugin-ci.yml` is a reusable workflow that checks a plugin on every push and pull request: lint, typecheck, unit tests, `opdk scan`, `opdk release check`, the build, and an upload of the bundle as `<plugin id>-bundle`. The three plugins each kept a ~50-line `ci.yml` that had drifted (Snipsy's never ran its lint script). Here the job has a read-only token, every action is pinned to a commit SHA, the runner is pinned to `ubuntu-24.04` instead of `ubuntu-latest`, and the inputs are switches, never commands. Steps that belong to one plugin stay in a second job of its own `ci.yml`.
+`.github/workflows/plugin-ci.yml` is a reusable workflow that checks a plugin on every push and pull request: lint, typecheck, unit tests, `opdk scan`, `opdk release check`, the build, and an upload of the bundle as `<plugin id>-bundle`. The three plugins each kept a 45 to 75 line `ci.yml` that had drifted (Snipsy's never ran its lint script). Here the job has a read-only token, every action is pinned to a commit SHA, the runner is pinned to `ubuntu-24.04` instead of `ubuntu-latest`, and the inputs are switches, never commands. Steps that belong to one plugin stay in a second job of its own `ci.yml`.
 
 Quick start: call it from the plugin's `ci.yml`, pinned to a full commit SHA of the kit,
 
@@ -112,7 +112,7 @@ jobs:
     uses: Dimagious/obsidian-plugin-dev-kit/.github/workflows/plugin-ci.yml@<full commit SHA of the kit>
 ```
 
-Inputs (all optional): `node-version`, `runs-on`, and a boolean per step (`lint`, `typecheck`, `test`, `scan`, `release-check`, `build`, `upload-bundle`, `coverage-artifact`). Inputs, what each step runs, how to add plugin-specific steps and what changes for each plugin: [docs/ci.md](docs/ci.md).
+Dashy's default branch is `master`, so its caller uses `branches: [master]`. Inputs (all optional): `node-version`, `runs-on`, and a boolean per step (`lint`, `typecheck`, `test`, `scan`, `release-check`, `build`, `upload-bundle`, `coverage-artifact`). Inputs, what each step runs, how to add plugin-specific steps and what changes for each plugin: [docs/ci.md](docs/ci.md).
 
 ## Agent skills
 
