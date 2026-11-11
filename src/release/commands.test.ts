@@ -17,7 +17,7 @@ describe("registration", () => {
     });
 
     it("documents the checks, the skip flags, the bump and the push flow", () => {
-        for (const word of ["opdk release check", "--tag", "--no-build", "--no-reproducible", "--no-api", "--dry-run", "versions.json", "reproducible", "obsidianmd/no-unsupported-api", "--no-push", "opdk release publish", "opdk release notes", "refs/tags/X.Y.Z", "never with force", "gh attestation verify", "byte for byte", "--timeout", "--zip", "release.defaultBranch", "defaultBranch", "git archive HEAD", "committed tree", "Node or esbuild version", "line endings", "pnpm and", "Git LFS", "Blind spot", "paths", "scripts.build", "build:plugin", "Ctrl+C", "130", "author, minAppVersion and isDesktopOnly are required", "helpUrl", "warning, as in the official action"]) {
+        for (const word of ["opdk release check", "--tag", "--no-build", "--no-reproducible", "--no-api", "--dry-run", "versions.json", "reproducible", "obsidianmd/no-unsupported-api", "--no-push", "opdk release publish", "opdk release notes", "refs/tags/X.Y.Z", "never with force", "gh attestation verify", "byte for byte", "--timeout", "--zip", "release.defaultBranch", "defaultBranch", "git archive HEAD", "committed tree", "Node or esbuild version", "line endings", "pnpm and", "Git LFS", "Blind spot", "paths", "scripts.build", "build:plugin", "Ctrl+C", "130", "author, minAppVersion and isDesktopOnly are required", "helpUrl", "warning, as in the official action", "gh is never called", "it does fetch from origin"]) {
             expect(releaseCommand.usage.replace(/\s+/g, " "), word).toContain(word);
         }
     });

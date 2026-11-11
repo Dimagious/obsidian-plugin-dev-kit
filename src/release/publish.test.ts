@@ -554,6 +554,50 @@ describe("runPublish: the branch", () => {
         expect(remoteTags(s.repo)).toEqual(["1.0.0", "1.0.1"]);
     });
 
+    it("says the server refused the push, not that origin has newer commits, and that pulling will not help", async () => {
+        const s = await scenario();
+        const base = s.input();
+        const run: RunGit = (args) =>
+            args[0] === "push" && args[2]?.includes(":refs/heads/")
+                ? Promise.reject(new Error("git push failed: ! [remote rejected] abc -> main (protected branch hook declined)\nremote: error: GH006: Protected branch update failed for refs/heads/main."))
+                : base.run(args);
+        expect(await runPublish({ ...base, run })).toBe(1);
+        const err = s.ctx.err.join("");
+        expect(err).toContain("origin refused the push of main (a branch protection, a repository rule or a server hook). The release 1.0.1 is already public.");
+        expect(err).toContain("a pull request, or an account that may bypass it); pulling will not help");
+        expect(err).toContain("GH006");
+        expect(err).not.toContain("git pull --no-rebase");
+        expect(err).toContain("stopped while pushing the branch.");
+        expect(err).toContain("Resume with: opdk release publish 1.0.1");
+    });
+
+    it.each([
+        ["a server hook", "To github.com:me/plugin.git\n ! [remote rejected] abc -> main (pre-receive hook declined)"],
+        ["a repository rule", "remote: error: GH013: Repository rule violations found for refs/heads/main.\n ! [remote rejected] abc -> main (push declined due to repository rule violations)"],
+    ])("treats a refusal by %s like a protected branch", async (_what, gitError) => {
+        const s = await scenario();
+        const base = s.input();
+        const run: RunGit = (args) =>
+            args[0] === "push" && args[2]?.includes(":refs/heads/") ? Promise.reject(new Error(`git push failed: ${gitError}`)) : base.run(args);
+        expect(await runPublish({ ...base, run })).toBe(1);
+        const err = s.ctx.err.join("");
+        expect(err).toContain("origin refused the push of main (a branch protection, a repository rule or a server hook).");
+        expect(err).not.toContain("git pull --no-rebase");
+    });
+
+    it("gives the pull hint for newer commits on origin even when the remote URL contains a refusal word", async () => {
+        const s = await scenario();
+        const base = s.input();
+        const run: RunGit = (args) =>
+            args[0] === "push" && args[2]?.includes(":refs/heads/")
+                ? Promise.reject(new Error("git push failed: To github.com:declined-gh006-labs/plugin.git\n ! [rejected] abc -> main (fetch first)\nerror: failed to push some refs"))
+                : base.run(args);
+        expect(await runPublish({ ...base, run })).toBe(1);
+        const err = s.ctx.err.join("");
+        expect(err).toContain("git pull --no-rebase");
+        expect(err).not.toContain("a branch protection, a repository rule or a server hook");
+    });
+
     it("reports another push failure with the command to run by hand", async () => {
         const s = await scenario();
         const base = s.input();

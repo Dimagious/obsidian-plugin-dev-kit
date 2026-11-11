@@ -1,6 +1,6 @@
 ---
 name: build
-description: Build, bundle or watch an Obsidian plugin that uses obsidian-plugin-dev-kit (opdk) with `opdk build`, `opdk build-css`, `opdk assert-bundle` or `opdk build --vault`. Use it when the build or the bundle check fails, when a plugin works on desktop but breaks on mobile ("process is not defined", Node-only code in main.js), or when replacing a plugin's own esbuild, build-css or build-vault scripts. Not for lint or scorecard warnings (scanner), Playwright specs (e2e) or films and screenshots (demo).
+description: Build, bundle or watch an Obsidian plugin that uses obsidian-plugin-dev-kit (opdk) with `opdk build`, `opdk build-css`, `opdk assert-bundle` or `opdk build --vault`. Use it when the build or the bundle check fails, when a plugin works on desktop but breaks on mobile ("process is not defined", Node-only code in main.js), or when replacing a plugin's own esbuild, build-css or build-vault scripts. Not for lint or scorecard warnings (scanner), tagging and publishing a release (release), Playwright specs (e2e) or films and screenshots (demo).
 ---
 
 # opdk build module

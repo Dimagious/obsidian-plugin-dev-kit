@@ -14,7 +14,7 @@ Every Obsidian plugin needs the same tooling around its code: a bundle that also
 |---|---|
 | Build | esbuild for the browser platform, so the bundle works on mobile, plus a check that fails if Node-only code gets into `main.js`; CSS build; copy into a dev vault in watch mode |
 | Scanner and lint | `opdk scan` runs the community plugin scanner's ESLint configuration and its CSS, source and manifest checks before you release, with `eslint-plugin-obsidianmd` pinned in one place; `obsidianPlugin()` gives your own `eslint.config.js` the same base |
-| Release | Version sync between `package.json`, `manifest.json` and `versions.json`, tag checks, and a reusable GitHub release workflow with build provenance |
+| Release | `opdk release check` for CI and before a tag: versions in `package.json`, `manifest.json`, `package-lock.json` and `versions.json`, the manifest rules of the official Obsidian action, a CHANGELOG section, a production build built twice (working tree and committed tree) and compared, and the `minAppVersion` against the API the code calls. `opdk release patch` (or `minor`, `major`, `X.Y.Z`) bumps the files, moves the `[Unreleased]` notes under the new version, commits and tags, pushes only the tag, waits for the kit's reusable GitHub workflow, verifies its draft release (files, bytes against a local build of the tag, notes, build provenance), publishes it and only then pushes the branch. Release notes come from the CHANGELOG, and no zip is made unless asked |
 | Unit tests | A Vitest preset with coverage thresholds, and DOM helpers Obsidian adds (`createEl`, `createDiv`, `setText`) |
 | End-to-end tests | Playwright in a real Obsidian through Electron: an isolated vault per test, the trust dialog never shown, readiness by plugin state instead of sleeps, a check of which Obsidian version ran, a trace and a video of the Obsidian window for failures, and helpers for settings, commands, the editor, IME composition, the mobile layout and fakes. Launch over CDP and a mode for recording tests by hand with the Playwright Inspector are planned |
 | Demo films | Films of stills from the real Obsidian: a frozen UI, a visible cursor or tap dot, captions, slow typing, light and dark themes, and a privacy guard that refuses to film a vault that is not the plugin's own; `opdk demo` encodes them to MP4, GIF and poster with ffmpeg, can put a phone film beside its captions, and copies stills (shot at a fixed density) for the README and listings. No audio |
@@ -68,6 +68,29 @@ The `demo` fixture records your plugin in the real Obsidian as a film of stills:
 
 Quick start: `demo.film({ kind: "phone", captions })` and `film.shot({ hold })` in a gated spec, then `npx opdk demo`. For captions beside the phone, set `layout: "phone-captions"` in the `demo` section of `opdk.config.mjs`. Details: [docs/demo.md](docs/demo.md).
 
+## Releases
+
+`opdk release` checks a commit, bumps the version everywhere, tags it and publishes the GitHub release, pushing the branch last so the manifest on the default branch moves only after the release is public. Plugins that pushed the branch and the tag together let the directory read a new `manifest.json` before the release workflow had finished, and their hand-written CHANGELOG never reached the release page. Here only the tag is pushed first, the kit's reusable workflow builds, attests and creates a draft with the CHANGELOG section as notes, and `opdk release` checks the draft byte for byte against a build of the tag on your machine before it publishes. The incidents behind this, in [docs/release.md](docs/release.md).
+
+Quick start: a tag workflow in the plugin that calls the kit's, pinned to a full commit SHA of the kit,
+
+```yaml
+# .github/workflows/release.yml
+name: Release
+on:
+  push:
+    tags: ['*.*.*']
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+jobs:
+  release:
+    uses: Dimagious/obsidian-plugin-dev-kit/.github/workflows/release.yml@<full commit SHA of the kit>
+```
+
+then `npx opdk release check` to see what would stop a release, and `npx opdk release patch` to cut one (it needs the GitHub CLI signed in with write access, and `scripts.build` must run `opdk build`). Details, every stop and how to resume: [docs/release.md](docs/release.md).
+
 ## Agent skills
 
 The repository is also a Claude Code plugin, `opdk`, with one skill per module so a coding agent working in your plugin knows the commands, the options and the traps of that module:
@@ -78,6 +101,7 @@ The repository is also a Claude Code plugin, `opdk`, with one skill per module s
 | `/opdk:scanner` | `opdk scan`, community plugin scorecard warnings, `obsidianPlugin()` in `eslint.config.js` |
 | `/opdk:e2e` | Playwright specs in the real Obsidian, readiness and timeout failures, helpers |
 | `/opdk:demo` | demo films, GIFs, MP4s, posters and README screenshots, `opdk demo` messages |
+| `/opdk:release` | `opdk release check`, cutting and publishing a release, a stopped release, the reusable release workflow |
 
 Claude picks a skill by its description, so you can also just ask ("film a demo GIF of my plugin"). Install from inside Claude Code:
 
@@ -95,10 +119,14 @@ No release has been tagged yet, so an installed plugin follows `main`: run `/plu
   - [x] Scanner and lint: `opdk scan`, `obsidianPlugin()`
   - [ ] End-to-end harness: launch, isolation, readiness, trace and video, and the helpers are done; CDP mode is pending
   - [x] Demo films: films of stills, phone layout, stills presets, `opdk demo` (no audio)
-- [ ] Wave 2: release tooling and the reusable workflow
+- [ ] Wave 2: release, unit-test preset, docs site and reusable CI
+  - [x] Release: `opdk release check`, `opdk release <bump>`, `opdk release publish`, `opdk release notes`, the reusable `release.yml`
+  - [ ] Unit-test preset
+  - [ ] Docs site
+  - [ ] Reusable CI
 - [ ] Wave 3: integration tests preset
-- [ ] Wave 4: unit-test helpers and Obsidian mocks
-- [x] Agent skills for build, scanner, e2e and demo, installable as a Claude Code plugin
+- [ ] Wave 4: CDP launch mode, if a plugin needs the shipped Obsidian binary
+- [x] Agent skills for build, scanner, e2e, demo and release, installable as a Claude Code plugin
 - [ ] Agent skills for the modules that are still to come, written along with them
 
 Each module moves to Garmy first, then Dashy, then Snipsy. A plugin may change when it adopts a module (for example, Snipsy's bundle switches to the browser platform); each such change is listed in that plugin's changelog and checked by its end-to-end tests.
