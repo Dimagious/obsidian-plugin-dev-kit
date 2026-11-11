@@ -152,6 +152,15 @@ fi
 rm src/late.ts
 git add -A
 
+echo "--- npx opdk demo (no films recorded; Playwright and Electron are not installed, and the command must not need them)"
+demo_status=0
+demo_output="$(env -u FORCE_COLOR -u NO_COLOR -u GITHUB_ACTIONS npx --no -- opdk demo 2>&1)" || demo_status=$?
+printf '%s\n' "$demo_output"
+if [ "$demo_status" -ne 1 ] || ! printf '%s' "$demo_output" | grep -q 'no films in'; then
+    echo "smoke: opdk demo exited with $demo_status, expected 1 and a 'no films in' message" >&2
+    exit 1
+fi
+
 echo "--- import obsidian-plugin-dev-kit"
 node --input-type=module -e "
 import { defineConfig } from 'obsidian-plugin-dev-kit';

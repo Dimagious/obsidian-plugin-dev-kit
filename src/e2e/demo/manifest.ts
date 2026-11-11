@@ -80,10 +80,10 @@ export function assertKind(kind: unknown): FilmKind {
     return kind;
 }
 
-export function assertFps(fps: number | undefined): number {
+export function assertFps(fps: number | undefined, what = "film()"): number {
     const value = fps ?? DEFAULT_FPS;
     if (!Number.isInteger(value) || value < 1 || value > MAX_FPS) {
-        throw new Error(`film(): fps must be a whole number from 1 to ${String(MAX_FPS)}, got ${String(value)}.`);
+        throw new Error(`${what}: fps must be a whole number from 1 to ${String(MAX_FPS)}, got ${String(value)}.`);
     }
     return value;
 }
@@ -229,8 +229,8 @@ export function parseFilmManifest(text: string): FilmManifest {
         version: MANIFEST_VERSION,
         name,
         kind: assertKind(kind),
-        fps,
-        scale,
+        fps: assertFps(fps, "Film manifest"),
+        scale: assertScale(scale, "Film manifest"),
         theme,
         captions: captionList,
         width,

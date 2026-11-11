@@ -41,6 +41,16 @@ describe("loadConfig", () => {
         expect(await loadConfig(dir)).toEqual({ build: { minify: false }, scan: { ignore: ["design/**"] } });
     });
 
+    it("loads and validates the demo section", async () => {
+        write('export default { demo: { output: "media", gif: { colors: 64 }, films: { tour: { layout: "phone-captions" } } } };\n');
+        expect(await loadConfig(dir)).toEqual({ demo: { output: "media", gif: { colors: 64 }, films: { tour: { layout: "phone-captions" } } } });
+    });
+
+    it("names the config file and the key of an invalid demo section", async () => {
+        write("export default { demo: { gif: { colors: 1 } } };\n");
+        await expect(loadConfig(dir)).rejects.toThrow(`${path.join(dir, "opdk.config.mjs")}: "demo.gif.colors" must be a whole number from 2 to 256.`);
+    });
+
     it("names the config file and the key of an invalid scan section", async () => {
         write('export default { scan: { ignore: [1] } };\n');
         await expect(loadConfig(dir)).rejects.toThrow(`${path.join(dir, "opdk.config.mjs")}: "scan.ignore" must be an array of glob strings`);
@@ -53,7 +63,7 @@ describe("loadConfig", () => {
 
     it("rejects unknown top-level keys and lists the allowed ones", async () => {
         write("export default { biuld: {} };\n");
-        await expect(loadConfig(dir)).rejects.toThrow(/unknown top-level key\(s\): biuld\. Allowed keys: build, scan\./);
+        await expect(loadConfig(dir)).rejects.toThrow(/unknown top-level key\(s\): biuld\. Allowed keys: build, scan, demo\./);
     });
 
     it("names every unknown key", async () => {
