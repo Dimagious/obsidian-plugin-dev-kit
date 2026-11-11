@@ -30,15 +30,29 @@ export function repositoryFreeEnvironment(env: NodeJS.ProcessEnv): NodeJS.Proces
 const REMOTE_COMMANDS = new Set(["fetch", "ls-remote", "push"]);
 
 /**
+ * The environment of a command that talks to the remote: no password prompt on the terminal, and ssh in batch mode
+ * (no passphrase, host key or password question either) unless the user chose their own ssh through `GIT_SSH_COMMAND`,
+ * `GIT_SSH` or `core.sshCommand`.
+ */
+export function remoteEnvironment(env: NodeJS.ProcessEnv, hasOwnSsh: boolean): NodeJS.ProcessEnv {
+    const own = hasOwnSsh || (env.GIT_SSH_COMMAND ?? "") !== "" || (env.GIT_SSH ?? "") !== "";
+    return { ...env, GIT_TERMINAL_PROMPT: "0", ...(!own && { GIT_SSH_COMMAND: "ssh -o BatchMode=yes" }) };
+}
+
+/**
  * The real thing. `baseEnv` is the process environment unless a test passes a hermetic one; the user's git config
  * is respected either way.
  */
 export function createRunGit(cwd: string, baseEnv: NodeJS.ProcessEnv = process.env): RunGit {
+    const base = repositoryFreeEnvironment(baseEnv);
+    let ownSsh: Promise<boolean> | undefined;
+    const hasOwnSsh = (): Promise<boolean> =>
+        (ownSsh ??= execFileAsync("git", ["config", "--get", "core.sshCommand"], { cwd, env: base, encoding: "utf8" }).then(
+            ({ stdout }) => stdout.trim() !== "",
+            () => false,
+        ));
     return async (args) => {
-        const env = repositoryFreeEnvironment(baseEnv);
-        if (REMOTE_COMMANDS.has(args[0] ?? "")) {
-            env.GIT_TERMINAL_PROMPT = "0";
-        }
+        const env = REMOTE_COMMANDS.has(args[0] ?? "") ? remoteEnvironment(base, await hasOwnSsh()) : base;
         try {
             const { stdout } = await execFileAsync("git", [...args], { cwd, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
             return stdout;

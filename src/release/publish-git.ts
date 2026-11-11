@@ -34,7 +34,7 @@ export async function readTagFacts({ run, version, defaultBranchOverride }: TagF
         throw new StepFailure(`there is no local tag ${version}.`, `Cut the release first with \`opdk release <patch|minor|major>\`, or pass the version of an existing tag: \`opdk release publish X.Y.Z\`.`);
     }
     if ((await tryGit(run, ["cat-file", "-t", ref])) !== "tag") {
-        throw new StepFailure(`the tag ${version} is a lightweight tag.`, `Release tags are annotated. Tags are never moved, so pick a new version with \`opdk release <patch|minor|major>\`.`);
+        throw new StepFailure(`the tag ${version} is a lightweight tag.`, `Release tags are annotated. Tags are never moved, so pick a new version with \`opdk release <patch|minor|major>\`.`, [], false);
     }
     const manifestText = await tryGit(run, ["show", `${ref}:manifest.json`]);
     let manifest: Record<string, unknown> | undefined;
@@ -44,10 +44,10 @@ export async function readTagFacts({ run, version, defaultBranchOverride }: TagF
         manifest = undefined;
     }
     if (manifest === undefined) {
-        throw new StepFailure(`manifest.json at the tag ${version} is missing or not valid JSON.`, "Tags are never moved: fix it and release a new version.");
+        throw new StepFailure(`manifest.json at the tag ${version} is missing or not valid JSON.`, "Tags are never moved: fix it and release a new version with `opdk release patch`.", [], false);
     }
     if (manifest.version !== version) {
-        throw new StepFailure(`the tag ${version} holds a manifest.json with version ${String(manifest.version)}.`, "Obsidian looks for a release tagged exactly like the manifest version. Tags are never moved: release a new version.");
+        throw new StepFailure(`the tag ${version} holds a manifest.json with version ${String(manifest.version)}.`, "Obsidian looks for a release tagged exactly like the manifest version. Tags are never moved: release a new version with `opdk release patch`.", [], false);
     }
     const symbolic = defaultBranchOverride === undefined ? await tryGit(run, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]) : undefined;
     const branch = defaultBranchOverride ?? symbolic?.replace(/^refs\/remotes\/origin\//, "");
@@ -81,7 +81,7 @@ export async function remoteTagState(run: RunGit, facts: TagFacts): Promise<Remo
 export async function pushTag(run: RunGit, facts: TagFacts): Promise<"pushed" | "already-there"> {
     const state = await remoteTagState(run, facts);
     if (state === "different") {
-        throw new StepFailure(`origin already has a tag ${facts.version} that points elsewhere.`, "Tags are never moved or deleted. Pick a version above the latest tag.");
+        throw new StepFailure(`origin already has a tag ${facts.version} that points elsewhere.`, "Tags are never moved or deleted. Pick a version above the latest tag with `opdk release patch` (or minor, major).", [], false);
     }
     if (state === "same") {
         return "already-there";
@@ -93,12 +93,21 @@ export async function pushTag(run: RunGit, facts: TagFacts): Promise<"pushed" | 
 const REJECTED = /rejected|non-fast-forward|fetch first|failed to push some refs/i;
 
 /**
- * Pushes the default branch without force. The release is public by now, so a rejection (somebody pushed meanwhile)
- * is reported as such, with the way out that keeps the tagged commit in the history.
+ * Pushes the release commit to the default branch without force, not the local branch tip: later local commits are
+ * not part of the release and stay local. When origin's branch already is that commit or contains it (an earlier run
+ * got as far, or the merge was pushed by hand after a rejection), nothing is pushed. The release is public by now, so
+ * a rejection (somebody pushed meanwhile) is reported as such, with the way out that keeps the tagged commit in the
+ * history.
  */
-export async function pushBranch(run: RunGit, facts: TagFacts): Promise<void> {
+export async function pushBranch(run: RunGit, facts: TagFacts): Promise<"pushed" | "already-there"> {
+    const listed = await run(["ls-remote", "origin", `refs/heads/${facts.branch}`]);
+    const remoteTip = listed.split("\n").find((entry) => entry.endsWith(`\trefs/heads/${facts.branch}`))?.split("\t")[0];
+    if (remoteTip !== undefined && (remoteTip === facts.commit || (await tryGit(run, ["merge-base", "--is-ancestor", facts.commit, remoteTip])) !== undefined)) {
+        return "already-there";
+    }
     try {
-        await run(["push", "origin", `refs/heads/${facts.branch}:refs/heads/${facts.branch}`]);
+        await run(["push", "origin", `${facts.commit}:refs/heads/${facts.branch}`]);
+        return "pushed";
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (REJECTED.test(message)) {

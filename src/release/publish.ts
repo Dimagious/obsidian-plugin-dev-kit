@@ -41,18 +41,40 @@ export const DEFAULT_POLL_MS = 10_000;
 /** After a `gh release edit`, GitHub lists the release as public at once; a short retry covers replication lag. */
 const LATEST_ATTEMPTS = 5;
 
-async function confirmLatest(gh: RunGh, slug: RepoSlug, version: string, clock: Clock): Promise<string | undefined> {
+interface LatestCheck {
+    readonly isLatest: boolean;
+    /** The tag GitHub calls the latest release; undefined when it has none (the API answers 404 then). */
+    readonly seen: string | undefined;
+}
+
+async function confirmLatest(gh: RunGh, slug: RepoSlug, version: string, clock: Clock): Promise<LatestCheck> {
     let seen: string | undefined;
     for (let attempt = 0; attempt < LATEST_ATTEMPTS; attempt++) {
-        const latest = asRecord(JSON.parse(await gh.text(["api", `repos/${slugText(slug)}/releases/latest`])));
-        seen = typeof latest?.tag_name === "string" ? latest.tag_name : undefined;
+        seen = await latestTag(gh, slug);
         if (seen === version) {
-            return undefined;
+            return { isLatest: true, seen };
         }
         await clock.sleep(2_000);
     }
-    return seen;
+    return { isLatest: false, seen };
 }
+
+/** `releases/latest` answers 404 while the repository has no published release: that is "none", not a failure. */
+async function latestTag(gh: RunGh, slug: RepoSlug): Promise<string | undefined> {
+    let json: string;
+    try {
+        json = await gh.text(["api", `repos/${slugText(slug)}/releases/latest`]);
+    } catch (error) {
+        if (error instanceof Error && error.message.includes("HTTP 404")) {
+            return undefined;
+        }
+        throw error;
+    }
+    const latest = asRecord(JSON.parse(json));
+    return typeof latest?.tag_name === "string" ? latest.tag_name : undefined;
+}
+
+const describeLatest = (seen: string | undefined): string => (seen === undefined ? "GitHub has no latest release" : `GitHub's latest release is ${seen}`);
 
 /**
  * The push flow, from a local annotated tag: push only the tag, wait for the release workflow, verify its draft
@@ -62,10 +84,10 @@ async function confirmLatest(gh: RunGh, slug: RepoSlug, version: string, clock: 
 export async function runPublish(input: PublishInput): Promise<number> {
     const { version, reporter } = input;
     const cleanups = new CleanupSet();
-    const state: { stage: Stage; branch: string; interrupted: boolean } = { stage: "preflight", branch: "<default branch>", interrupted: false };
+    const state: { stage: Stage; branch: string; interrupted: boolean; releasePublic: boolean } = { stage: "preflight", branch: "<default branch>", interrupted: false, releasePublic: false };
     const unregister = input.interrupt?.onInterrupt(() => {
         state.interrupted = true;
-        const report = stopReport(state.stage, version, state.branch, { interrupted: true });
+        const report = stopReport(state.stage, version, state.branch, { interrupted: true, releasePublic: state.releasePublic });
         reporter.failure("release", `${version}: ${report.where}`, { details: report.state, hint: `Resume with: ${report.resume}` });
         try {
             cleanups.run();
@@ -82,19 +104,23 @@ export async function runPublish(input: PublishInput): Promise<number> {
                     state.branch = facts.branch;
                 }
             },
+            releaseIsPublic: () => {
+                state.releasePublic = true;
+            },
         });
         return state.interrupted ? INTERRUPTED_EXIT : 0;
     } catch (error) {
         if (state.interrupted) {
             return INTERRUPTED_EXIT;
         }
-        const report = stopReport(state.stage, version, state.branch, { interrupted: false });
+        const report = stopReport(state.stage, version, state.branch, { interrupted: false, releasePublic: state.releasePublic });
         if (error instanceof StepFailure) {
             reporter.failure("release", `${version}: ${error.message}`, { details: error.details, hint: error.hint });
         } else {
             reporter.failure("release", `${version}: ${error instanceof Error ? error.message : String(error)}`);
         }
-        reporter.failure("release", `${report.where}.`, { details: report.state, hint: `Resume with: ${report.resume}` });
+        const resumable = !(error instanceof StepFailure) || error.resumable;
+        reporter.failure("release", `${report.where}.`, { details: report.state, hint: resumable ? `Resume with: ${report.resume}` : "Resuming would stop at the same place. Fix the cause and release a new version: opdk release patch" });
         return 1;
     } finally {
         unregister?.();
@@ -108,6 +134,8 @@ export async function runPublish(input: PublishInput): Promise<number> {
 
 interface Progress {
     enter(stage: Stage, facts?: TagFacts): void;
+    /** The release is public on GitHub; every later stop says so. */
+    releaseIsPublic(): void;
 }
 
 async function flow(input: PublishInput, cleanups: CleanupSet, progress: Progress): Promise<void> {
@@ -127,8 +155,12 @@ async function flow(input: PublishInput, cleanups: CleanupSet, progress: Progres
     const pushed = await pushTag(run, facts);
     reporter.success("git", pushed === "pushed" ? `pushed the tag ${version} (only the tag; the branch waits for the release)` : `the tag ${version} is already on origin`);
 
+    progress.enter("release-lookup");
     let release = await fetchRelease(gh, slug, version);
     let runUrl: string | undefined;
+    if (release !== undefined && !release.draft) {
+        progress.releaseIsPublic();
+    }
     if (release === undefined || release.draft) {
         progress.enter("workflow");
         const finished = await waitForWorkflow({ gh, slug, version, commit: facts.commit, reporter, clock, timeoutMs: input.timeoutMs, appearMs: input.appearMs, pollMs: input.pollMs });
@@ -155,20 +187,21 @@ async function flow(input: PublishInput, cleanups: CleanupSet, progress: Progres
             throw new StepFailure(`the release ${version} is still a draft after publishing.`, `Open ${release.url} and publish it by hand, then run \`opdk release publish ${version}\` to push the branch.`);
         }
         release = after;
+        progress.releaseIsPublic();
     }
     progress.enter("latest");
-    const notLatest = await confirmLatest(gh, slug, version, clock);
-    if (notLatest !== undefined && wasDraft) {
-        throw new StepFailure(`the release ${version} is public but GitHub's latest release is ${notLatest}.`, `Mark it as latest at ${release.url} (Edit, then "Set as the latest release"), then run \`opdk release publish ${version}\`.`);
+    const latest = await confirmLatest(gh, slug, version, clock);
+    if (!latest.isLatest && wasDraft) {
+        throw new StepFailure(`the release ${version} is public but ${describeLatest(latest.seen)}.`, `Mark it as latest at ${release.url} (Edit, then "Set as the latest release"), then run \`opdk release publish ${version}\`.`);
     }
-    if (notLatest !== undefined) {
-        reporter.warn("release", `GitHub's latest release is ${notLatest}, not ${version}.`);
+    if (!latest.isLatest) {
+        reporter.warn("release", `${describeLatest(latest.seen)}, not ${version}.`);
     }
-    reporter.success("release", `${version} is public${notLatest === undefined ? " and the latest release" : ""}: ${release.url}`);
+    reporter.success("release", `${version} is public${latest.isLatest ? " and the latest release" : ""}: ${release.url}`);
 
     progress.enter("branch");
-    await pushBranch(run, facts);
-    reporter.success("git", `pushed ${facts.branch} (no force)`);
+    const pushedBranch = await pushBranch(run, facts);
+    reporter.success("git", pushedBranch === "pushed" ? `pushed the release commit to ${facts.branch} (no force)` : `${facts.branch} on origin already holds the release commit`);
 
     summary(reporter, { repo, version, release, runUrl, branch: facts.branch });
 }
@@ -181,7 +214,7 @@ async function findDraft(gh: RunGh, slug: RepoSlug, version: string, clock: Cloc
         }
         await clock.sleep(5_000);
     }
-    throw new StepFailure(`the workflow succeeded but there is no release for ${version}.`, "Its last step creates a draft release; read the run log. Fix the cause, then release a new patch version.");
+    throw new StepFailure(`the workflow succeeded but there is no release for ${version}.`, "The release job's last step creates a draft release; read the run log. Fix the cause, then release a new patch version.", [], false);
 }
 
 function summary(reporter: Reporter, { repo, version, release, runUrl, branch }: { repo: string; version: string; release: ReleaseInfo; runUrl: string | undefined; branch: string }): void {

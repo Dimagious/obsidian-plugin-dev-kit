@@ -1,22 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { assetProblems, expectedAssets, findRelease, parseRelease, zipAssetName, type ReleaseInfo } from "./release-assets.js";
+import { assetProblems, expectedAssets, parseRelease, releasesOfTag, zipAssetName, type ReleaseInfo } from "./release-assets.js";
 
 const asset = (name: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ id: 1, name, size: 10, state: "uploaded", ...extra });
 const release = (assets: Record<string, unknown>[], extra: Record<string, unknown> = {}): Record<string, unknown> => ({ id: 9, tag_name: "1.2.3", draft: true, prerelease: false, html_url: "https://example.com/r", assets, ...extra });
 
-describe("findRelease", () => {
-    it("finds a draft by tag among several releases", () => {
+describe("releasesOfTag", () => {
+    it("finds a draft by tag among several releases and counts the page", () => {
         const json = JSON.stringify([release([], { tag_name: "1.2.4", id: 10 }), release([asset("main.js")])]);
-        expect(findRelease(json, "1.2.3")).toEqual({ id: 9, tag: "1.2.3", draft: true, prerelease: false, url: "https://example.com/r", assets: [{ id: 1, name: "main.js", size: 10, state: "uploaded" }] });
+        expect(releasesOfTag(json, "1.2.3")).toEqual({ count: 2, found: [{ id: 9, tag: "1.2.3", draft: true, prerelease: false, url: "https://example.com/r", assets: [{ id: 1, name: "main.js", size: 10, state: "uploaded" }] }] });
     });
 
-    it("returns undefined when the tag has no release, and skips malformed entries", () => {
-        expect(findRelease(JSON.stringify([release([], { tag_name: "1.0.0" }), "junk", null]), "1.2.3")).toBeUndefined();
-        expect(findRelease("[]", "1.2.3")).toBeUndefined();
+    it("returns every release of the tag, so a duplicate is visible", () => {
+        const json = JSON.stringify([release([], { id: 1 }), release([], { id: 2, draft: false })]);
+        expect(releasesOfTag(json, "1.2.3").found.map((entry) => entry.id)).toEqual([1, 2]);
+    });
+
+    it("returns nothing when the tag has no release, and skips malformed entries", () => {
+        expect(releasesOfTag(JSON.stringify([release([], { tag_name: "1.0.0" }), "junk", null]), "1.2.3")).toEqual({ found: [], count: 3 });
+        expect(releasesOfTag("[]", "1.2.3")).toEqual({ found: [], count: 0 });
     });
 
     it("rejects a payload that is not a list", () => {
-        expect(() => findRelease("{}", "1.2.3")).toThrow("did not return a list of releases");
+        expect(() => releasesOfTag("{}", "1.2.3")).toThrow("did not return a list of releases");
     });
 });
 

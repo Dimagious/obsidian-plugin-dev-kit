@@ -71,22 +71,32 @@ opdk release <patch|minor|major|X.Y.Z>  cuts a release. Preflight: inside a git 
 The push flow (also \`opdk release publish [X.Y.Z]\`, which starts from an existing local tag and continues
 after any stop; every step checks what is already done). It needs the GitHub CLI, signed in with write access
 to the repository origin points at (checked before anything is bumped), and a workflow in the plugin that
-runs on tag pushes and calls the kit's release workflow (.github/workflows/release.yml of the kit). It:
+runs on tag pushes and calls the kit's release workflow: uses: Dimagious/obsidian-plugin-dev-kit/.github/workflows/release.yml@<full
+commit SHA of the kit>. Call it, do not copy it: the attestations are checked against the kit's file. publish
+without a version uses the version in manifest.json; --dry-run never reaches GitHub, so it skips the gh check. The
+plugin's build script (build, else build:plugin, else compile) must run \`opdk build\`: the assets are compared
+with an \`opdk build\` of the tag, and a plugin that builds some other way fails that comparison after the tag is
+already pushed. It:
   1. pushes only the tag (git push origin refs/tags/X.Y.Z); never the branch yet, never with force;
-  2. waits for the workflow run of that tag (a progress line when its state changes, 20 minutes by default,
-     --timeout <minutes> to change); when it fails it prints the run URL and stops, the tag stays;
+  2. waits for the run of the kit's release workflow on that commit (other workflows on the same push, such as
+     Pages, are ignored; a progress line when its state changes, 20 minutes by default, --timeout <minutes> to
+     change); when it fails it prints the run URL and stops, the tag stays. If no such run starts within 3
+     minutes, the plugin's tag workflow does not call the kit's release.yml;
   3. checks the draft release: a draft, main.js and manifest.json, styles.css only if the plugin has CSS, no
      other asset (--zip also expects <id>-<version>.zip); downloads the assets and compares them byte for byte
      with a build of the tagged commit made here (the committed-tree build of the reproducible check) and
-     with the committed manifest.json; runs gh attestation verify on each attested file for the repository,
-     the tag and the tagged commit;
+     with the committed manifest.json (the zip is checked for presence and size only); runs gh attestation
+     verify on each attested file for the repository, the tag, the tagged commit and the signer, which must be
+     the kit's release.yml at any ref (--cert-identity-regex, anchored); two releases for one tag stop it;
   4. publishes it (gh release edit --draft=false --latest) and confirms it is public and the latest release;
-  5. pushes the branch (git push origin <default branch>, no force). When origin rejects it the release is
-     already public: the message says to merge origin's commits without rewriting the release commit;
+  5. pushes the release commit to the default branch (no force; later local commits stay local, and nothing is
+     pushed when origin already holds the commit). When origin rejects it the release is already public: the
+     message says to merge origin's commits without rewriting the release commit;
   6. prints the release and run URLs.
   Every stop, and Ctrl+C (exit 130), prints what is on origin and the command to resume:
-  opdk release publish X.Y.Z. A failed workflow is fixed by a new patch version, or re-run on GitHub and
-  resumed; nothing is ever moved or deleted.
+  opdk release publish X.Y.Z. A stop whose hint says to release a new version prints opdk release patch instead.
+  A failed workflow is fixed by a new patch version, or re-run on GitHub (delete a draft it left behind first)
+  and resumed; nothing is ever moved or deleted by opdk.
 
 opdk release notes [X.Y.Z]  prints the body of the "## [X.Y.Z]" section of the changelog (X.Y.Z defaults to
   the manifest version): the release workflow uses it for the release notes. Exit 1 when the section is

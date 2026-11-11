@@ -5,13 +5,13 @@ const report = (stage: Stage, interrupted = false): ReturnType<typeof stopReport
 
 describe("stopReport", () => {
     it("always names the resume command", () => {
-        for (const stage of ["preflight", "gh", "tag", "workflow", "verify", "publish", "latest", "branch"] as const) {
+        for (const stage of ["preflight", "gh", "tag", "release-lookup", "workflow", "verify", "publish", "latest", "branch"] as const) {
             expect(report(stage).resume).toBe("opdk release publish 1.2.3");
         }
     });
 
     it("says nothing was pushed before the tag", () => {
-        expect(report("gh").state).toEqual(["Nothing was pushed."]);
+        expect(report("gh").state).toEqual(["Nothing new was pushed."]);
         expect(report("preflight").where).toBe("stopped while checking the tag and the branch");
     });
 
@@ -22,9 +22,21 @@ describe("stopReport", () => {
     });
 
     it("says the tag is on origin and the release not public while waiting and verifying", () => {
-        for (const stage of ["workflow", "verify"] as const) {
+        for (const stage of ["release-lookup", "workflow", "verify"] as const) {
             expect(report(stage).state).toEqual(["The tag 1.2.3 is on origin.", "The release is not public (a draft at most).", "The branch main was not pushed."]);
         }
+    });
+
+    it("says the release is public when a stop comes after it became public (a resume after a failed branch push)", () => {
+        for (const stage of ["release-lookup", "workflow", "verify", "publish"] as const) {
+            const state = stopReport(stage, "1.2.3", "main", { interrupted: true, releasePublic: true }).state;
+            expect(state).toEqual(["The tag 1.2.3 is on origin.", "The release 1.2.3 is public.", "The branch main was not pushed."]);
+            expect(state.join(" ")).not.toContain("not public");
+        }
+    });
+
+    it("names the lookup of the release after the tag push", () => {
+        expect(report("release-lookup").where).toBe("stopped while looking up the release");
     });
 
     it("warns about the publish call and the branch push in flight", () => {
@@ -41,5 +53,10 @@ describe("StepFailure", () => {
         const failure = new StepFailure("it broke", "do this", ["a", "b"]);
         expect([failure.message, failure.hint, failure.details, failure.name]).toEqual(["it broke", "do this", ["a", "b"], "StepFailure"]);
         expect(new StepFailure("x", "y").details).toEqual([]);
+    });
+
+    it("is resumable unless it says otherwise", () => {
+        expect(new StepFailure("x", "y").resumable).toBe(true);
+        expect(new StepFailure("x", "y", [], false).resumable).toBe(false);
     });
 });

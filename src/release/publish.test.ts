@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createContext, type CapturedContext } from "../test-support/plugin-fixture.js";
-import { FakeGithub, fakeClock } from "../test-support/fake-github.js";
+import { FakeGithub, fakeClock, kitRun } from "../test-support/fake-github.js";
 import { createReleaseRepo, hermeticGitEnv, type ReleaseRepo } from "../test-support/release-fixture.js";
 import type { TaggedBuild } from "./build-tagged.js";
 import type { RunGit } from "./git.js";
@@ -75,7 +75,8 @@ async function scenario(): Promise<Scenario> {
     const commit = current.git("rev-parse", "1.0.1^{commit}").trim();
     const manifest = Buffer.from(current.git("show", "1.0.1:manifest.json"));
     const github = new FakeGithub(SLUG, "1.0.1");
-    github.runs = [{ databaseId: 42, status: "completed", conclusion: "success", event: "push", headSha: commit, url: `https://github.com/${SLUG}/actions/runs/42`, workflowName: "Release", createdAt: "2026-11-11T10:00:00Z" }];
+    github.commit = commit;
+    github.runs = [kitRun(SLUG, commit)];
     github.release = {
         draft: true,
         assets: [
@@ -145,11 +146,15 @@ describe("runPublish", () => {
         expect(s.repo.originGit("rev-parse", "1.0.1^{commit}").trim()).toBe(s.commit);
 
         const order = github.calls.map((call) => call.split(" ").slice(0, 2).join(" "));
-        expect(order.indexOf("repo view")).toBeLessThan(order.indexOf("run list"));
-        expect(order.indexOf("run list")).toBeLessThan(order.indexOf("release edit"));
+        const listed = github.calls.findIndex((call) => call.includes("/actions/runs?"));
+        expect(order.indexOf("repo view")).toBeLessThan(listed);
+        expect(listed).toBeLessThan(order.indexOf("release edit"));
+        expect(github.calls[listed]).toBe(`api repos/${SLUG}/actions/runs?head_sha=${s.commit}&event=push&per_page=100`);
         expect(github.calls.filter((call) => call.startsWith("attestation verify"))).toHaveLength(3);
         expect(github.calls.find((call) => call.startsWith("release edit"))).toBe(`release edit 1.0.1 --repo ${SLUG} --draft=false --latest`);
-        expect(github.calls.find((call) => call.startsWith("attestation verify"))).toMatch(new RegExp(`--repo ${SLUG} --signer-workflow Dimagious/obsidian-plugin-dev-kit/.github/workflows/release.yml --source-ref refs/tags/1.0.1 --source-digest ${s.commit}$`));
+        expect(github.calls.find((call) => call.startsWith("attestation verify"))).toContain(
+            ` --repo ${SLUG} --cert-identity-regex ^https://github\\.com/Dimagious/obsidian-plugin-dev-kit/\\.github/workflows/release\\.yml@ --source-ref refs/tags/1.0.1 --source-digest ${s.commit}`,
+        );
 
         const out = s.ctx.out.join("");
         expect(out).toContain(`✓ gh      ${SLUG}: signed in, admin access`);
@@ -158,7 +163,7 @@ describe("runPublish", () => {
         expect(out).toContain("main.js, manifest.json, styles.css equal a local build of 1.0.1");
         expect(out).toContain("✓ verify  attestations: main.js, manifest.json, styles.css verified");
         expect(out).toContain(`✓ release  1.0.1 is public and the latest release: https://github.com/${SLUG}/releases/tag/1.0.1`);
-        expect(out).toContain("✓ git     pushed main (no force)");
+        expect(out).toContain("✓ git     pushed the release commit to main (no force)");
         // The run had finished before opdk looked: no wait to report.
         expect(out).toContain("✓ wait    Release succeeded\n");
         expect(out).toContain(`workflow  https://github.com/${SLUG}/actions/runs/42`);
@@ -171,7 +176,7 @@ describe("runPublish", () => {
         const pushes = s.gitCalls.filter((args) => args[0] === "push");
         expect(pushes).toEqual([
             ["push", "origin", "refs/tags/1.0.1"],
-            ["push", "origin", "refs/heads/main:refs/heads/main"],
+            ["push", "origin", `${s.commit}:refs/heads/main`],
         ]);
         for (const args of s.gitCalls) {
             expect(args.filter((arg) => /^(--force|-f$|--force-with-lease|--mirror|--delete|--prune|\+)/.test(arg))).toEqual([]);
@@ -192,7 +197,7 @@ describe("runPublish", () => {
         s.github.release = { draft: false, assets: s.github.release?.assets ?? [] };
         s.github.latest = "1.0.1";
         expect(await runPublish(s.input())).toBe(0);
-        expect(s.github.calls.some((call) => call.startsWith("run list") || call.startsWith("release edit"))).toBe(false);
+        expect(s.github.calls.some((call) => call.includes("/actions/runs") || call.startsWith("release edit"))).toBe(false);
         expect(s.ctx.out.join("")).toContain("the release 1.0.1 is already public");
         expect(s.repo.originGit("rev-parse", "main").trim()).toBe(s.repo.git("rev-parse", "main").trim());
     });
@@ -227,7 +232,7 @@ describe("runPublish: before anything is pushed", () => {
         expect(err).toContain("the GitHub CLI (gh) is not installed.");
         expect(err).toContain("https://cli.github.com");
         expect(err).toContain("stopped while checking the GitHub CLI.");
-        expect(err).toContain("Nothing was pushed.");
+        expect(err).toContain("Nothing new was pushed.");
         expect(err).toContain("Resume with: opdk release publish 1.0.1");
         expect(remoteTags(s.repo)).toEqual(["1.0.0"]);
     });
@@ -275,6 +280,7 @@ describe("runPublish: before anything is pushed", () => {
         s.repo.git("tag", "light", "HEAD");
         expect(await runPublish(s.input({ version: "light" }))).toBe(1);
         expect(s.ctx.err.join("")).toContain("the tag light is a lightweight tag");
+        expect(s.ctx.err.join("")).not.toContain("Resume with");
 
         const mismatch = await scenario();
         mismatch.repo.git("tag", "-a", "1.0.2", "-m", "1.0.2", "HEAD");
@@ -292,6 +298,8 @@ describe("runPublish: before anything is pushed", () => {
         execFileSync("git", ["push", "--quiet", "origin", "refs/tags/1.0.1"], { cwd: other, env });
         expect(await runPublish(s.input())).toBe(1);
         expect(s.ctx.err.join("")).toContain("origin already has a tag 1.0.1 that points elsewhere");
+        expect(s.ctx.err.join("")).not.toContain("Resume with");
+        expect(s.ctx.err.join("")).toContain("opdk release patch");
     });
 
     it("needs the default branch to be known", async () => {
@@ -307,7 +315,7 @@ describe("runPublish: the workflow", () => {
     it("prints the run URL and stops when the workflow fails; the tag stays and the branch is not pushed", async () => {
         const s = await scenario();
         const originMain = s.repo.originGit("rev-parse", "main").trim();
-        s.github.runs = [{ ...(s.github.runs[0] ?? {}), status: "in_progress", conclusion: "" }];
+        s.github.runs = [kitRun(SLUG, s.commit, { status: "in_progress", conclusion: null })];
         s.github.runStates = ["in_progress/", "completed/failure"];
         expect(await runPublish(s.input())).toBe(1);
         const err = s.ctx.err.join("");
@@ -323,7 +331,7 @@ describe("runPublish: the workflow", () => {
 
     it("prints a progress line when the state changes and a heartbeat while it stays", async () => {
         const s = await scenario();
-        s.github.runs = [{ ...(s.github.runs[0] ?? {}), status: "queued", conclusion: "" }];
+        s.github.runs = [kitRun(SLUG, s.commit, { status: "queued", conclusion: null })];
         s.github.runStates = ["queued/", "in_progress/", ...Array<string>(10).fill("in_progress/"), "completed/success"];
         expect(await runPublish(s.input())).toBe(0);
         const out = s.ctx.out.join("");
@@ -335,11 +343,29 @@ describe("runPublish: the workflow", () => {
 
     it("picks the run of the tagged commit and ignores other runs", async () => {
         const s = await scenario();
-        s.github.runs = [
-            { databaseId: 99, status: "completed", conclusion: "failure", event: "push", headSha: "0".repeat(40), url: "https://example.com/other", workflowName: "Release", createdAt: "2026-11-12T10:00:00Z" },
-            ...s.github.runs,
-        ];
+        s.github.runs = [kitRun(SLUG, "0".repeat(40), { id: 99, conclusion: "failure", created_at: "2026-11-12T10:00:00Z" }), ...s.github.runs];
         expect(await runPublish(s.input())).toBe(0);
+        expect(s.ctx.out.join("")).toContain(`workflow  https://github.com/${SLUG}/actions/runs/42`);
+    });
+
+    it("waits for the kit's release run, not for a newer Pages run on the same commit", async () => {
+        const s = await scenario();
+        const pages = kitRun(SLUG, s.commit, { id: 77, name: "Pages", status: "completed", conclusion: "success", created_at: "2026-11-11T10:05:00Z", referenced_workflows: [] });
+        s.github.runs = [kitRun(SLUG, s.commit, { status: "in_progress", conclusion: null }), pages];
+        s.github.runStates = ["in_progress/", "completed/success"];
+        expect(await runPublish(s.input())).toBe(0);
+        const out = s.ctx.out.join("");
+        expect(out).toContain("· wait    Release run 42: in_progress");
+        expect(out).not.toContain("Pages");
+        expect(s.github.calls.filter((call) => call.endsWith("/actions/runs/77"))).toEqual([]);
+        expect(s.github.calls.some((call) => call.endsWith("/actions/runs/42"))).toBe(true);
+    });
+
+    it("does not take a run of a copy of the workflow or of another repository's workflow for the release run", async () => {
+        const s = await scenario();
+        s.github.runs = [kitRun(SLUG, s.commit, { referenced_workflows: [{ path: `${SLUG}/.github/workflows/release.yml@${"b".repeat(40)}`, sha: "b", ref: "main" }] })];
+        expect(await runPublish(s.input())).toBe(1);
+        expect(s.ctx.err.join("")).toContain("none of them calls the kit's release workflow");
     });
 
     it("stops with a hint when no run ever starts for the tag", async () => {
@@ -347,15 +373,15 @@ describe("runPublish: the workflow", () => {
         s.github.runs = [];
         expect(await runPublish(s.input())).toBe(1);
         const err = s.ctx.err.join("");
-        expect(err).toContain("no workflow run started for the tag 1.0.1 within 3 min.");
-        expect(err).toContain("push: tags");
+        expect(err).toContain("no release workflow run started for the tag 1.0.1 within 3 min.");
+        expect(err).toContain("must call the kit's workflow: `uses: Dimagious/obsidian-plugin-dev-kit/.github/workflows/release.yml@<full commit SHA of the kit>`");
         expect(err).toContain("is not pushed twice");
         expect(s.clock.elapsed()).toBeGreaterThanOrEqual(3 * 60_000);
     });
 
     it("stops at the timeout and names the run", async () => {
         const s = await scenario();
-        s.github.runs = [{ ...(s.github.runs[0] ?? {}), status: "in_progress", conclusion: "" }];
+        s.github.runs = [kitRun(SLUG, s.commit, { status: "in_progress", conclusion: null })];
         s.github.runStates = ["in_progress/"];
         expect(await runPublish(s.input({ timeoutMs: 60_000 }))).toBe(1);
         const err = s.ctx.err.join("");
@@ -365,7 +391,7 @@ describe("runPublish: the workflow", () => {
 
     it("treats a cancelled run as a failure", async () => {
         const s = await scenario();
-        s.github.runs = [{ ...(s.github.runs[0] ?? {}), conclusion: "cancelled" }];
+        s.github.runs = [kitRun(SLUG, s.commit, { conclusion: "cancelled" })];
         expect(await runPublish(s.input())).toBe(1);
         expect(s.ctx.err.join("")).toContain('ended with "cancelled"');
     });
@@ -387,7 +413,8 @@ describe("runPublish: the draft is checked before it is made public", () => {
         const err = s.ctx.err.join("");
         expect(err).toMatch(message);
         expect(err).toContain("Nothing was published.");
-        expect(err).toContain("Resume with: opdk release publish 1.0.1");
+        expect(err).toContain("opdk release patch");
+        expect(err).not.toContain("Resume with");
         expect(s.github.calls.some((call) => call.startsWith("release edit"))).toBe(false);
         expect(s.repo.originGit("rev-parse", "main").trim()).toBe(originMain);
         expect(leftovers()).toEqual([]);
@@ -485,11 +512,218 @@ describe("runPublish: the branch", () => {
     it("reports another push failure with the command to run by hand", async () => {
         const s = await scenario();
         const base = s.input();
-        const run: RunGit = (args) => (args[0] === "push" && args[2]?.startsWith("refs/heads/") ? Promise.reject(new Error("git push failed: remote: Permission denied")) : base.run(args));
+        const run: RunGit = (args) => (args[0] === "push" && args[2]?.includes(":refs/heads/") ? Promise.reject(new Error("git push failed: remote: Permission denied")) : base.run(args));
         expect(await runPublish({ ...base, run })).toBe(1);
         const err = s.ctx.err.join("");
         expect(err).toContain("could not push main: git push failed: remote: Permission denied");
         expect(err).toContain("run `git push origin main`");
+    });
+});
+
+describe("runPublish: stages and a release that is already public", () => {
+    it("reports the tag as pushed when the release lookup right after the push fails", async () => {
+        const s = await scenario();
+        const github = s.github;
+        const text = github.text.bind(github);
+        github.text = (args) => (args[1]?.includes("/releases?") === true ? Promise.reject(new Error("gh api releases failed: HTTP 502")) : text(args));
+        expect(await runPublish(s.input())).toBe(1);
+        const err = s.ctx.err.join("");
+        expect(err).toContain("stopped while looking up the release.");
+        expect(err).toContain("The tag 1.0.1 is on origin.");
+        expect(err).not.toContain("The tag 1.0.1 was not pushed");
+        expect(err).toContain("Resume with: opdk release publish 1.0.1");
+        expect(remoteTags(s.repo)).toEqual(["1.0.0", "1.0.1"]);
+    });
+
+    async function publicRelease(mutate: (s: Scenario) => void): Promise<Scenario> {
+        const s = await scenario();
+        s.repo.git("push", "--quiet", "origin", "refs/tags/1.0.1");
+        s.github.release = { draft: false, assets: s.github.release?.assets ?? [] };
+        s.github.latest = "1.0.1";
+        mutate(s);
+        expect(await runPublish(s.input())).toBe(1);
+        return s;
+    }
+
+    it("never says a public release is a draft or tells to delete it when its attestation does not verify", async () => {
+        const s = await publicRelease((current) => {
+            current.github.unattested.add("main.js");
+        });
+        const err = s.ctx.err.join("");
+        expect(err).toContain("the attestation of main.js does not verify");
+        expect(err).toContain("The release 1.0.1 is already public, so this flow changes nothing. Do not delete it");
+        expect(err).toContain("The release 1.0.1 is public.");
+        expect(err).not.toContain("not public");
+        expect(err).not.toContain("delete the draft");
+        expect(err).not.toContain("Nothing was published");
+        expect(err).not.toContain("Resume with");
+        expect(s.github.calls.some((call) => call.startsWith("release edit"))).toBe(false);
+        expect(s.repo.originGit("rev-parse", "main").trim()).not.toBe(s.repo.git("rev-parse", "main").trim());
+    });
+
+    it("says the same when the bytes of a public release differ", async () => {
+        const s = await publicRelease((current) => {
+            current.github.release = { draft: false, assets: [{ name: "main.js", bytes: Buffer.from("other\n") }, { name: "manifest.json", bytes: current.manifest }, { name: "styles.css", bytes: CSS }] };
+        });
+        const err = s.ctx.err.join("");
+        expect(err).toContain("main.js differs between the release asset and a build of the tag");
+        expect(err).toContain("Do not delete it");
+        expect(err).not.toContain("delete the draft");
+        expect(err).toContain("The release 1.0.1 is public.");
+    });
+
+    it("says the same when a public release lacks an asset", async () => {
+        const s = await publicRelease((current) => {
+            current.github.release = { draft: false, assets: current.github.release?.assets.filter((asset) => asset.name !== "styles.css") ?? [] };
+        });
+        expect(s.ctx.err.join("")).toContain("Do not delete it");
+        expect(s.ctx.err.join("")).toContain("The release 1.0.1 is public.");
+    });
+});
+
+describe("runPublish: reading the releases", () => {
+    it("reads every page of the release list", async () => {
+        const s = await scenario();
+        s.github.otherReleases = 150;
+        expect(await runPublish(s.input())).toBe(0);
+        const pages = s.github.calls.filter((call) => call.includes("/releases?per_page=100&page="));
+        expect(pages.some((call) => call.endsWith("page=2"))).toBe(true);
+    });
+
+    it("refuses two releases for one tag and keeps the tag", async () => {
+        const s = await scenario();
+        s.github.duplicateRelease = true;
+        expect(await runPublish(s.input())).toBe(1);
+        const err = s.ctx.err.join("");
+        expect(err).toContain("GitHub has 2 releases for the tag 1.0.1");
+        expect(err).toContain("delete the other(s) on GitHub");
+        expect(err).toContain("Resume with: opdk release publish 1.0.1");
+        expect(s.github.calls.some((call) => call.startsWith("release edit"))).toBe(false);
+    });
+
+    it("stops instead of guessing when the list is longer than it reads", async () => {
+        const s = await scenario();
+        s.github.otherReleases = 3000;
+        expect(await runPublish(s.input())).toBe(1);
+        expect(s.ctx.err.join("")).toContain("has more than 3000 releases");
+    });
+});
+
+describe("runPublish: GitHub's latest release", () => {
+    it("stops with a plain message when a repository with no latest release stays without one after publishing", async () => {
+        const s = await scenario();
+        s.github.publishKeepsLatest = true;
+        s.github.latest = undefined;
+        expect(await runPublish(s.input())).toBe(1);
+        expect(s.ctx.err.join("")).toContain("the release 1.0.1 is public but GitHub has no latest release.");
+    });
+
+    it("tolerates a 404 while the latest release appears (replication lag)", async () => {
+        const s = await scenario();
+        const github = s.github;
+        const text = github.text.bind(github);
+        let asked = 0;
+        github.text = (args) => {
+            if (args[1]?.endsWith("/releases/latest") === true && asked++ < 2) {
+                return Promise.reject(new Error("gh api releases/latest failed: gh: Not Found (HTTP 404)"));
+            }
+            return text(args);
+        };
+        expect(await runPublish(s.input())).toBe(0);
+        expect(asked).toBe(3);
+    });
+
+    it("passes another failure of the latest lookup on", async () => {
+        const s = await scenario();
+        const github = s.github;
+        const text = github.text.bind(github);
+        github.text = (args) => (args[1]?.endsWith("/releases/latest") === true ? Promise.reject(new Error("gh api releases/latest failed: HTTP 500")) : text(args));
+        expect(await runPublish(s.input())).toBe(1);
+        expect(s.ctx.err.join("")).toContain("HTTP 500");
+        expect(s.ctx.err.join("")).toContain("stopped while confirming the latest release.");
+    });
+
+    it("warns, and still pushes the branch, when a release that was public before is not the latest", async () => {
+        const s = await scenario();
+        s.repo.git("push", "--quiet", "origin", "refs/tags/1.0.1");
+        s.github.release = { draft: false, assets: s.github.release?.assets ?? [] };
+        s.github.latest = "2.0.0";
+        expect(await runPublish(s.input())).toBe(0);
+        const out = s.ctx.out.join("");
+        expect(out).toContain("GitHub's latest release is 2.0.0, not 1.0.1.");
+        expect(out).toContain("✓ release  1.0.1 is public: ");
+        expect(s.repo.originGit("rev-parse", "main").trim()).toBe(s.repo.git("rev-parse", "main").trim());
+    });
+
+    it("says there is no latest release when the resumed repository has none", async () => {
+        const s = await scenario();
+        s.repo.git("push", "--quiet", "origin", "refs/tags/1.0.1");
+        s.github.release = { draft: false, assets: s.github.release?.assets ?? [] };
+        s.github.latest = undefined;
+        expect(await runPublish(s.input())).toBe(0);
+        expect(s.ctx.out.join("")).toContain("GitHub has no latest release, not 1.0.1.");
+    });
+});
+
+describe("runPublish: resuming", () => {
+    it("continues from a draft that is already there with the tag on origin, and waits for a run that is still going", async () => {
+        const s = await scenario();
+        s.repo.git("push", "--quiet", "origin", "refs/tags/1.0.1");
+        s.github.runs = [kitRun(SLUG, s.commit, { status: "in_progress", conclusion: null })];
+        s.github.runStates = ["in_progress/", "completed/success"];
+        expect(await runPublish(s.input())).toBe(0);
+        expect(s.gitCalls.filter((args) => args[0] === "push" && args[2] === "refs/tags/1.0.1")).toEqual([]);
+        expect(s.github.calls.filter((call) => call.startsWith("release edit"))).toHaveLength(1);
+        expect(s.ctx.out.join("")).toContain("✓ wait    Release succeeded");
+    });
+
+    it("pushes the release commit, not the local tip, when the branch moved on locally", async () => {
+        const s = await scenario();
+        s.repo.git("commit", "--quiet", "--allow-empty", "-m", "work after the release");
+        const tip = s.repo.git("rev-parse", "main").trim();
+        expect(tip).not.toBe(s.commit);
+        expect(await runPublish(s.input())).toBe(0);
+        expect(s.repo.originGit("rev-parse", "main").trim()).toBe(s.commit);
+        expect(s.gitCalls.filter((args) => args[0] === "push").at(-1)).toEqual(["push", "origin", `${s.commit}:refs/heads/main`]);
+    });
+
+    it("pushes nothing on a second run after a complete one", async () => {
+        const s = await scenario();
+        expect(await runPublish(s.input())).toBe(0);
+        const pushes = s.gitCalls.filter((args) => args[0] === "push").length;
+        const editsBefore = s.github.calls.filter((call) => call.startsWith("release edit")).length;
+        s.ctx.out.length = 0;
+        expect(await runPublish(s.input())).toBe(0);
+        expect(s.gitCalls.filter((args) => args[0] === "push")).toHaveLength(pushes);
+        expect(s.github.calls.filter((call) => call.startsWith("release edit"))).toHaveLength(editsBefore);
+        expect(s.ctx.out.join("")).toContain("main on origin already holds the release commit");
+    });
+
+    it("finishes after origin rejected the branch: the owner merges and pushes by hand, then the same command succeeds", async () => {
+        const s = await scenario();
+        const other = mkdtempSync(path.join(tmp, "clone-"));
+        const env = hermeticGitEnv();
+        execFileSync("git", ["clone", "--quiet", s.repo.origin, other], { env });
+        execFileSync("git", ["-c", "user.name=x", "-c", "user.email=x@example.com", "commit", "--quiet", "--allow-empty", "-m", "someone else"], { cwd: other, env });
+        execFileSync("git", ["push", "--quiet", "origin", "main"], { cwd: other, env });
+        expect(await runPublish(s.input())).toBe(1);
+        expect(s.ctx.err.join("")).toContain("origin rejected the push of main");
+        expect(s.ctx.err.join("")).toContain("Resume with: opdk release publish 1.0.1");
+
+        // The recovery the message describes.
+        s.repo.git("pull", "--quiet", "--no-rebase", "--no-edit", "origin", "main");
+        s.repo.git("push", "--quiet", "origin", "main");
+
+        const pushesBefore = s.gitCalls.filter((args) => args[0] === "push").length;
+        s.ctx.out.length = 0;
+        s.ctx.err.length = 0;
+        expect(await runPublish(s.input())).toBe(0);
+        expect(s.ctx.err.join("")).toBe("");
+        const out = s.ctx.out.join("");
+        expect(out).toContain("the release 1.0.1 is already public, so the workflow is not waited for");
+        expect(out).toContain("main on origin already holds the release commit");
+        expect(s.gitCalls.filter((args) => args[0] === "push")).toHaveLength(pushesBefore);
+        expect(s.github.calls.filter((call) => call.startsWith("release edit"))).toHaveLength(1);
     });
 });
 
@@ -512,8 +746,10 @@ describe("runPublish: Ctrl+C", () => {
                         state.listeners.splice(state.listeners.indexOf(listener), 1);
                     };
                 },
+                // process.exit never returns: the sentinel stops the flow the same way.
                 exit: (code) => {
                     state.exits.push(code);
+                    throw new Error("process.exit");
                 },
             },
         };
@@ -522,7 +758,7 @@ describe("runPublish: Ctrl+C", () => {
     it("says where it stopped, what is on origin and how to resume, while waiting for the workflow", async () => {
         const s = await scenario();
         const interrupt = hooks();
-        s.github.runs = [{ ...(s.github.runs[0] ?? {}), status: "in_progress", conclusion: "" }];
+        s.github.runs = [kitRun(SLUG, s.commit, { status: "in_progress", conclusion: null })];
         s.github.runStates = ["in_progress/"];
         const clock = s.clock;
         let slept = 0;
@@ -561,9 +797,14 @@ describe("runPublish: Ctrl+C", () => {
             }
             return base.run(args);
         };
-        await runPublish({ ...base, run, interrupt: interrupt.api });
+        const code = await runPublish({ ...base, run, interrupt: interrupt.api });
+        expect(code).toBe(130);
         expect(s.ctx.err.join("")).toContain("The push of the tag 1.0.1 was in flight: check `git ls-remote --tags origin 1.0.1`");
-        expect(interrupt.exits.every((exit) => exit === 130)).toBe(true);
+        expect(interrupt.exits).toEqual([130]);
+        // The flow stopped at the exit, as the process would: no push went out, nothing was published.
+        expect(s.github.calls.some((call) => call.startsWith("release edit"))).toBe(false);
+        expect(s.gitCalls.filter((args) => args[0] === "push")).toEqual([]);
+        expect(remoteTags(s.repo)).toEqual(["1.0.0"]);
     });
 
     it("removes the downloaded assets when it arrives while verifying", async () => {
@@ -581,6 +822,8 @@ describe("runPublish: Ctrl+C", () => {
         };
         const code = await runPublish(s.input({ interrupt: interrupt.api }));
         expect(code).toBe(130);
+        expect(interrupt.exits).toEqual([130]);
+        expect(s.github.calls.some((call) => call.startsWith("release edit"))).toBe(false);
         expect(seen[0]).toHaveLength(1);
         expect(s.ctx.err.join("")).toContain("interrupted while verifying the draft release");
         expect(leftovers()).toEqual([]);

@@ -42,19 +42,20 @@ export function parseRelease(value: unknown): ReleaseInfo | undefined {
     };
 }
 
-/** The release for a tag from the JSON of `GET /releases` (drafts are listed there, and not by `/releases/tags/<tag>`). */
-export function findRelease(json: string, tag: string): ReleaseInfo | undefined {
+/** The releases for a tag in one page of `GET /releases` (drafts are listed there, and not by `/releases/tags/<tag>`), and how many entries the page had. */
+export function releasesOfTag(json: string, tag: string): { readonly found: ReleaseInfo[]; readonly count: number } {
     const parsed: unknown = JSON.parse(json);
     if (!Array.isArray(parsed)) {
         throw new Error("GitHub did not return a list of releases.");
     }
+    const found: ReleaseInfo[] = [];
     for (const entry of parsed) {
         const release = parseRelease(entry);
         if (release?.tag === tag) {
-            return release;
+            found.push(release);
         }
     }
-    return undefined;
+    return { found, count: parsed.length };
 }
 
 export interface ExpectedAssets {
