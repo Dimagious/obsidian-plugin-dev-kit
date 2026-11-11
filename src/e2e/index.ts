@@ -18,3 +18,22 @@ export type {
     ThemeOptions,
     ViewMode,
 } from "./helpers/types.js";
+export type {
+    CleanUiOptions,
+    DemoHelpers,
+    DemoPresetName,
+    DemoRect,
+    Film,
+    FilmFrame,
+    FilmKind,
+    FilmOptions,
+    ShotOptions,
+    StillOptions,
+    StillResult,
+    TapOptions,
+    ThemeMode,
+    TypeSlowlyOptions,
+} from "./demo/types.js";
+export type { DemoOptions } from "./demo/options.js";
+export { parseFilmManifest } from "./demo/manifest.js";
+export type { FilmManifest } from "./demo/manifest.js";
