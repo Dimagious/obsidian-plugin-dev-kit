@@ -56,6 +56,14 @@ export interface ScanConfig {
     readonly ignore?: readonly string[];
 }
 
+/** `release` section. Every key is optional. */
+export interface ReleaseConfig {
+    /** Changelog file relative to the plugin root. Default `CHANGELOG.md`. */
+    readonly changelog?: string;
+    /** Branch releases are cut from. Default: the branch `origin/HEAD` points at. */
+    readonly defaultBranch?: string;
+}
+
 export type DemoLayout = "plain" | "phone-captions";
 
 /** `demo.gif` and the per-film `gif`: how the GIF is made. */
@@ -154,13 +162,14 @@ export interface OpdkConfig {
     readonly build?: BuildConfig;
     readonly scan?: ScanConfig;
     readonly demo?: DemoConfig;
+    readonly release?: ReleaseConfig;
 }
 
 /**
  * One entry per OpdkConfig key. The Record type makes the compiler demand an entry
  * when a section is added, so the allowed-keys check cannot drift from the type.
  */
-export const CONFIG_SECTIONS: Record<keyof OpdkConfig, true> = { build: true, scan: true, demo: true };
+export const CONFIG_SECTIONS: Record<keyof OpdkConfig, true> = { build: true, scan: true, demo: true, release: true };
 
 /** The subset of manifest.json the kit reads. */
 export interface Manifest {
