@@ -191,6 +191,7 @@ Prints the body of the `## [X.Y.Z]` section of the CHANGELOG, by default for the
 |---|---|---|---|
 | `node-version` | string | `"22"` | Node.js version for `npm ci` and the build |
 | `zip` | boolean | `false` | Also attach `<plugin id>-<version>.zip` (`main.js`, `manifest.json`, `styles.css`). Obsidian does not read it. Use `opdk release --zip` together with it |
+| `runs-on` | string | `ubuntu-24.04` | Runner label for both jobs. Pinned, not `ubuntu-latest`; see [ci.md](ci.md#why-ubuntu-2404) |
 
 Two jobs:
 
