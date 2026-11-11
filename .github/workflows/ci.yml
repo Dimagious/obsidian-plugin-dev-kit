@@ -10,7 +10,9 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Pinned: on 2026-11-11 the ubuntu-latest image (26.04 "resolute") could not resolve the Ubuntu archive, so apt hung
+    # until the job timed out. Move to the next LTS on purpose, not by the alias.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -31,6 +33,7 @@ jobs:
       # The demo tests run the real ffmpeg and render the phone layout in a hidden Electron window, which needs a
       # display (xvfb). On CI they fail, not skip, when ffmpeg is missing.
       - name: Install ffmpeg and xvfb
+        timeout-minutes: 5
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg xvfb xauth
       - run: npm run typecheck
       - run: npm run lint
