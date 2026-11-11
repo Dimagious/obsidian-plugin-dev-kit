@@ -39,6 +39,8 @@ function quoteConcatPath(file: string): string {
     return `'${file.replaceAll("'", "'\\''")}'`;
 }
 
+const SINGLE_IMAGE_OPTION = "option pattern_type none";
+
 /** Seconds the film runs: the sum of the frame holds. */
 export function totalHold(frames: readonly FilmFrame[]): number {
     return frames.reduce((sum, frame) => sum + frame.hold, 0);
@@ -51,6 +53,11 @@ export function totalHold(frames: readonly FilmFrame[]): number {
  * frame is repeated. The repeat plays the whole last hold a second time (holds of 1 s and 2 s run 5 s; without the
  * repeat the last hold is not honoured), which is why the encodes also pass `-t <total hold>`: it cuts the film
  * back to the sum of the holds.
+ *
+ * Every entry also sets `option pattern_type none`. The concat demuxer opens each entry with the image2 demuxer, which
+ * reads a `%d` in the path as a numbered sequence ("opdk-100%d-x/frame.png" is then looked for as frame 0 to 4 and
+ * not found). The error names the list file, not the entry. `-pattern_type none` on the command line does not reach
+ * the entries; the `option` line does, and the same list works on macOS and Linux ffmpeg.
  */
 export function buildConcatList(dir: string, frames: readonly FilmFrame[]): string {
     const last = frames.at(-1);
@@ -59,9 +66,9 @@ export function buildConcatList(dir: string, frames: readonly FilmFrame[]): stri
     }
     const lines = ["ffconcat version 1.0"];
     for (const frame of frames) {
-        lines.push(`file ${quoteConcatPath(path.join(dir, frame.file))}`, `duration ${frame.hold.toFixed(3)}`);
+        lines.push(`file ${quoteConcatPath(path.join(dir, frame.file))}`, SINGLE_IMAGE_OPTION, `duration ${frame.hold.toFixed(3)}`);
     }
-    lines.push(`file ${quoteConcatPath(path.join(dir, last.file))}`);
+    lines.push(`file ${quoteConcatPath(path.join(dir, last.file))}`, SINGLE_IMAGE_OPTION);
     return `${lines.join("\n")}\n`;
 }
 

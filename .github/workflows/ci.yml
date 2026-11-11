@@ -19,10 +19,19 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # npm ci does not fetch the Electron binary here (the package downloads it on first use), and the phone-layout
+      # tests need it. Cached by lockfile so the ~100 MB download happens once per Electron version.
+      - name: Cache the Electron binary
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Download the Electron binary
+        run: node node_modules/electron/install.js
       # The demo tests run the real ffmpeg and render the phone layout in a hidden Electron window, which needs a
       # display (xvfb). On CI they fail, not skip, when ffmpeg is missing.
       - name: Install ffmpeg and xvfb
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg xvfb
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg xvfb xauth
       - run: npm run typecheck
       - run: npm run lint
       - name: Unit tests

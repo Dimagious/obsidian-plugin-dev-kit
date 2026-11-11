@@ -63,12 +63,16 @@ describe("buildConcatList", () => {
             [
                 "ffconcat version 1.0",
                 "file '/films/a/0001.png'",
+                "option pattern_type none",
                 "duration 1.000",
                 "file '/films/a/0002.png'",
+                "option pattern_type none",
                 "duration 0.400",
                 "file '/films/a/0003.png'",
+                "option pattern_type none",
                 "duration 2.250",
                 "file '/films/a/0003.png'",
+                "option pattern_type none",
                 "",
             ].join("\n"),
         );
