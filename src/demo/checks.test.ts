@@ -3,9 +3,9 @@ import { newManifest, type FilmManifest } from "../e2e/demo/manifest.js";
 import {
     budgetVerdict,
     compareFrames,
+    CHANNEL_TOLERANCE,
     densityWarnings,
     describeLoopDifference,
-    filmOfOutput,
     findStaleOutputs,
     formatBytes,
     shortHoldWarning,
@@ -32,21 +32,38 @@ describe("budgetVerdict", () => {
     });
 });
 
-describe("filmOfOutput / findStaleOutputs", () => {
-    it("maps the three output kinds back to a film and ignores other files", () => {
-        expect(filmOfOutput("tour.mp4")).toBe("tour");
-        expect(filmOfOutput("tour.gif")).toBe("tour");
-        expect(filmOfOutput("tour-poster.png")).toBe("tour");
-        expect(filmOfOutput("tour.poster.png")).toBeNull();
-        expect(filmOfOutput("logo.png")).toBeNull();
-        expect(filmOfOutput("notes.md")).toBeNull();
+describe("findStaleOutputs", () => {
+    const published = { "docs/a-old.gif": "a-old", "docs/a-old.mp4": "a-old", "docs/b-old.gif": "b-old", "docs/tour.gif": "tour", "docs/tour.mp4": "tour" };
+    const everything = (): boolean => true;
+    const nothingEncoded = { encoded: new Set<string>(), written: {} };
+
+    it("lists recorded files of films that are gone and still on disk, sorted", () => {
+        expect(findStaleOutputs(published, new Set(["tour"]), everything, nothingEncoded)).toEqual({
+            goneFilms: ["docs/a-old.gif", "docs/a-old.mp4", "docs/b-old.gif"],
+            notWritten: [],
+        });
     });
 
-    it("lists media with no current film, sorted, and leaves foreign files alone", () => {
-        const files = ["b-old.gif", "tour.mp4", "tour.gif", "tour-poster.png", "a-old-poster.png", "a-old.mp4", "logo.png", "README.md"];
-        expect(findStaleOutputs(files, new Set(["tour"]))).toEqual(["a-old-poster.png", "a-old.mp4", "b-old.gif"]);
-        expect(findStaleOutputs(files, new Set(["tour", "a-old", "b-old"]))).toEqual([]);
-        expect(findStaleOutputs([], new Set())).toEqual([]);
+    it("is empty when every recorded film exists, and when nothing was recorded", () => {
+        const films = new Set(["tour", "a-old", "b-old"]);
+        expect(findStaleOutputs(published, films, everything, nothingEncoded)).toEqual({ goneFilms: [], notWritten: [] });
+        expect(findStaleOutputs({}, new Set(), everything, nothingEncoded)).toEqual({ goneFilms: [], notWritten: [] });
+    });
+
+    it("skips a recorded file that was deleted since", () => {
+        expect(findStaleOutputs(published, new Set(["tour"]), (file) => file !== "docs/a-old.mp4", nothingEncoded).goneFilms).toEqual(["docs/a-old.gif", "docs/b-old.gif"]);
+    });
+
+    it("lists a file of a film that encoded cleanly without writing it, and not one it wrote", () => {
+        const films = new Set(["tour", "a-old", "b-old"]);
+        const current = { encoded: new Set(["tour"]), written: { "docs/tour.gif": "tour", "docs/tour-poster.png": "tour" } };
+        expect(findStaleOutputs(published, films, everything, current)).toEqual({ goneFilms: [], notWritten: ["docs/tour.mp4"] });
+        expect(findStaleOutputs(published, films, (file) => file !== "docs/tour.mp4", current).notWritten).toEqual([]);
+    });
+
+    it("says nothing about the unwritten files of a film that did not encode cleanly", () => {
+        const films = new Set(["tour", "a-old", "b-old"]);
+        expect(findStaleOutputs(published, films, everything, { encoded: new Set(), written: {} }).notWritten).toEqual([]);
     });
 });
 
@@ -100,8 +117,40 @@ describe("compareFrames", () => {
 
     it("finds a single differing pixel at the corner", () => {
         const a = rgba(3, 3, () => 0);
-        const b = rgba(3, 3, (x, y) => (x === 2 && y === 2 ? 1 : 0));
+        const b = rgba(3, 3, (x, y) => (x === 2 && y === 2 ? 0xffffffff : 0));
         expect(compareFrames(a, b, 3, 3)).toEqual({ x: 2, y: 2, width: 1, height: 1, ratio: 1 / 9 });
+    });
+
+    it("ignores noise of one shade, and of exactly the tolerance, in every channel", () => {
+        const a = rgba(6, 4, () => 0xff102030);
+        expect(compareFrames(a, rgba(6, 4, (x) => (x % 2 === 0 ? 0xff112131 : 0xff0f1f2f)), 6, 4)).toBeNull();
+        const edge = CHANNEL_TOLERANCE;
+        expect(compareFrames(a, rgba(6, 4, () => 0xff102030 + edge * 0x010101), 6, 4)).toBeNull();
+    });
+
+    it("reports a change one shade above the tolerance, in any single channel, with its box and share", () => {
+        const width = 4;
+        const height = 2;
+        const base = rgba(width, height, () => 0xff102030);
+        const over = CHANNEL_TOLERANCE + 1;
+        // Little-endian words: the byte order in memory is R, G, B, A.
+        for (const changed of [0xff102030 + over, 0xff102030 + over * 0x100, 0xff102030 + over * 0x10000, 0xff102030 - over * 0x1000000]) {
+            const other = rgba(width, height, (x, y) => (x === 3 && y === 1 ? changed : 0xff102030));
+            expect(compareFrames(base, other, width, height)).toEqual({ x: 3, y: 1, width: 1, height: 1, ratio: 1 / 8 });
+        }
+    });
+
+    it("keeps noise out of the count when a real change is also there", () => {
+        const a = rgba(10, 8, () => 0xff000000);
+        const b = rgba(10, 8, (x, y) => (x === 7 && y === 5 ? 0xff808080 : x === 1 ? 0xff010101 : 0xff000000));
+        expect(compareFrames(a, b, 10, 8)).toEqual({ x: 7, y: 5, width: 1, height: 1, ratio: 1 / 80 });
+    });
+
+    it("takes the tolerance as an argument: 0 is the exact comparison", () => {
+        const a = rgba(3, 3, () => 0);
+        const b = rgba(3, 3, (x, y) => (x === 2 && y === 2 ? 1 : 0));
+        expect(compareFrames(a, b, 3, 3, 0)).toEqual({ x: 2, y: 2, width: 1, height: 1, ratio: 1 / 9 });
+        expect(compareFrames(a, b, 3, 3)).toBeNull();
     });
 
     it("sees a difference in one channel only: green, red, blue or alpha of a single pixel", () => {
@@ -110,12 +159,13 @@ describe("compareFrames", () => {
         const base = rgba(width, height, () => 0xff102030);
         // Little-endian words: the byte order in memory is R, G, B, A.
         for (const changed of [0xff102031, 0xff102130, 0xff112030, 0xfe102030]) {
+            // One shade, with the exact comparison.
             const other = rgba(width, height, (x, y) => (x === 3 && y === 1 ? changed : 0xff102030));
-            expect(compareFrames(base, other, width, height)).toEqual({ x: 3, y: 1, width: 1, height: 1, ratio: 1 / 8 });
+            expect(compareFrames(base, other, width, height, 0)).toEqual({ x: 3, y: 1, width: 1, height: 1, ratio: 1 / 8 });
         }
         const greenOnly = Buffer.from(base);
         greenOnly[1] = (greenOnly[1] ?? 0) + 1;
-        expect(compareFrames(base, greenOnly, width, height)).toEqual({ x: 0, y: 0, width: 1, height: 1, ratio: 1 / 8 });
+        expect(compareFrames(base, greenOnly, width, height, 0)).toEqual({ x: 0, y: 0, width: 1, height: 1, ratio: 1 / 8 });
     });
 
     it("fails on a buffer that is not width x height RGBA", () => {

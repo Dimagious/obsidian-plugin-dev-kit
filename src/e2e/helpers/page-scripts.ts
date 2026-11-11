@@ -77,6 +77,7 @@ interface PageApp {
         activeEditor?: { editor?: PageEditor } | null;
         trigger?(name: string): void;
         layoutReady?: boolean;
+        saveLayout?(): Promise<void>;
         leftSplit?: PageSidebar;
         rightSplit?: PageSidebar;
     };
@@ -346,6 +347,14 @@ export function setSidebarsCollapsed(collapsed: boolean): boolean {
 export function areSidebarsCollapsed(collapsed: boolean): boolean {
     const workspace = (globalThis as unknown as PageGlobals).app?.workspace;
     return [workspace?.leftSplit, workspace?.rightSplit].every((split) => split?.collapsed === collapsed);
+}
+
+/**
+ * Writes the workspace layout to disk now. The layout is saved on a delay, and `reload()` reloads without saving, so a
+ * panel folded just before it would come back open. Does nothing in an Obsidian without `saveLayout()`.
+ */
+export async function saveWorkspaceLayout(): Promise<void> {
+    await (globalThis as unknown as PageGlobals).app?.workspace?.saveLayout?.();
 }
 
 export function readConfig(key: string): unknown {

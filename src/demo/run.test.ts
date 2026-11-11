@@ -374,6 +374,22 @@ describe("the loop check", () => {
         return raw;
     };
 
+    it("is silent when the last frame differs from the first only by noise within the tolerance", async () => {
+        writeFilm(outDir, film({ name: "a" }));
+        const noisy = (file: string): Buffer => {
+            const raw = Buffer.alloc(200 * 100 * 4);
+            if (file.endsWith("0003.png")) {
+                for (let at = 0; at < raw.length; at += 4) {
+                    raw[at] = 1;
+                    raw[at + 2] = 3;
+                }
+            }
+            return raw;
+        };
+        expect(await run({ config: { loop: "fail" }, deps: depsWith(fakeFfmpeg({ raw: noisy }).tool) })).toBe(0);
+        expect(out()).not.toContain("loop does not close");
+    });
+
     it("is silent when the last frame equals the first", async () => {
         writeFilm(outDir, film({ name: "a" }));
         const ffmpeg = fakeFfmpeg();
@@ -421,15 +437,127 @@ describe("the loop check", () => {
 });
 
 describe("stale outputs and theme pairs", () => {
-    it("lists media of films that no longer exist and deletes nothing", async () => {
+    const publishedFile = (): string => path.join(outDir, "published.json");
+    const recorded = (): Record<string, string> => (JSON.parse(fs.readFileSync(publishedFile(), "utf8")) as { files: Record<string, string> }).files;
+    const removeFilm = (name: string): void => {
+        fs.rmSync(path.join(outDir, "films", name), { recursive: true, force: true });
+    };
+
+    it("records what it writes, keyed by output path, and names no media before there is a record", async () => {
         writeFilm(outDir, film({ name: "a" }));
         fs.mkdirSync(path.join(cwd, "docs", "screens"), { recursive: true });
-        fs.writeFileSync(path.join(cwd, "docs", "screens", "gone.gif"), "x");
-        fs.writeFileSync(path.join(cwd, "docs", "screens", "gone.mp4"), "x");
-        fs.writeFileSync(path.join(cwd, "docs", "screens", "logo.png"), "x");
+        for (const file of ["gone.gif", "gone.mp4", "logo.png"]) {
+            fs.writeFileSync(path.join(cwd, "docs", "screens", file), "x");
+        }
         expect(await run({ deps: depsWith(fakeFfmpeg().tool) })).toBe(0);
-        expect(out()).toMatch(/! demo +docs\/screens holds media of films that no longer exist: gone\.gif, gone\.mp4\./);
+        expect(out()).not.toContain("no longer exist");
+        expect(recorded()).toEqual({ "docs/screens/a.gif": "a", "docs/screens/a.mp4": "a", "docs/screens/a-poster.png": "a" });
         expect(media()).toContain("gone.gif");
+    });
+
+    it("warns about a file it published for a film that has since gone, and deletes nothing", async () => {
+        writeFilm(outDir, film({ name: "a" }));
+        writeFilm(outDir, film({ name: "b" }));
+        fs.writeFileSync(path.join(cwd, "docs-unrelated.png"), "x");
+        const deps = depsWith(fakeFfmpeg().tool);
+        await run({ deps });
+        removeFilm("b");
+        ctx.out.length = 0;
+        expect(await run({ deps })).toBe(0);
+        expect(out()).toMatch(/! demo +media published by an earlier run of this command belongs to films that no longer exist: docs\/screens\/b-poster\.png, docs\/screens\/b\.gif, docs\/screens\/b\.mp4\./);
+        expect(out()).not.toContain("docs-unrelated");
+        expect(media()).toContain("b.gif");
+        expect(recorded()["docs/screens/b.gif"]).toBe("b");
+    });
+
+    it("stops warning once the stale file is deleted, and drops it from the record", async () => {
+        writeFilm(outDir, film({ name: "a" }));
+        writeFilm(outDir, film({ name: "b" }));
+        const deps = depsWith(fakeFfmpeg().tool);
+        await run({ deps });
+        removeFilm("b");
+        for (const file of ["b.gif", "b.mp4", "b-poster.png"]) {
+            fs.rmSync(path.join(cwd, "docs", "screens", file));
+        }
+        ctx.out.length = 0;
+        await run({ deps });
+        expect(out()).not.toContain("no longer exist");
+        expect(Object.keys(recorded()).sort()).toEqual(["docs/screens/a-poster.png", "docs/screens/a.gif", "docs/screens/a.mp4"]);
+    });
+
+    it("after a rename, warns about the old name's files and records the new ones", async () => {
+        writeFilm(outDir, film({ name: "old" }));
+        const deps = depsWith(fakeFfmpeg().tool);
+        await run({ deps });
+        removeFilm("old");
+        writeFilm(outDir, film({ name: "new" }));
+        ctx.out.length = 0;
+        await run({ deps });
+        expect(out()).toMatch(/no longer exist: docs\/screens\/old-poster\.png, docs\/screens\/old\.gif, docs\/screens\/old\.mp4\./);
+        expect(recorded()).toMatchObject({ "docs/screens/new.gif": "new", "docs/screens/old.gif": "old" });
+    });
+
+    it("warns about a file of a film that still exists when its mp4 is turned off, and keeps it recorded", async () => {
+        writeFilm(outDir, film({ name: "a" }));
+        const deps = depsWith(fakeFfmpeg().tool);
+        await run({ deps });
+        ctx.out.length = 0;
+        expect(await run({ deps, config: { mp4: false } })).toBe(0);
+        expect(out()).toMatch(/! demo +media published by an earlier run of this command is no longer written by its film \(an output turned off, or moved\): docs\/screens\/a\.mp4\./);
+        expect(out()).not.toContain("no longer exist");
+        expect(media()).toContain("a.mp4");
+        expect(recorded()["docs/screens/a.mp4"]).toBe("a");
+    });
+
+    it("warns about the old files when demo.output moves, and stops once they are deleted", async () => {
+        writeFilm(outDir, film({ name: "a" }));
+        const deps = depsWith(fakeFfmpeg().tool);
+        await run({ deps });
+        ctx.out.length = 0;
+        await run({ deps, config: { output: "site/media" } });
+        expect(out()).toMatch(/no longer written by its film.*: docs\/screens\/a-poster\.png, docs\/screens\/a\.gif, docs\/screens\/a\.mp4\./);
+        expect(recorded()).toMatchObject({ "site/media/a.gif": "a", "docs/screens/a.gif": "a" });
+        fs.rmSync(path.join(cwd, "docs", "screens"), { recursive: true });
+        ctx.out.length = 0;
+        await run({ deps, config: { output: "site/media" } });
+        expect(out()).not.toContain("no longer");
+        expect(Object.keys(recorded()).every((file) => file.startsWith("site/media/"))).toBe(true);
+    });
+
+    it("does not call a file stale when its film failed to encode this run", async () => {
+        writeFilm(outDir, film({ name: "a" }));
+        await run({ deps: depsWith(fakeFfmpeg().tool) });
+        ctx.out.length = 0;
+        expect(await run({ config: { mp4: false }, deps: depsWith(fakeFfmpeg({ fail: (args) => (args.at(-1)?.endsWith(".gif") === true ? "boom" : undefined) }).tool) })).toBe(1);
+        expect(out()).not.toContain("no longer");
+    });
+
+    it("does not touch the record when nothing changed, and writes none when nothing was published", async () => {
+        expect(await run({ deps: depsWith(fakeFfmpeg().tool) })).toBe(1);
+        expect(fs.existsSync(publishedFile())).toBe(false);
+        writeFilm(outDir, film({ name: "a" }));
+        const deps = depsWith(fakeFfmpeg().tool);
+        await run({ deps });
+        fs.utimesSync(publishedFile(), 1, 1);
+        await run({ deps });
+        expect(fs.statSync(publishedFile()).mtimeMs).toBe(1000);
+    });
+
+    it("warns about a record it cannot read, ignores it, and writes a fresh one", async () => {
+        writeFilm(outDir, film({ name: "a" }));
+        fs.writeFileSync(publishedFile(), "{ not json");
+        expect(await run({ deps: depsWith(fakeFfmpeg().tool) })).toBe(0);
+        expect(out()).toMatch(/! demo +published\.json is not valid JSON.*ignoring it and writing a new one/);
+        expect(recorded()).toHaveProperty(["docs/screens/a.gif"], "a");
+    });
+
+    it("replaces a record it cannot read even when a film fails to encode, so the next run starts clean", async () => {
+        writeFilm(outDir, film({ name: "a" }));
+        fs.writeFileSync(publishedFile(), "{ not json");
+        const failing = fakeFfmpeg({ fail: (args) => (args.at(-1)?.endsWith(".mp4") === true ? "boom" : undefined) });
+        expect(await run({ deps: depsWith(failing.tool) })).toBe(1);
+        expect(out()).toMatch(/! demo +published\.json is not valid JSON/);
+        expect(JSON.parse(fs.readFileSync(publishedFile(), "utf8"))).toEqual({ version: 1, files: {} });
     });
 
     it("does not call the output of a film stale when only another film was selected", async () => {

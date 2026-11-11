@@ -92,21 +92,6 @@ export function listFilms(outDir: string): FilmListing {
     return { complete, incomplete, broken };
 }
 
-/** Media files (names only) in the output folder; a missing folder is empty. */
-export function listOutputFiles(output: string): string[] {
-    try {
-        return fs
-            .readdirSync(output, { withFileTypes: true })
-            .filter((entry) => entry.isFile())
-            .map((entry) => entry.name);
-    } catch (error) {
-        if (isMissing(error)) {
-            return [];
-        }
-        throw error;
-    }
-}
-
 /**
  * Moves a finished file into place. A rename replaces the old file in one step; across volumes (the work folder in
  * the temp folder, the output in a project on another disk) a rename is impossible, so the file is copied next to its

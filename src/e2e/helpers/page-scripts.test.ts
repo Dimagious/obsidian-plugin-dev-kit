@@ -32,6 +32,7 @@ import {
     removeNotices,
     runCommandById,
     runWithApp,
+    saveWorkspaceLayout,
     scrollThroughElement,
     setSidebarsCollapsed,
     switchMobileEmulation,
@@ -406,6 +407,17 @@ describe("sidebar scripts", () => {
         expect(calls).toEqual([]);
         vi.stubGlobal("app", {});
         expect(setSidebarsCollapsed(true)).toBe(false);
+    });
+
+    it("saves the workspace layout at once, and does nothing without saveLayout()", async () => {
+        const saveLayout = vi.fn(() => Promise.resolve());
+        vi.stubGlobal("app", { workspace: { saveLayout } });
+        await saveWorkspaceLayout();
+        expect(saveLayout).toHaveBeenCalledTimes(1);
+        vi.stubGlobal("app", { workspace: {} });
+        await expect(saveWorkspaceLayout()).resolves.toBeUndefined();
+        vi.stubGlobal("app", {});
+        await expect(saveWorkspaceLayout()).resolves.toBeUndefined();
     });
 
     it("sees the wanted state only when both panels are in it", () => {

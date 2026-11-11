@@ -35,6 +35,7 @@ import {
     removeNotices,
     runCommandById,
     runWithApp,
+    saveWorkspaceLayout,
     scrollThroughElement,
     setSidebarsCollapsed,
     switchMobileEmulation,
@@ -623,11 +624,15 @@ describe("collapseSidebars and expandSidebars", () => {
             fake.log.push(`set:${String(collapsed)}`);
             return true;
         });
+        fake.onEvaluate(saveWorkspaceLayout, () => {
+            fake.log.push("saved");
+        });
         fake.onWait(areSidebarsCollapsed, (collapsed, options) => {
             wanted.push([collapsed, options]);
         });
         await helpers.collapseSidebars();
-        expect(fake.log).toEqual(["set:true"]);
+        // Saved after the fold, so a reload right after it finds the panels folded.
+        expect(fake.log).toEqual(["set:true", "saved"]);
         expect(wanted).toEqual([[true, { polling: 50, timeout: 555 }]]);
     });
 
@@ -635,11 +640,29 @@ describe("collapseSidebars and expandSidebars", () => {
         const { fake, helpers } = setUp();
         const wanted: unknown[] = [];
         fake.onEvaluate(setSidebarsCollapsed, () => true);
+        fake.onEvaluate(saveWorkspaceLayout, () => undefined);
         fake.onWait(areSidebarsCollapsed, (collapsed) => {
             wanted.push(collapsed);
         });
         await helpers.expandSidebars();
         expect(wanted).toEqual([false]);
+    });
+
+    it("names the helper when saving the layout fails, keeping the page error as the cause", async () => {
+        const { fake, helpers } = setUp();
+        const pageError = new Error("disk full");
+        fake.onEvaluate(setSidebarsCollapsed, () => true);
+        fake.onEvaluate(saveWorkspaceLayout, () => {
+            throw pageError;
+        });
+        fake.onWait(areSidebarsCollapsed, () => undefined);
+        const failure = await helpers.collapseSidebars().then(
+            () => undefined,
+            (error: unknown) => error,
+        );
+        expect(failure).toBeInstanceOf(Error);
+        expect((failure as Error).message).toBe("collapseSidebars(): saving the workspace layout failed, so a reload() would bring the side panels back.");
+        expect((failure as Error).cause).toBe(pageError);
     });
 
     it("fails with the helper's name when this Obsidian has no side panels to drive", async () => {

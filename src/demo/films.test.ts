@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fakePng } from "../test-support/demo-fakes.js";
 import { BLUE, RED, writeFilm } from "../test-support/demo-films.js";
-import { assertFrameFiles, incompleteReason, listFilms, listOutputFiles, readPngFileSize } from "./films.js";
+import { assertFrameFiles, incompleteReason, listFilms, readPngFileSize } from "./films.js";
 
 let dir: string;
 beforeEach(() => {
@@ -75,15 +75,6 @@ describe("incompleteReason", () => {
     it("is null for a finished film with frames", () => {
         const manifest = writeFilm(dir, { name: "a", width: 20, height: 10, frames });
         expect(incompleteReason(manifest)).toBeNull();
-    });
-});
-
-describe("listOutputFiles", () => {
-    it("lists files only, and a missing folder is empty", () => {
-        expect(listOutputFiles(path.join(dir, "none"))).toEqual([]);
-        fs.mkdirSync(path.join(dir, "out", "sub"), { recursive: true });
-        fs.writeFileSync(path.join(dir, "out", "a.gif"), "x");
-        expect(listOutputFiles(path.join(dir, "out"))).toEqual(["a.gif"]);
     });
 });
 

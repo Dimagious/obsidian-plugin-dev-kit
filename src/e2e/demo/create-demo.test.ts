@@ -11,11 +11,13 @@ import { resolveDemoOptions } from "./options.js";
 let root: string;
 let fake: FakeDemoWindow;
 let themes: string[];
+let sidebarCalls: number;
 
 beforeEach(() => {
     root = fs.mkdtempSync(path.join(testTmpRoot(), "opdk-e2e-demo-test-"));
     fake = createFakeDemoWindow();
     themes = [];
+    sidebarCalls = 0;
 });
 
 afterEach(() => {
@@ -31,6 +33,11 @@ function setUp(overrides: Partial<DemoDeps> = {}): DemoController {
             return Promise.resolve();
         },
         options: resolveDemoOptions({ outDir: "out" }, root),
+        collapseSidebars: () => {
+            sidebarCalls++;
+            fake.log.push("collapseSidebars");
+            return Promise.resolve();
+        },
         uiTimeoutMs: 555,
         seedVault: "/plugin/e2e/vault",
         seedVaultSource: "option",
@@ -193,6 +200,56 @@ describe("film: a series of frames", () => {
         });
         const film = demo.film({ kind: "desktop" });
         await expect(film.shot({ hold: 1 })).rejects.toThrow(/did not become 1200 x 800 at scale 2 within 555 ms/);
+    });
+});
+
+describe("film cursor option", () => {
+    const cursorCalls = (): string[] => logged("overlay:").filter((entry) => entry.includes("cursorEnabled"));
+
+    it("sends nothing for a film that keeps the cursor", async () => {
+        const film = setUp().demo.film({ kind: "desktop" });
+        await film.shot({ hold: 1 });
+        expect(cursorCalls()).toEqual([]);
+    });
+
+    it("hides the arrow before the first shot of a cursor: false film, once for all its shots", async () => {
+        const film = setUp().demo.film({ kind: "desktop", cursor: false });
+        await film.shot({ hold: 1 });
+        await film.shot({ hold: 1 });
+        expect(cursorCalls()).toEqual(['overlay:{"method":"cursorEnabled","arg":false}']);
+        expect(fake.log.indexOf('overlay:{"method":"cursorEnabled","arg":false}')).toBeLessThan(fake.log.indexOf("freeze"));
+    });
+
+    it("keeps it hidden when a click moves the mouse between two shots: the arrow is not switched back on", async () => {
+        const { demo } = setUp();
+        fake.visible.set("#next", { x: 0, y: 0, width: 10, height: 10 });
+        const film = demo.film({ kind: "desktop", cursor: false });
+        await film.shot({ hold: 1 });
+        await demo.moveAndClick(target("#next"));
+        await film.shot({ hold: 1 });
+        expect(cursorCalls()).toEqual(['overlay:{"method":"cursorEnabled","arg":false}']);
+    });
+
+    it("shows the arrow again for a later film or still of the same test that wants it", async () => {
+        const { demo } = setUp();
+        const quiet = demo.film({ kind: "desktop", name: "quiet", cursor: false });
+        await quiet.shot({ hold: 1 });
+        const loud = demo.film({ kind: "desktop", name: "loud" });
+        await loud.shot({ hold: 1 });
+        await quiet.shot({ hold: 1 });
+        await demo.still("picture");
+        expect(cursorCalls()).toEqual([
+            'overlay:{"method":"cursorEnabled","arg":false}',
+            'overlay:{"method":"cursorEnabled","arg":true}',
+            'overlay:{"method":"cursorEnabled","arg":false}',
+            'overlay:{"method":"cursorEnabled","arg":true}',
+        ]);
+    });
+
+    it("rejects a cursor option that is not a boolean, before the film folder is touched", () => {
+        const { demo } = setUp();
+        expect(() => demo.film({ kind: "desktop", cursor: "no" as never })).toThrow(/cursor must be true \(show the arrow\) or false \(hide it\)/);
+        expect(fs.existsSync(out("films"))).toBe(false);
     });
 });
 
@@ -654,10 +711,29 @@ describe("beat", () => {
 });
 
 describe("cleanUi", () => {
-    it("hides everything by default: Obsidian settings for three parts, the page classes for two", async () => {
+    it("hides everything by default: Obsidian settings for three parts, the page classes for two, and folds the sidebars", async () => {
         await setUp().demo.cleanUi();
         expect(logged("ui:")).toEqual(['ui:{"showRibbon":false,"showViewHeader":false,"showInlineTitle":false}']);
         expect(logged("overlay:")).toEqual(['overlay:{"method":"clean","arg":{"statusBar":true,"tabHeaders":true}}']);
+        expect(sidebarCalls).toBe(1);
+        expect(fake.log.indexOf("collapseSidebars")).toBeGreaterThan(fake.log.findIndex((e) => e.startsWith("overlay:")));
+    });
+
+    it("leaves the sidebars alone with sidebars: false, and folds them again on the next default call", async () => {
+        const { demo } = setUp();
+        await demo.cleanUi({ sidebars: false });
+        expect(sidebarCalls).toBe(0);
+        await demo.cleanUi({ sidebars: true });
+        await demo.cleanUi();
+        expect(sidebarCalls).toBe(2);
+    });
+
+    it("does not fold the sidebars when the call is refused, and passes on a failure of the fold", async () => {
+        const { demo } = setUp();
+        await expect(demo.cleanUi({ sidebars: "no" as never })).rejects.toThrow(/sidebars must be true \(hide\) or false \(show\)/);
+        expect(sidebarCalls).toBe(0);
+        const failing = setUp({ collapseSidebars: () => Promise.reject(new Error("collapseSidebars(): this Obsidian has no workspace.leftSplit")) });
+        await expect(failing.demo.cleanUi()).rejects.toThrow("no workspace.leftSplit");
     });
 
     it("keeps what is set to false, and each call decides everything", async () => {
@@ -676,7 +752,7 @@ describe("cleanUi", () => {
 
     it("rejects an unknown or non-boolean option", async () => {
         const { demo } = setUp();
-        await expect(demo.cleanUi({ titlebar: true } as never)).rejects.toThrow(/unknown option "titlebar". Known options: ribbon, statusBar/);
+        await expect(demo.cleanUi({ titlebar: true } as never)).rejects.toThrow(/unknown option "titlebar". Known options: ribbon, statusBar.*sidebars/);
         await expect(demo.cleanUi({ ribbon: "yes" as never })).rejects.toThrow(/ribbon must be true \(hide\) or false \(show\)/);
     });
 });

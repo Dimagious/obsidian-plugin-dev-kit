@@ -172,6 +172,31 @@ describe("installOverlay", () => {
         expect(page.byId("opdk-cursor").style.display).toBe("block");
     });
 
+    it("keeps the cursor arrow hidden through mouse moves while it is off, and shows it again when it is on", () => {
+        const page = stubPage();
+        installOverlay(assets);
+        runOverlay({ method: "cursorEnabled", arg: false });
+        move(page, 5, 6);
+        move(page, 7, 8);
+        expect(page.byId("opdk-cursor").style.display).toBe("none");
+        runOverlay({ method: "cursorEnabled", arg: true });
+        expect(page.byId("opdk-cursor").style).toMatchObject({ left: "7px", top: "8px", display: "block" });
+    });
+
+    it("the cursor switch does not hide the tap dot, and survives a reload", () => {
+        const first = stubPage();
+        installOverlay(assets);
+        runOverlay({ method: "pointer", arg: "tap" });
+        runOverlay({ method: "cursorEnabled", arg: false });
+        move(first, 10, 20);
+        expect(first.byId("opdk-tap").style.display).toBe("block");
+
+        const second = stubPage({ storage: first.storage });
+        installOverlay(assets);
+        runOverlay({ method: "pointer", arg: "cursor" });
+        expect(second.byId("opdk-cursor").style.display).toBe("none");
+    });
+
     it("puts the hide classes on <html> for the status bar and the tab headers", () => {
         const page = stubPage();
         installOverlay(assets);
