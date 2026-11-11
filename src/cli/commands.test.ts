@@ -15,7 +15,7 @@ describe("builtinCommands", () => {
         expect(() => createRegistry(builtinCommands)).not.toThrow();
     });
 
-    it("lists build, build-css, assert-bundle and scan in `opdk --help`", async () => {
+    it("lists build, build-css, assert-bundle, scan and demo in `opdk --help`", async () => {
         const ctx = createContext("/plugin");
         const code = await runCli(["--help"], {
             registry: createRegistry(builtinCommands),
@@ -24,7 +24,7 @@ describe("builtinCommands", () => {
         });
         expect(code).toBe(0);
         const help = ctx.out.join("");
-        for (const name of ["build", "build-css", "assert-bundle", "scan"]) {
+        for (const name of ["build", "build-css", "assert-bundle", "scan", "demo"]) {
             expect(help).toMatch(new RegExp(`^\\s+${name}\\s`, "m"));
         }
     });
