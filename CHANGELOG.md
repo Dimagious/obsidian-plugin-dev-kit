@@ -141,6 +141,7 @@ Differences from the scripts the plugins have today, per plugin. Anything not li
   - Snipsy (`scripts/build-demo.sh`):
     - The script composes voice-over and an outro; the kit does neither (no audio, no intro or outro cards), so only the film-to-media step moves. Its GIF was 12 fps and 720 px wide with 128 colours and no `stats_mode=diff`: set `gif: { fps: 12, width: 720 }` per film. A failed ffmpeg stopped the script (`set -euo pipefail`) and fails the film now.
 - Pack smoke runs `opdk demo` in a project without Playwright and Electron and expects its "no films" failure, which proves the command loads neither.
+- Demo docs: `docs/demo.md` (the fixture, the privacy guard, `opdk demo`, configuration, CI, migration from each plugin's scripts, limits), the `skills/demo` agent skill, a README block, and `docs/media/demo.gif`, a phone film recorded by the kit on its own fixture (`test/e2e-fixture/e2e/docs-film.spec.ts`, gated by `OPDK_E2E_DOCS_FILM`, settings in `opdk.config.mjs`; `npm run docs:media:demo` records and encodes it). `.opdk/` is in the kit's `.gitignore`.
 
 ### Fixed
 

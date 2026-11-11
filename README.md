@@ -17,7 +17,7 @@ Every Obsidian plugin needs the same tooling around its code: a bundle that also
 | Release | Version sync between `package.json`, `manifest.json` and `versions.json`, tag checks, and a reusable GitHub release workflow with build provenance |
 | Unit tests | A Vitest preset with coverage thresholds, and DOM helpers Obsidian adds (`createEl`, `createDiv`, `setText`) |
 | End-to-end tests | Playwright in a real Obsidian through Electron: an isolated vault per test, the trust dialog never shown, readiness by plugin state instead of sleeps, a check of which Obsidian version ran, a trace and a video of the Obsidian window for failures, and helpers for settings, commands, the editor, IME composition, the mobile layout and fakes. Launch over CDP and a mode for recording tests by hand with the Playwright Inspector are planned |
-| Demo recording | A visible cursor that moves like a person's, subtitles, slow typing and pauses, plus a script that cuts the take with ffmpeg and exports MP4 and GIF |
+| Demo films | Films of stills from the real Obsidian: a frozen UI, a visible cursor or tap dot, captions, slow typing, light and dark themes, and a privacy guard that refuses to film a vault that is not the plugin's own; `opdk demo` encodes them to MP4, GIF and poster with ffmpeg, and can put a phone film beside its captions. No audio |
 | Integration tests | A preset for [obsidian-integration-testing](https://github.com/mnaoumov/obsidian-integration-testing): the same smoke tests on the latest public and catalyst builds, and on Android |
 | Agent skills | One Claude Code skill per module, so a coding agent working in your plugin knows how to use the kit |
 
@@ -60,13 +60,21 @@ Quick start: `npx opdk scan`. Details: [docs/scanner.md](docs/scanner.md).
 
 Quick start: `createObsidianTest({ seedVault })` in `e2e/fixtures.ts`, `defineObsidianConfig()` in `playwright.config.ts`, then `npx playwright test`. Details: [docs/e2e.md](docs/e2e.md).
 
+## Demo films
+
+The `demo` fixture records your plugin in the real Obsidian as a film of stills: each shot freezes the UI and takes a sharp picture at 2x, with a hold and a caption, and `opdk demo` turns the film into an MP4, a GIF and a poster. Snipsy recorded the Obsidian window and needed Python to finish the job, Garmy's retake appended frames to the old film, and Dashy's reel script only warned when ffmpeg failed, so a run that made no GIF still ended green. Here the timing is the script's, a retake replaces the frames, a failed encode fails the film, and a film of a vault that is not the plugin's own is refused.
+
+![A phone film made by the kit: a note opens, a heading and a line of text are typed in three stages, the command palette finds "Show notice" and a notice appears, and the plugin's settings tab opens, while the list of steps beside the phone lights the current one](docs/media/demo.gif)
+
+Quick start: `demo.film({ kind: "phone", captions })` and `film.shot({ hold })` in a gated spec, then `npx opdk demo`. For captions beside the phone, set `layout: "phone-captions"` in the `demo` section of `opdk.config.mjs`. Details: [docs/demo.md](docs/demo.md).
+
 ## Roadmap
 
-- [ ] Wave 1: build, scanner and lint, end-to-end harness, demo recording
+- [ ] Wave 1: build, scanner and lint, end-to-end harness, demo films
   - [x] Build: `opdk build`, `opdk build-css`, `opdk assert-bundle`, dev-vault watch
   - [x] Scanner and lint: `opdk scan`, `obsidianPlugin()`
   - [ ] End-to-end harness: launch, isolation, readiness, trace and video, and the helpers are done; CDP mode is pending
-  - [ ] Demo recording
+  - [x] Demo films: films of stills, phone layout, stills presets, `opdk demo` (no audio)
 - [ ] Wave 2: release tooling and the reusable workflow
 - [ ] Wave 3: integration tests preset
 - [ ] Wave 4: unit-test helpers and Obsidian mocks
@@ -87,6 +95,7 @@ npm run build       # cleans dist/ and compiles src/ with tsc
 npm run smoke       # builds, packs, installs the tarball into a temp project, runs opdk --help, --version, `opdk build` and `opdk scan` on a fixture, imports defineConfig and `obsidian-plugin-dev-kit/eslint`
 npm run docs:media  # re-records the GIFs in docs/media with VHS (needs `vhs` and `ffmpeg`); run `npm run build` first
 npm run docs:media:e2e  # re-records docs/media/e2e.gif from a real Obsidian window (needs Obsidian and `ffmpeg`)
+npm run docs:media:demo  # re-records docs/media/demo.gif: the docs-film spec in a real Obsidian, then `opdk demo` (needs Obsidian and `ffmpeg`; run `npm run build` first)
 npm run e2e:smoke  # the kit's own e2e specs against a real Obsidian; by hand before a release, not in CI
 ```
 
