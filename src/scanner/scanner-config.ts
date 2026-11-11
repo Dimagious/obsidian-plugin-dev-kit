@@ -17,7 +17,12 @@
  *   switched off, and core `no-implied-eval` on for TypeScript in place of the type-aware rule. Upstream's
  *   snippet does not do this (ESLint reports "was not found by the project service"). A file that cannot be
  *   parsed fails the retry too, where upstream does not report it.
- * - The ignore list is upstream's `globalIgnores` as is (all 48 entries). Its first three, `main.js`,
+ * - The ignore list is upstream's `globalIgnores` (48 entries) with one change: `eslint` is removed from the
+ *   `**\/{astro,babel,...}.config.*` group, so the plugin's `eslint.config.js` and `.ts` are linted (`.mjs`, `.cjs`,
+ *   `.mts` and `.cts` stay ignored by their extension globs), with type information
+ *   (`allowDefaultProject`, above). 0.5.1's text ignores it, but the live scanner lints it: Snipsy 1.7.1's public
+ *   scorecard reports four `no-unsafe-*` warnings in its `eslint.config.js`. The kit follows the live scanner
+ *   (owner decision, 2026-11-11). Re-check this on every bump of the package. Its first three, `main.js`,
  *   `**\/*.min.js` and `**\/{dist,build,out,release}/**`, are upstream's stand-ins for bundled and minified
  *   output (the scanner recognises it by name and, in a TypeScript project, by content). A plugin written in
  *   JavaScript should drop `main.js`, as upstream says.
@@ -27,8 +32,11 @@
  *   lowers the score; `opdk scan` fails on both. Upstream's note says the real scanner downgrades unlisted rules
  *   to `warn`, which does not change what is reported.
  *
- * The scanner keeps its layers for newer submissions (stricter rules) apart; like upstream's snippet this is the
- * configuration they all build on.
+ * The scanner keeps layers by submission date. This is the newest one: upstream's snippet is the configuration all
+ * layers build on, and the kit adds what the newest layer changes, so a plugin sees what a plugin submitted today
+ * would see. That layer turns `@typescript-eslint/no-unsafe-*` and the two command-id rules back on at `warn`
+ * (see the block marked "newest" below); its other additions, the obsidianmd rules at `error`, are already
+ * `error` in the recommended config for TypeScript. The older layers report less, so a clean scan here is clean in them too.
  */
 import type { Linter } from "eslint";
 import obsidianmd from "eslint-plugin-obsidianmd";
@@ -39,7 +47,7 @@ export const MIRRORED_OBSIDIANMD_VERSION = "0.5.1";
 
 const CODE_FILES = ["**/*.{ts,cts,mts,tsx,js,cjs,mjs,jsx}"];
 
-/** The paths the scanner leaves out: upstream's `globalIgnores` list, all 48 entries. */
+/** The paths the scanner leaves out: upstream's `globalIgnores` list (48 entries, with `eslint` removed from the tool-config group), so the root `eslint.config.js` and `.ts` are linted, as the live scanner does. */
 export const SCANNER_IGNORES: readonly string[] = [
     // Upstream marks these three "Not in the scanner's list": its stand-ins for bundled and minified output, which
     // the scanner recognises by name and, in a TypeScript project, by content. Upstream says to drop `main.js`
@@ -88,7 +96,7 @@ export const SCANNER_IGNORES: readonly string[] = [
     "**/wdio.conf.*",
     "**/wdio.*.conf.*",
     "**/playwright.config.*",
-    "**/{astro,babel,commitlint,docusaurus,esbuild,eslint,jest,oxlint,postcss,prettier,rolldown,rollup,stylelint,svelte,tailwind,tsdown,tsup,uno,webpack}.config.*",
+    "**/{astro,babel,commitlint,docusaurus,esbuild,jest,oxlint,postcss,prettier,rolldown,rollup,stylelint,svelte,tailwind,tsdown,tsup,uno,webpack}.config.*",
     "**/{eslint,jest}.*.config.*",
     "**/jest.setup.*",
     "**/.{babelrc,eslintrc,mocharc,prettierrc}.*",
@@ -107,16 +115,25 @@ function typeAwareObsidianRules(): string[] {
 export interface ScannerConfigOptions {
     /** Plugin root: where `tsconfig.json` is looked up from. */
     readonly cwd: string;
+    /**
+     * Whether the project service may take `eslint.config.*` as a default project (the default). It must be off for
+     * a plugin whose tsconfig already covers that file: typescript-eslint then throws "was included by
+     * allowDefaultProject but also was found in the project service", and the file is linted again with this off.
+     */
+    readonly allowDefaultProject?: boolean;
     /** `false` lints without type information, for files no tsconfig covers. */
     readonly typeAware: boolean;
 }
 
-export function createScannerConfig({ cwd, typeAware }: ScannerConfigOptions): Linter.Config[] {
+export function createScannerConfig({ cwd, typeAware, allowDefaultProject = true }: ScannerConfigOptions): Linter.Config[] {
     const config: Linter.Config[] = [
         {
             languageOptions: {
                 parserOptions: {
-                    projectService: true,
+                    // `allowDefaultProject` lets the plugin's own `eslint.config.*` (usually outside the tsconfig)
+                    // be linted with type information, which is what produces the `no-unsafe-*` warnings the
+                    // public scorecard shows for it.
+                    projectService: { allowDefaultProject: allowDefaultProject ? ["eslint.config.*"] : [] },
                     tsconfigRootDir: cwd,
                 },
             },
@@ -136,18 +153,23 @@ export function createScannerConfig({ cwd, typeAware }: ScannerConfigOptions): L
 
                 // Covered by TypeScript or too noisy
                 "no-undef": "off",
-                "@typescript-eslint/no-unsafe-member-access": "off",
-                "@typescript-eslint/no-unsafe-assignment": "off",
-                "@typescript-eslint/no-unsafe-argument": "off",
-                "@typescript-eslint/no-unsafe-call": "off",
-                "@typescript-eslint/no-unsafe-return": "off",
                 "@typescript-eslint/restrict-template-expressions": "off",
                 "@typescript-eslint/no-base-to-string": "off",
                 "import/no-unresolved": "off",
 
-                // Old plugins should not change their command ids
-                "obsidianmd/commands/no-command-in-command-id": "off",
-                "obsidianmd/commands/no-plugin-id-in-command-id": "off",
+                // Newest layer: turns these back on at `warn` (upstream's docs, "Rule severity
+                // adjustments"), and the public scorecard of Snipsy 1.7.1 lists them. In 0.5.1's recommended config
+                // the five `no-unsafe-*` rules are `error` for TypeScript files only (off under package.json,
+                // manifest.json and LICENSE, absent for JavaScript), so they are set here at `warn`: TypeScript and
+                // JavaScript (`eslint.config.js` included) both get them as warnings, as the newest layer does. The
+                // command-id rules are already `warn` there; they are listed so the layer stays complete.
+                "@typescript-eslint/no-unsafe-member-access": "warn",
+                "@typescript-eslint/no-unsafe-assignment": "warn",
+                "@typescript-eslint/no-unsafe-argument": "warn",
+                "@typescript-eslint/no-unsafe-call": "warn",
+                "@typescript-eslint/no-unsafe-return": "warn",
+                "obsidianmd/commands/no-command-in-command-id": "warn",
+                "obsidianmd/commands/no-plugin-id-in-command-id": "warn",
             },
         },
         {

@@ -10,7 +10,7 @@ export interface Finding {
     readonly check: ScanCheck;
     /** Path relative to the plugin root, with `/` separators. */
     readonly file: string;
-    /** 1-based. */
+    /** 1-based; 0 when the finding has no position (a parse error from ESLint carries none). */
     readonly line: number;
     readonly rule: string;
     readonly message: string;
@@ -20,7 +20,8 @@ export interface Finding {
 
 /** `file:line  rule  message`, the one layout every finding prints in. */
 export function formatFinding(finding: Finding): string {
-    return `${finding.file}:${String(finding.line)}  ${finding.rule}  ${finding.message}`;
+    const position = finding.line > 0 ? `${finding.file}:${String(finding.line)}` : finding.file;
+    return `${position}  ${finding.rule}  ${finding.message}`;
 }
 
 /** Stable order: by file, then line, then rule, so two runs print the same text. */

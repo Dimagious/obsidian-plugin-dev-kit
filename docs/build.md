@@ -25,6 +25,7 @@ The plugin id comes from `manifest.json`, the settings from the optional `opdk.c
 2. The build refuses, exits 1 and writes nothing when `dir/manifest.json` holds another plugin id (`--force` overrides this one only), when `dir` is the plugin root, when `dir` starts with `~` (nothing expands it), or when `--vault` is empty (`--vault ""`, `--vault=`). The last three are refused even with `--force`. With no `dir` and no `VAULT_PLUGIN` it stops and says to pass one.
 3. An unminified `main.js` is written into `dir`.
 4. `styles.css` is rebuilt from the CSS entry and copied into `dir` together with `manifest.json`. It is rebuilt rather than copied as is, because a stale copy is silent: a vault once shipped without the styles of two whole blocks while the TypeScript was fresh. With `css: false`, a `styles.css` in the plugin root is copied if it exists.
+   Only these three files are copied, the ones Obsidian loads. Snipsy's old `build:vault` script also copied `docs/screens`; the kit leaves it out on purpose, because nothing in a vault's plugin folder reads screenshots. Put such files in the seed vault of a spec that needs them.
 5. There is no bundle check in this mode.
 
 With `--watch` the build then keeps running:

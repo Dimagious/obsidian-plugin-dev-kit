@@ -6,7 +6,9 @@ import type { SourceFile } from "./code-checks.js";
 /**
  * The Chromium that Obsidian 1.11.4 runs on (Electron 39, Chrome 142): the browser the scanner names in
  * "Unexpected browser feature ... is only partially supported by Obsidian 1.11.4". Raise it, together with the
- * mirrored scanner configuration, when the scanner names a newer Obsidian.
+ * mirrored scanner configuration, when the scanner names a newer Obsidian. The public scorecard names an Obsidian
+ * per plugin ("1.4.5" for Snipsy, `minAppVersion` 1.5.0) and how it picks one is not documented, so this is one
+ * target for every plugin; docs/scanner.md lists the gap.
  */
 export const OBSIDIAN_BROWSERS: readonly string[] = ["chrome 142"];
 export const OBSIDIAN_VERSION = "1.11.4";

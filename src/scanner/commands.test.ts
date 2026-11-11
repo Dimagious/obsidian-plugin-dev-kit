@@ -91,6 +91,45 @@ describe("opdk scan", () => {
         expect(ctx.out.join("")).not.toContain("✓ scan");
     });
 
+    it("reports every typescript-eslint no-unsafe-* rule, as the newest scanner layer does (Snipsy 1.7.1 scorecard)", async () => {
+        const plugin = cleanPlugin();
+        plugin.write(
+            "src/main.ts",
+            [
+                "declare function takesNumber(n: number): void;",
+                'const value = JSON.parse("{}");', // 2: assignment
+                "export const a = (): void => {",
+                "    value.run();", // 4: member access, then call
+                "    takesNumber(value);", // 5: argument
+                "};",
+                "export const b = (): number => value;", // 7: return
+                "",
+            ].join("\n"),
+        );
+        trackAll(plugin.dir);
+        const ctx = createContext(plugin.dir);
+        expect(await scanCommand.run([], ctx)).toBe(1);
+        const err = ctx.err.join("");
+        for (const [line, rule] of [
+            [2, "no-unsafe-assignment"],
+            [4, "no-unsafe-member-access"],
+            [4, "no-unsafe-call"],
+            [5, "no-unsafe-argument"],
+            [7, "no-unsafe-return"],
+        ] as const) {
+            expect(err).toContain(`src/main.ts:${String(line)}  @typescript-eslint/${rule}`);
+        }
+    });
+
+    it("lints the plugin's eslint.config.js with type information, as the live scanner does (Snipsy 1.7.1 scorecard)", async () => {
+        const plugin = cleanPlugin();
+        plugin.write("eslint.config.js", ["const loose = JSON.parse(\"{}\");", "export default loose;", ""].join("\n"));
+        trackAll(plugin.dir);
+        const ctx = createContext(plugin.dir);
+        expect(await scanCommand.run([], ctx)).toBe(1);
+        expect(ctx.err.join("")).toContain("eslint.config.js:1  @typescript-eslint/no-unsafe-assignment");
+    });
+
     it("prints an advisory finding as a warning and still exits 0", async () => {
         const plugin = cleanPlugin();
         plugin.write("src/stub.ts", "// @ts-ignore\nexport const x: number = 1;\n");

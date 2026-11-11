@@ -184,7 +184,7 @@ A crashed or killed run (a `kill -9`, a power cut) cannot clean up after itself.
 | `electronArgs` | string[] | `[]` | Extra Electron arguments, for example `--use-mock-keychain`. `--user-data-dir` is refused: the kit gives every test its own |
 | `version` | string | unset | Fail the test when the running Obsidian is not this `x.y.z`. The env var `OBSIDIAN_VERSION` replaces it. Channels such as `latest` are refused: the kit checks the installed Obsidian, it does not download versions |
 | `timeouts.launch` | ms | 45000 | `_electron.launch` |
-| `timeouts.ready` | ms | 30000 | From the window opening until the workspace and every plugin are loaded. Also bounds the reload in `mobile()` and `desktop()` |
+| `timeouts.ready` | ms | 30000 | From the window opening until the workspace and every plugin are loaded. Also bounds the reload in `mobile()`, `desktop()` and `reload()` |
 | `timeouts.close` | ms | 5000 | How long `app.close()` may take before the process tree is killed. Also bounds finishing the video |
 | `timeouts.trace` | ms | 60000 | How long stopping the Obsidian trace may take. The stop writes every snapshot and screenshot of the test to a zip, so it grows with the length of the test; raise it for a long traced test |
 | `timeouts.helpers.settings` | ms | 15000 | A plugin's settings tab to register (`openSettings(tab)`) |
@@ -345,6 +345,15 @@ await win.screenshot({ path: "listing-1x.png", clip: { x: 0, y: 0, width: 450, h
 Verified on a 2x display with Obsidian 1.14.5: the first call gave 900 x 1600 and the second 450 x 800. `scale` in `mobile()` was 2 there; `mobile({ scale: 3 })` gave the same 900 x 1600, so the size of `win.screenshot()` is the display's ratio and not the `scale` option. If you need N-times pixels on a display that is not N times, the picture has to be scaled after it is taken.
 
 A second `mobile()` with another width reloads the window, because the phone or tablet layout is decided from the viewport at load; the same width does not. Plugins with `isDesktopOnly: true` do not load on mobile, so the wait fails naming them.
+
+### Reload
+
+`reload()` runs Obsidian's own "Reload app without saving" command (`app:reload`) and returns once the new page is up and every enabled plugin has loaded again. It marks the old page, waits until it is gone, then waits for the plugins, the same way `mobile()` does after its reload, so the next line can use the editor without racing the load. `app:reload` reloads without saving, so text typed right before `reload()` can be lost to Obsidian's save debounce: wait for the file to be written first (for example poll `vault.read` until it holds the text). The page call that starts the reload never returns; that rejection is the only one accepted. Anything installed in the old page is gone afterwards, `replace()` fakes included. It fails naming the command when the Obsidian has no `app:reload`, with its own message when Obsidian refuses to run it, and with `timeouts.ready` as the budget when the window does not come back.
+
+```ts
+await obsidian.reload();
+await obsidian.openFile("Notes/a.md");
+```
 
 ### Page code
 

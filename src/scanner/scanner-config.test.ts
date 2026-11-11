@@ -65,8 +65,12 @@ describe("the mirrored scanner configuration", () => {
         expect(obsidianmd.meta.version).toBe(MIRRORED_OBSIDIANMD_VERSION);
     });
 
-    it("keeps all 48 of upstream's ignored paths (0.5.1), the first three being its stand-ins for bundled output", () => {
+    it("keeps upstream's 48 ignore entries (0.5.1) except that eslint.config.* is linted, as the live scanner does", () => {
         expect(SCANNER_IGNORES).toHaveLength(48);
+        const configGroup = SCANNER_IGNORES.find((entry) => entry.includes("esbuild,"));
+        expect(configGroup).toBeDefined();
+        expect(configGroup).not.toMatch(/[{,]eslint[,}]/);
+        expect(configGroup).toContain("jest");
         expect(SCANNER_IGNORES).toEqual(expect.arrayContaining(["main.js", "**/scripts/**", "**/docs/**", "**/*.test.*", "**/e2e/**"]));
     });
 });
@@ -76,7 +80,10 @@ describe("createScannerConfig", () => {
     const untyped = createScannerConfig({ cwd: "/plugin", typeAware: false });
 
     it("points the project service at the plugin root", () => {
-        expect(parserOptions(typed[0])).toEqual({ projectService: true, tsconfigRootDir: "/plugin" });
+        expect(parserOptions(typed[0])).toEqual({
+            projectService: { allowDefaultProject: ["eslint.config.*"] },
+            tsconfigRootDir: "/plugin",
+        });
     });
 
     it("builds on obsidianmd's recommended preset", () => {
@@ -96,17 +103,25 @@ describe("createScannerConfig", () => {
         }
     });
 
-    it("switches off what the scanner skips, and the command-id rules", () => {
+    it("switches off what the scanner skips", () => {
+        const rules = rulesFor(typed, "**/*.{ts,cts,mts,tsx,js,cjs,mjs,jsx}");
+        for (const rule of ["no-undef", "@typescript-eslint/restrict-template-expressions", "import/no-unresolved"]) {
+            expect(rules[rule]).toBe("off");
+        }
+    });
+
+    it("turns on what the newest scanner layer adds: the no-unsafe-* rules and the command-id rules at warn", () => {
         const rules = rulesFor(typed, "**/*.{ts,cts,mts,tsx,js,cjs,mjs,jsx}");
         for (const rule of [
-            "no-undef",
+            "@typescript-eslint/no-unsafe-member-access",
+            "@typescript-eslint/no-unsafe-assignment",
+            "@typescript-eslint/no-unsafe-argument",
             "@typescript-eslint/no-unsafe-call",
-            "@typescript-eslint/restrict-template-expressions",
-            "import/no-unresolved",
+            "@typescript-eslint/no-unsafe-return",
             "obsidianmd/commands/no-command-in-command-id",
             "obsidianmd/commands/no-plugin-id-in-command-id",
         ]) {
-            expect(rules[rule]).toBe("off");
+            expect(rules[rule]).toBe("warn");
         }
     });
 

@@ -524,6 +524,19 @@ export function switchMobileEmulation(on: boolean): void {
     (globalThis as unknown as PageGlobals).app?.emulateMobile?.(on);
 }
 
+/**
+ * Starts Obsidian's own reload, the command "Reload app without saving" (`app:reload`). The window reloads, so a call
+ * that works never returns. One that returns says why not: "missing" (no `executeCommandById` or no such command),
+ * "refused" (the command exists and Obsidian declined to run it) or "started" (it ran and the page is still here).
+ */
+export function reloadApp(): "missing" | "refused" | "started" {
+    const commands = (globalThis as unknown as PageGlobals).app?.commands;
+    if (commands?.executeCommandById === undefined || commands.commands === undefined || !("app:reload" in commands.commands)) {
+        return "missing";
+    }
+    return commands.executeCommandById("app:reload") ? "started" : "refused";
+}
+
 /** True once the body class says whether Obsidian runs as mobile. */
 export function isMobileApplied(on: boolean): boolean {
     return (globalThis as unknown as PageGlobals).document?.body.classList.contains("is-mobile") === on;

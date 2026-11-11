@@ -136,6 +136,13 @@ export interface ObsidianHelpers {
     mobile(options?: MobileOptions): Promise<void>;
     /** Undoes `mobile()`. */
     desktop(): Promise<void>;
+    /**
+     * Reloads the window with Obsidian's own "Reload app without saving" command (`app:reload`) and waits until the
+     * new page is up and every enabled plugin has loaded again, so the next line can use the editor or a plugin
+     * without racing the load. Everything installed in the old page is gone afterwards, the fakes of `replace()`
+     * included. Fails naming the command when this Obsidian has none, and with its own message when Obsidian refuses to run it. The command reloads without saving: wait until text typed just before it is written to the file.
+     */
+    reload(): Promise<void>;
 
     /**
      * Runs `fn(app, arg)` in the page, where `app` is `window.app`, and returns its result (a promise is awaited). The

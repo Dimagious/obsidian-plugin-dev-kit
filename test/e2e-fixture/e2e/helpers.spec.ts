@@ -328,6 +328,24 @@ test.describe("mobile", () => {
     });
 });
 
+test.describe("reload", () => {
+    test("reload() loads a new page and returns once every plugin is back, forgetting a fake", async ({ obsidian, win }) => {
+        await inPage(win, (page) => {
+            (page as unknown as { __beforeReload: boolean }).__beforeReload = true;
+        });
+        await obsidian.replace(FIXTURE_ID, "transport", () => (request: string) => `fake:${request}`);
+        await obsidian.reload();
+        const after = await inPage(win, (page) => ({
+            oldPage: (page as unknown as { __beforeReload?: boolean }).__beforeReload === true,
+            loaded: [page.app.plugins.plugins["opdk-e2e-fixture"] !== undefined, page.app.plugins.plugins["opdk-e2e-second"] !== undefined],
+            transport: page.app.plugins.plugins["opdk-e2e-fixture"]?.transport?.("x"),
+        }));
+        expect(after.oldPage).toBe(false);
+        expect(after.loaded).toEqual([true, true]);
+        expect(after.transport).not.toBe("fake:x");
+    });
+});
+
 test.describe("mobile layout", () => {
     test("a second mobile() with another width loads the layout of that width again", async ({ obsidian, win }) => {
         const layout = (): Promise<{ phone: boolean; tablet: boolean; width: number }> =>

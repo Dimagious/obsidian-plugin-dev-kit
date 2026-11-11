@@ -13,6 +13,7 @@ const finding = (overrides: Partial<Finding> = {}): Finding => ({
 describe("formatFinding", () => {
     it("prints file:line, the rule and the message", () => {
         expect(formatFinding(finding())).toBe("src/a.ts:3  obsidianmd/x  Do not.");
+        expect(formatFinding(finding({ line: 0 }))).toBe("src/a.ts  obsidianmd/x  Do not.");
     });
 });
 

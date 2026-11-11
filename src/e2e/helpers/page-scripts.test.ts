@@ -27,6 +27,7 @@ import {
     readEditorSelection,
     readEditorText,
     readFakeCalls,
+    reloadApp,
     removeFake,
     removeNotices,
     runCommandById,
@@ -679,6 +680,31 @@ describe("mobile scripts", () => {
         vi.stubGlobal("__opdkBeforeReload", undefined);
         vi.stubGlobal("app", { workspace: { layoutReady: false } });
         expect(isReloaded()).toBe(false);
+    });
+
+    it("starts Obsidian's reload through the app:reload command", () => {
+        const executeCommandById = vi.fn(() => true);
+        vi.stubGlobal("app", { commands: { commands: { "app:reload": {} }, executeCommandById } });
+        expect(reloadApp()).toBe("started");
+        expect(executeCommandById).toHaveBeenCalledWith("app:reload");
+    });
+
+    it("says missing, without running anything, when there is no app:reload command, no registry or no executeCommandById", () => {
+        const executeCommandById = vi.fn(() => true);
+        vi.stubGlobal("app", { commands: { commands: { "editor:save": {} }, executeCommandById } });
+        expect(reloadApp()).toBe("missing");
+        expect(executeCommandById).not.toHaveBeenCalled();
+        vi.stubGlobal("app", { commands: { commands: { "app:reload": {} } } });
+        expect(reloadApp()).toBe("missing");
+        vi.stubGlobal("app", {});
+        expect(reloadApp()).toBe("missing");
+    });
+
+    it("says refused when the command exists and Obsidian declines to run it", () => {
+        const executeCommandById = vi.fn(() => false);
+        vi.stubGlobal("app", { commands: { commands: { "app:reload": {} }, executeCommandById } });
+        expect(reloadApp()).toBe("refused");
+        expect(executeCommandById).toHaveBeenCalledWith("app:reload");
     });
 
     it("starts the emulation and reads the body class", () => {
