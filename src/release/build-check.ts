@@ -29,13 +29,13 @@ export interface BuildCheckInput {
     readonly cleanups: CleanupSet;
 }
 
-interface Built {
+export interface Built {
     readonly mainJs: Buffer;
     /** Undefined when the plugin has no CSS entry. */
     readonly css: Buffer | undefined;
 }
 
-type BuildOutcome = { readonly ok: true; readonly built: Built } | { readonly ok: false; readonly problem: Problem };
+export type BuildOutcome = { readonly ok: true; readonly built: Built } | { readonly ok: false; readonly problem: Problem };
 
 const readBytes = (file: string): Buffer | undefined => {
     try {
@@ -53,7 +53,7 @@ const readBytes = (file: string): Buffer | undefined => {
  * developer's own `main.js` or `styles.css`. The options are the ones `opdk build` uses (`toEsbuildOptions`, the
  * CSS bundler), with absolute output paths.
  */
-async function buildOnce(cwd: string, build: ResolvedBuild, outDir: string, options: { readonly preserveSymlinks?: boolean } = {}): Promise<BuildOutcome> {
+export async function buildOnce(cwd: string, build: ResolvedBuild, outDir: string, options: { readonly preserveSymlinks?: boolean } = {}): Promise<BuildOutcome> {
     const stylesFile = path.join(outDir, "styles.css");
     let css: Buffer | undefined;
     if (build.css !== false) {

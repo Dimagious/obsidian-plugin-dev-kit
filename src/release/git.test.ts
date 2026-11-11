@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createReleaseRepo, hermeticGitEnv, type ReleaseRepo } from "../test-support/release-fixture.js";
-import { collectFacts, createRunGit, repositoryFreeEnvironment } from "./git.js";
+import { collectFacts, createRunGit, remoteEnvironment, repositoryFreeEnvironment } from "./git.js";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { testTmpRoot } from "../test-support/test-tmp.js";
@@ -143,6 +143,19 @@ describe("repositoryFreeEnvironment", () => {
     });
 });
 
+describe("remoteEnvironment", () => {
+    it("turns prompts off and puts ssh in batch mode when the user has no ssh of their own", () => {
+        expect(remoteEnvironment({ HOME: "/h", GIT_TERMINAL_PROMPT: "1" }, false)).toEqual({ HOME: "/h", GIT_TERMINAL_PROMPT: "0", GIT_SSH_COMMAND: "ssh -o BatchMode=yes" });
+    });
+
+    it("leaves ssh alone when GIT_SSH_COMMAND, GIT_SSH or core.sshCommand names one", () => {
+        expect(remoteEnvironment({ GIT_SSH_COMMAND: "ssh -i key" }, false)).toEqual({ GIT_SSH_COMMAND: "ssh -i key", GIT_TERMINAL_PROMPT: "0" });
+        expect(remoteEnvironment({ GIT_SSH: "/bin/ssh2" }, false)).toEqual({ GIT_SSH: "/bin/ssh2", GIT_TERMINAL_PROMPT: "0" });
+        expect(remoteEnvironment({}, true)).toEqual({ GIT_TERMINAL_PROMPT: "0" });
+        expect(remoteEnvironment({ GIT_SSH_COMMAND: "" }, false).GIT_SSH_COMMAND).toBe("ssh -o BatchMode=yes");
+    });
+});
+
 describe("createRunGit and the remote", () => {
     // A stand-in for ssh: records what git handed it, then says what git says when it needs a password it may not ask for.
     function fakeSsh(dir: string): { command: string; log: string } {
@@ -162,6 +175,40 @@ describe("createRunGit and the remote", () => {
         await expect(run(["fetch", "--quiet", "origin"])).rejects.toThrow(/terminal prompts disabled[\s\S]*never waits for a prompt\. Sign in first/);
         expect(readFileSync(ssh.log, "utf8")).toBe("0");
         await expect(run(["ls-remote", "--tags", "origin"])).rejects.toThrow(/never waits for a prompt/);
+    });
+});
+
+describe("createRunGit ssh", () => {
+    // A stand-in for ssh that records its arguments and fails, so the test needs no network.
+    function recordingSsh(dir: string, name: string): { script: string; log: string } {
+        const log = path.join(dir, `${name}.log`);
+        const script = path.join(dir, name);
+        writeFileSync(script, `#!/bin/sh\nprintf '%s' "$*" > "${log}"\nexit 1\n`);
+        chmodSync(script, 0o755);
+        return { script, log };
+    }
+
+    it("runs ssh in batch mode for a remote command when the user set no ssh of their own", async () => {
+        const current = createReleaseRepo();
+        repo = current;
+        const dir = path.dirname(current.dir);
+        const fake = recordingSsh(dir, "ssh");
+        current.git("remote", "set-url", "origin", "ssh://git@example.invalid/plugin.git");
+        const run = createRunGit(current.dir, { ...hermeticGitEnv(), PATH: `${dir}:${process.env.PATH ?? ""}` });
+        await expect(run(["ls-remote", "origin"])).rejects.toThrow(/ls-remote origin failed/);
+        expect(readFileSync(fake.log, "utf8")).toContain("-o BatchMode=yes");
+    });
+
+    it("keeps the core.sshCommand of the user", async () => {
+        const current = createReleaseRepo();
+        repo = current;
+        const dir = path.dirname(current.dir);
+        const own = recordingSsh(dir, "own-ssh");
+        current.git("remote", "set-url", "origin", "ssh://git@example.invalid/plugin.git");
+        current.git("config", "core.sshCommand", own.script);
+        const run = createRunGit(current.dir, hermeticGitEnv());
+        await expect(run(["ls-remote", "origin"])).rejects.toThrow(/ls-remote origin failed/);
+        expect(readFileSync(own.log, "utf8")).not.toContain("BatchMode");
     });
 });
 

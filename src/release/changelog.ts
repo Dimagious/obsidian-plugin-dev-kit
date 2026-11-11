@@ -73,6 +73,20 @@ export function checkChangelog(text: string | undefined, version: string, file: 
     return [];
 }
 
+/**
+ * The body of the `## [version]` section: what the release notes show. The heading, the date and the link
+ * footer are left out, `###` subheadings stay, and the blank lines around the body are trimmed. Undefined when
+ * the section does not exist; an empty string when it has no text.
+ */
+export function releaseNotes(text: string, version: string): string | undefined {
+    const lines = splitLines(text);
+    const section = findSections(lines).find((candidate) => candidate.title === version);
+    if (section === undefined) {
+        return undefined;
+    }
+    return lines.slice(section.heading + 1, section.end).join("\n").trim();
+}
+
 /** Why `[Unreleased]` cannot be released, or undefined when it has entries. */
 export function unreleasedProblem(text: string | undefined, file: string): string | undefined {
     if (text === undefined) {

@@ -36,6 +36,8 @@ export interface CommittedTreeInput {
     /** An empty folder to extract into; its parent holds the tar file. */
     readonly workDir: string;
     readonly overlay: readonly OverlayFile[];
+    /** The commit-ish to extract. Default `HEAD`; the publish step passes the release tag. */
+    readonly ref?: string;
 }
 
 /** The path a porcelain line is about (`XY path`, or `XY old -> new`). */
@@ -122,13 +124,13 @@ function linkNodeModules(source: string, target: string): void {
  *
  * Throws when git or tar fails inside a repository; returns `unavailable` when there is no repository or commit.
  */
-export async function extractCommittedTree({ cwd, run, workDir, overlay }: CommittedTreeInput): Promise<CommittedTree> {
+export async function extractCommittedTree({ cwd, run, workDir, overlay, ref = "HEAD" }: CommittedTreeInput): Promise<CommittedTree> {
     if ((await tryGit(run, ["rev-parse", "--is-inside-work-tree"])) !== "true") {
         return { kind: "unavailable", reason: "the folder is not inside a git repository" };
     }
-    const commit = await tryGit(run, ["rev-parse", "--short", "--verify", "--quiet", "HEAD"]);
+    const commit = await tryGit(run, ["rev-parse", "--short", "--verify", "--quiet", `${ref}^{commit}`]);
     if (commit === undefined || commit === "") {
-        return { kind: "unavailable", reason: "the repository has no commit yet" };
+        return { kind: "unavailable", reason: ref === "HEAD" ? "the repository has no commit yet" : `the repository has no commit ${ref}` };
     }
     const layout = unsupportedInstallLayout((relative) => existsSync(path.join(cwd, relative)));
     if (layout !== undefined) {
@@ -145,7 +147,7 @@ export async function extractCommittedTree({ cwd, run, workDir, overlay }: Commi
     const dir = path.join(workDir, "plugin-copy");
     mkdirSync(dir);
     // Run inside the plugin folder, git archives only that folder, so a plugin in a subfolder of a repository works.
-    await run(["archive", "--format=tar", "-o", tarFile, "HEAD"]);
+    await run(["archive", "--format=tar", "-o", tarFile, ref]);
     try {
         await execFileAsync("tar", ["-xf", tarFile, "-C", dir], { env: gitFreeEnvironment(process.env) });
     } catch (error) {

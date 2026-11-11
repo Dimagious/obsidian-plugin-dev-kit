@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CHANGELOG } from "../test-support/release-fixture.js";
-import { checkChangelog, promoteUnreleased, unreleasedProblem } from "./changelog.js";
+import { checkChangelog, promoteUnreleased, releaseNotes, unreleasedProblem } from "./changelog.js";
 
 describe("checkChangelog", () => {
     it("passes when the version has a section with an entry", () => {
@@ -90,5 +90,26 @@ describe("promoteUnreleased", () => {
 
     it("throws without an [Unreleased] section", () => {
         expect(() => promoteUnreleased("## [1.0.0]\n\n- A.\n", "1.1.0", "2026-11-11")).toThrow(/no "## \[Unreleased\]"/);
+    });
+});
+
+describe("releaseNotes", () => {
+    const text = "# Changelog\n\n## [Unreleased]\n\n- Next.\n\n## [1.1.0] - 2026-02-01\n\n### Added\n\n- Two.\n- Three.\n\n### Fixed\n\n- Four.\n\n## [1.0.0] - 2026-01-01\n\n- One.\n\n[Unreleased]: https://example.com/compare/1.1.0...HEAD\n[1.0.0]: https://example.com/releases/tag/1.0.0\n";
+
+    it("returns the body between the heading and the next heading, subheadings kept, without the date", () => {
+        expect(releaseNotes(text, "1.1.0")).toBe("### Added\n\n- Two.\n- Three.\n\n### Fixed\n\n- Four.");
+    });
+
+    it("stops before the link footer in the last section", () => {
+        expect(releaseNotes(text, "1.0.0")).toBe("- One.");
+    });
+
+    it("reads CRLF files", () => {
+        expect(releaseNotes(text.replaceAll("\n", "\r\n"), "1.0.0")).toBe("- One.");
+    });
+
+    it("returns undefined for a version without a section, and an empty string for an empty one", () => {
+        expect(releaseNotes(text, "2.0.0")).toBeUndefined();
+        expect(releaseNotes("## [1.0.0] - 2026-01-01\n\n## [0.9.0] - 2025-12-01\n- x\n", "1.0.0")).toBe("");
     });
 });

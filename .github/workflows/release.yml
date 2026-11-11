@@ -1,0 +1,201 @@
+name: Release
+
+# Reusable release workflow for Obsidian plugins that use the kit. Call it, do not copy it: `opdk release` verifies that
+# the attestations were signed by THIS workflow (Dimagious/obsidian-plugin-dev-kit/.github/workflows/release.yml), so a
+# copy in the plugin's repository makes the release stop before it is published. A plugin calls it from a tiny workflow
+# of its own and pins the kit to a full commit SHA:
+#
+#   name: Release
+#   on:
+#     push:
+#       tags: ['*.*.*']
+#   permissions:
+#     contents: write
+#     id-token: write
+#     attestations: write
+#   jobs:
+#     release:
+#       uses: Dimagious/obsidian-plugin-dev-kit/.github/workflows/release.yml@<full commit SHA of the kit>
+#
+# Two jobs. `build` has read-only access to the repository and runs everything that executes plugin code (npm ci, the
+# plugin's build script) and `opdk release check`. `release` holds the write token and the signing identity, runs no
+# npm and no plugin code, and only handles the files that `build` handed over: it attests main.js, manifest.json and
+# styles.css (when it exists) and creates a DRAFT release named after the tag with the changelog section as notes.
+# Nothing is published here: `opdk release` (or `opdk release publish X.Y.Z`) verifies the draft and the attestations
+# from the owner's machine, publishes it, and only then pushes the branch, so the default-branch manifest never points
+# at a release that does not exist. The tag is refused unless it is the manifest version and is built on the default
+# branch.
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version used to install and build.
+        type: string
+        default: "22"
+      zip:
+        description: Also attach <plugin id>-<version>.zip (main.js, manifest.json, styles.css). Off by default; Obsidian does not read it.
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      # Full history: the ancestry check below needs origin/<default branch>.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # No npm cache: the release job's token never meets a restored cache, and the build is not worth a poisoned one.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          package-manager-cache: false
+
+      # The branch is pushed after the release, so the release commit is ahead of the default branch by design:
+      # the tip of the default branch must be an ancestor of the tagged commit, not the other way round.
+      - name: Refuse a tag that is not the manifest version or not built on the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            echo "::error::This workflow runs for a pushed tag, not for $GITHUB_REF_TYPE $GITHUB_REF_NAME."
+            exit 1
+          fi
+          version="$(node -p "require('./manifest.json').version")"
+          if [ "$TAG" != "$version" ]; then
+            echo "::error::The tag $TAG is not the version in manifest.json ($version). Obsidian looks for a release tagged exactly like the manifest version. Tags are never moved: release a new version."
+            exit 1
+          fi
+          if [ -z "$DEFAULT_BRANCH" ] || ! git rev-parse --verify --quiet "refs/remotes/origin/$DEFAULT_BRANCH" > /dev/null; then
+            echo "::error::Cannot find the default branch (origin/$DEFAULT_BRANCH) to compare the tag with."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "refs/remotes/origin/$DEFAULT_BRANCH" "$GITHUB_SHA"; then
+            echo "::error::The tag $TAG is not built on top of origin/$DEFAULT_BRANCH. Someone pushed to $DEFAULT_BRANCH after the release commit was made, or the tag was cut from another branch. Release again from an up-to-date $DEFAULT_BRANCH."
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Release check
+        run: node_modules/.bin/opdk release check --tag "$TAG"
+
+      # The community directory rebuilds main.js with the first of these scripts, so the release is built with it too.
+      # `opdk release` compares the assets byte for byte with its own `opdk build` of the tag: the script has to run it.
+      - name: Build
+        run: |
+          set -euo pipefail
+          script="$(node -e "const s = require('./package.json').scripts || {}; console.log(['build', 'build:plugin', 'compile'].find((name) => typeof s[name] === 'string') || '')")"
+          if [ -z "$script" ]; then
+            echo "::error::package.json has none of the scripts build, build:plugin, compile."
+            exit 1
+          fi
+          npm run "$script"
+
+      # The only thing the release job receives: the three files and the notes, in a folder of their own.
+      - name: Collect the assets and the release notes
+        run: |
+          set -euo pipefail
+          for file in main.js manifest.json; do
+            if [ ! -s "$file" ]; then
+              echo "::error::The build did not leave $file in the plugin root."
+              exit 1
+            fi
+          done
+          dir="$RUNNER_TEMP/release-assets"
+          mkdir "$dir"
+          cp main.js manifest.json "$dir/"
+          if [ -f styles.css ]; then
+            cp styles.css "$dir/"
+          fi
+          node_modules/.bin/opdk release notes "$TAG" > "$dir/notes.md"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets
+          path: ${{ runner.temp }}/release-assets
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      # No checkout and no npm: nothing of the plugin's runs in this job.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: release-assets
+
+      # The folder came from a job that ran plugin code: it holds exactly the expected files and nothing else.
+      - name: Check the files
+        id: assets
+        run: |
+          set -euo pipefail
+          cd release-assets
+          for file in *; do
+            case "$file" in
+              main.js | manifest.json | styles.css | notes.md) ;;
+              *)
+                echo "::error::The build job handed over an unexpected file: $file."
+                exit 1
+                ;;
+            esac
+          done
+          for file in main.js manifest.json notes.md; do
+            if [ ! -s "$file" ]; then
+              echo "::error::The build job did not hand over $file."
+              exit 1
+            fi
+          done
+          {
+            echo "subjects<<EOF"
+            echo "release-assets/main.js"
+            echo "release-assets/manifest.json"
+            if [ -f styles.css ]; then echo "release-assets/styles.css"; fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # The signing certificate names this reusable workflow, whichever job runs it.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ steps.assets.outputs.subjects }}
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ZIP: ${{ inputs.zip }}
+        run: |
+          set -euo pipefail
+          cd release-assets
+          assets=(main.js manifest.json)
+          if [ -f styles.css ]; then
+            assets+=(styles.css)
+          fi
+          if [ "$ZIP" = "true" ]; then
+            id="$(jq -r '.id' manifest.json)"
+            if ! [[ "$id" =~ ^[A-Za-z0-9._-]+$ ]]; then
+              echo "::error::manifest.json has an id that is not safe to use in a file name: $id"
+              exit 1
+            fi
+            zip "$RUNNER_TEMP/$id-$TAG.zip" "${assets[@]}"
+            assets+=("$RUNNER_TEMP/$id-$TAG.zip")
+          fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "$TAG" --notes-file notes.md "${assets[@]}"

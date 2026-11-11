@@ -30,6 +30,21 @@ function workDir(current: ReleaseRepo): string {
 }
 
 describe("extractCommittedTree", () => {
+    it("extracts the given ref instead of HEAD, and says so when the ref does not exist", async () => {
+        const current = freshRepo();
+        current.write("src/main.ts", "export default class Later {}\n");
+        current.commitAll("later");
+        const work = workDir(current);
+        const tree = await extractCommittedTree({ cwd: current.dir, run: current.run, workDir: work, overlay: [], ref: "refs/tags/1.0.0" });
+        expect(tree.kind).toBe("ready");
+        if (tree.kind === "ready") {
+            expect(readFileSync(path.join(tree.dir, "src/main.ts"), "utf8")).toContain("FixturePlugin");
+            expect(tree.commit).toBe(current.git("rev-parse", "--short", "1.0.0^{commit}").trim());
+        }
+        const missing = await extractCommittedTree({ cwd: current.dir, run: current.run, workDir: path.join(work, "x"), overlay: [], ref: "refs/tags/nope" });
+        expect(missing).toEqual({ kind: "unavailable", reason: "the repository has no commit refs/tags/nope" });
+    });
+
     it("extracts HEAD at another path, without untracked or ignored files, and links the packages of node_modules", async () => {
         const current = freshRepo();
         current.write("node_modules/dep/index.js", "module.exports = 1;\n");
