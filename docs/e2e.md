@@ -43,7 +43,7 @@ Install the kit and the two things it runs on. The kit does not declare them as 
   "devDependencies": {
     "@playwright/test": "1.65.0",
     "electron": "44.10.2",
-    "obsidian-plugin-dev-kit": "github:Dimagious/obsidian-plugin-dev-kit#vX.Y.Z"
+    "obsidian-plugin-dev-kit": "github:Dimagious/obsidian-plugin-dev-kit#v0.1.0"
   }
 }
 ```
@@ -137,7 +137,7 @@ npm records a GitHub dependency in `package-lock.json` as `git+ssh://git@github.
 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf GIT_CONFIG_VALUE_0=ssh://git@github.com/ npm ci
 ```
 
-On a CI runner, which is thrown away after the job, `git config --global url."https://github.com/".insteadOf ssh://git@github.com/` before `npm ci` does the same. Or write the dependency as `git+https://github.com/Dimagious/obsidian-plugin-dev-kit.git#vX.Y.Z` in `package.json`.
+On a CI runner, which is thrown away after the job, `git config --global url."https://github.com/".insteadOf ssh://git@github.com/` before `npm ci` does the same. Or write the dependency as `git+https://github.com/Dimagious/obsidian-plugin-dev-kit.git#v0.1.0` in `package.json`.
 
 ## What happens per test
 
