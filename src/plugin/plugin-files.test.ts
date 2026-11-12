@@ -80,8 +80,8 @@ describe("skills", () => {
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name);
 
-    it("has the six module skills", () => {
-        expect(names.sort()).toEqual(["build", "demo", "e2e", "release", "scanner", "unit"]);
+    it("has the six module skills and the audit skill", () => {
+        expect(names.sort()).toEqual(["audit", "build", "demo", "e2e", "release", "scanner", "unit"]);
     });
 
     it.each(names)("%s: name matches its folder and the description fits the selection limit", (name) => {

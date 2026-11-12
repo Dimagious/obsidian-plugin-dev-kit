@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- Agent skill `/opdk:audit` for a plugin that already uses the kit, with its eval case. Phase 1 reads and measures without changing anything: coverage over all of `src` against the gate, the tests type-checked through a scratch tsconfig, unit runs on one worker in shuffled order before anyone turns `isolate` off, every picture's size, ratio, alt text and maker, a contact sheet per GIF that keeps the last frame, and the plugin's own claims about the kit. Findings carry file:line or a measured value and a triage (KIT, KIT-GENERIC, PLUGIN-ONLY, KNOWN with the number of plugins). The author picks what phase 2 does, one branch per batch, or takes backlog items only. It is distilled from a draft that was run on three plugins.
+
 ## [0.1.0] - 2026-11-12
 
 ### Added
