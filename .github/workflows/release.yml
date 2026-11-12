@@ -36,12 +36,16 @@ on:
         description: Also attach <plugin id>-<version>.zip (main.js, manifest.json, styles.css). Off by default; Obsidian does not read it.
         type: boolean
         default: false
+      runs-on:
+        description: Runner label for both jobs. Pinned by default, see docs/ci.md (Why ubuntu-24.04).
+        type: string
+        default: ubuntu-24.04
 
 permissions: {}
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -133,7 +137,7 @@ jobs:
 
   release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 10
     permissions:
       contents: write

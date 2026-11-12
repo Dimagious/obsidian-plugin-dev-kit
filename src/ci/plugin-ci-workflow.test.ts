@@ -138,6 +138,25 @@ describe("release.yml and plugin-ci.yml", () => {
     }
 });
 
+describe("release.yml runner", () => {
+    const workflow = load("release.yml");
+
+    it("takes runs-on as a plain string input that defaults to ubuntu-24.04", () => {
+        const input = workflow.on?.workflow_call?.inputs?.["runs-on"];
+        expect(input?.type).toBe("string");
+        expect(input?.default).toBe("ubuntu-24.04");
+    });
+
+    it("runs every job on that input and never on ubuntu-latest", () => {
+        const jobs = Object.entries(workflow.jobs ?? {});
+        expect(jobs.map(([name]) => name)).toEqual(["build", "release"]);
+        for (const [name, job] of jobs) {
+            expect(job["runs-on"], `job ${name}`).toBe("${{ inputs.runs-on }}");
+        }
+        expect(readRaw("release.yml")).not.toContain("ubuntu-latest");
+    });
+});
+
 describe("plugin-ci.yml", () => {
     const workflow = load("plugin-ci.yml");
     const inputs = workflow.on?.workflow_call?.inputs ?? {};
