@@ -1,7 +1,9 @@
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { ViteUserConfig } from "vitest/config";
 import { buildUnitConfig } from "./build-config.js";
 import { resolveUnitOptions } from "./options.js";
+import { findWorkspaceRoot } from "./workspace-root.js";
 import type { UnitConfigOptions } from "./options.js";
 
 /** The setup file of the kit's DOM polyfill, next to this module (`.js` in `dist/`, `.ts` when run from `src/`). */
@@ -31,5 +33,8 @@ function sibling(relative: string): string {
  */
 export function defineUnitConfig(options: UnitConfigOptions): ViteUserConfig {
     const resolved = resolveUnitOptions(options, process.cwd());
-    return buildUnitConfig(resolved, { dom: sibling("./dom/setup"), mocks: "obsidian-test-mocks/vitest-setup" });
+    // Real path of the setup file: Vite checks the real path of a file it serves. Node already resolves symlinks in
+    // import.meta.url for a linked kit; realpath keeps that true under --preserve-symlinks / NODE_PRESERVE_SYMLINKS.
+    const dom = fs.realpathSync(sibling("./dom/setup"));
+    return buildUnitConfig(resolved, { dom, mocks: "obsidian-test-mocks/vitest-setup" }, findWorkspaceRoot(resolved.rootDir));
 }

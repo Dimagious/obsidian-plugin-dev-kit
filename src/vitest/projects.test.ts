@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { transformSync } from "esbuild";
 import { createVitest } from "vitest/node";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { UnitConfigOptions } from "./options.js";
@@ -88,12 +89,9 @@ describe("the obsidian { node, dom } option in a real Vitest run", () => {
     function writeConfig(obsidian: unknown): void {
         const entry = fileURLToPath(new URL("./define-unit-config.ts", import.meta.url));
         const given = JSON.stringify({ coverage: { include: ["src/**/*.ts"] }, rootDir: root, dom: ["src/ui/**/*.test.ts"], obsidian });
-        // The kit's own setup file lives outside the temp root; a plugin finds it under its node_modules instead.
-        write(
-            "vitest.config.ts",
-            `import { defineUnitConfig } from ${JSON.stringify(entry)};\n` +
-                `export default { ...defineUnitConfig(${given}), server: { fs: { strict: false } } };\n`,
-        );
+        // The kit's setup file lives in this repository, outside the temp root, like a linked install; the preset
+        // allows it itself, and the "kit installs" tests below cover the layouts a plugin really has.
+        write("vitest.config.ts", `import { defineUnitConfig } from ${JSON.stringify(entry)};\nexport default defineUnitConfig(${given});\n`);
     }
 
     it("a node file imports the plugin's stub while a dom file imports its own", async () => {
@@ -132,5 +130,71 @@ describe("the obsidian { node, dom } option in a real Vitest run", () => {
         } finally {
             await vitest.close();
         }
+    });
+});
+
+describe("kit installs: a dom file loads the kit's setup file wherever the kit is installed", () => {
+    let outside: string;
+
+    beforeEach(() => {
+        outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "opdk-vitest-kit-")));
+        // Only the file of this describe: the ones made for the assignment tests above are empty.
+        fs.rmSync(path.join(root, "src"), { recursive: true, force: true });
+        fs.rmSync(path.join(root, "scripts"), { recursive: true, force: true });
+    });
+    afterEach(() => {
+        fs.rmSync(outside, { recursive: true, force: true });
+    });
+
+    /** What `tsc` puts in `dist/`: the vitest module compiled to ESM next to a package.json, with the peers it imports. */
+    function installBuiltKit(kitDir: string): void {
+        const source = fileURLToPath(new URL(".", import.meta.url));
+        for (const [from, to] of [[source, "dist/vitest"], [path.join(source, "dom"), "dist/vitest/dom"]] as const) {
+            fs.mkdirSync(path.join(kitDir, to), { recursive: true });
+            for (const name of fs.readdirSync(from)) {
+                if (!name.endsWith(".ts") || name.endsWith(".test.ts")) continue;
+                const compiled = transformSync(fs.readFileSync(path.join(from, name), "utf8"), { loader: "ts", format: "esm" });
+                fs.writeFileSync(path.join(kitDir, to, name.replace(/\.ts$/, ".js")), compiled.code);
+            }
+        }
+        fs.writeFileSync(path.join(kitDir, "package.json"), JSON.stringify({ name: "obsidian-plugin-dev-kit", type: "module" }));
+        // The peers (vitest, jsdom) a plugin installs next to the kit.
+        fs.symlinkSync(fileURLToPath(new URL("../../node_modules", import.meta.url)), path.join(kitDir, "node_modules"), "dir");
+    }
+
+    async function runDomFile(): Promise<string | undefined> {
+        fs.mkdirSync(path.join(root, "src/ui"), { recursive: true });
+        fs.writeFileSync(
+            path.join(root, "src/ui/a.test.ts"),
+            'import { expect, it } from "vitest";\nit("has the Obsidian DOM helpers", () => { expect(typeof document.createElement("div").createDiv).toBe("function"); });\n',
+        );
+        fs.writeFileSync(path.join(root, "package.json"), "{}");
+        const kit = path.join(root, "node_modules/obsidian-plugin-dev-kit/dist/vitest/define-unit-config.js");
+        const given = JSON.stringify({ coverage: { include: ["src/**/*.ts"] }, rootDir: root, dom: ["src/ui/**/*.test.ts"] });
+        fs.writeFileSync(
+            path.join(root, "vitest.config.ts"),
+            `import { defineUnitConfig } from ${JSON.stringify(kit)};\nexport default defineUnitConfig(${given});\n`,
+        );
+        const vitest = await createVitest({ root, watch: false, coverage: { enabled: false }, reporters: [] }, { logLevel: "silent" });
+        try {
+            await vitest.start();
+            const [file] = vitest.state.getFiles();
+            const error = file?.tasks.flatMap((task) => task.result?.errors ?? [])[0] ?? file?.result?.errors?.[0];
+            return file?.result?.state === "pass" ? "pass" : (error?.message ?? file?.result?.state ?? "no file ran");
+        } finally {
+            await vitest.close();
+        }
+    }
+
+    it("a symlink to a kit outside the plugin (npm link, file:) works with fs.strict on", async () => {
+        installBuiltKit(path.join(outside, "obsidian-plugin-dev-kit"));
+        fs.mkdirSync(path.join(root, "node_modules"), { recursive: true });
+        fs.symlinkSync(path.join(outside, "obsidian-plugin-dev-kit"), path.join(root, "node_modules/obsidian-plugin-dev-kit"), "dir");
+        expect(await runDomFile()).toBe("pass");
+    });
+
+    it("a copy under node_modules (a github: install) works with fs.strict on", async () => {
+        installBuiltKit(path.join(root, "node_modules/obsidian-plugin-dev-kit"));
+        expect(await runDomFile()).toBe("pass");
     });
 });

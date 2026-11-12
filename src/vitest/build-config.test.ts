@@ -1,14 +1,16 @@
 import path from "node:path";
 import { configDefaults, mergeConfig } from "vitest/config";
+import type { ViteUserConfig } from "vitest/config";
 import { describe, expect, it } from "vitest";
 import { buildUnitConfig } from "./build-config.js";
 import { resolveUnitOptions } from "./options.js";
 import type { UnitConfigOptions } from "./options.js";
 
 const setup = { dom: "/kit/dom/setup.js", mocks: "obsidian-test-mocks/vitest-setup" };
+const WORKSPACE_ROOT = "/workspace";
 
 function build(options: Partial<UnitConfigOptions> = {}): ReturnType<typeof buildUnitConfig> {
-    return buildUnitConfig(resolveUnitOptions({ coverage: { include: ["src/**/*.ts"] }, ...options }, "/plugin"), setup);
+    return buildUnitConfig(resolveUnitOptions({ coverage: { include: ["src/**/*.ts"] }, ...options }, "/plugin"), setup, WORKSPACE_ROOT);
 }
 
 describe("buildUnitConfig defaults", () => {
@@ -149,7 +151,44 @@ describe("buildUnitConfig dom", () => {
 
 describe("buildUnitConfig as an escape hatch", () => {
     it("is plain data that mergeConfig accepts", () => {
-        const merged = mergeConfig(build(), { test: { testTimeout: 1234, coverage: { thresholds: { branches: 95 } } } });
+        const merged: ViteUserConfig = mergeConfig(build(), { test: { testTimeout: 1234, coverage: { thresholds: { branches: 95 } } } });
         expect(merged).toMatchObject({ test: { testTimeout: 1234, coverage: { thresholds: { lines: 90, branches: 95 }, provider: "v8" } } });
+    });
+});
+
+describe("buildUnitConfig server.fs.allow", () => {
+    const globs = ["src/ui/**/*.test.ts"];
+
+    it("allows the kit's folder and the workspace root when the kit sits outside the plugin (npm link, file:)", () => {
+        expect(build({ dom: globs, rootDir: "/plugin" }).server).toEqual({ fs: { allow: [WORKSPACE_ROOT, "/kit/dom"] } });
+        expect(build({ dom: "all", rootDir: "/plugin" }).server).toEqual({ fs: { allow: [WORKSPACE_ROOT, "/kit/dom"] } });
+    });
+
+    it("adds nothing when the kit is a copy inside the plugin, and does not turn off fs.strict", () => {
+        const config = buildUnitConfig(
+            resolveUnitOptions({ coverage: { include: ["src/**/*.ts"] }, dom: globs }, "/plugin"),
+            { dom: "/plugin/node_modules/obsidian-plugin-dev-kit/dist/vitest/dom/setup.js", mocks: setup.mocks },
+            WORKSPACE_ROOT,
+        );
+        expect(config.server).toBeUndefined();
+    });
+
+    it("treats a folder that only shares a name prefix with the plugin as outside it", () => {
+        const config = buildUnitConfig(
+            resolveUnitOptions({ coverage: { include: ["src/**/*.ts"] }, dom: globs }, "/plugin"),
+            { dom: "/plugin-kit/dom/setup.js", mocks: setup.mocks },
+            WORKSPACE_ROOT,
+        );
+        expect(config.server).toEqual({ fs: { allow: [WORKSPACE_ROOT, "/plugin-kit/dom"] } });
+    });
+
+    it("adds nothing when no test uses the kit's setup file: no dom, or the mocks' own setup file", () => {
+        expect(build({ rootDir: "/plugin" }).server).toBeUndefined();
+        expect(build({ obsidian: "obsidian-test-mocks", dom: globs, rootDir: "/plugin" }).server).toBeUndefined();
+    });
+
+    it("mergeConfig appends a plugin's own allow entries to the kit's", () => {
+        const merged: ViteUserConfig = mergeConfig(build({ dom: globs, rootDir: "/plugin" }), { server: { fs: { allow: ["/shared"] } } });
+        expect(merged.server?.fs?.allow).toEqual([WORKSPACE_ROOT, "/kit/dom", "/shared"]);
     });
 });

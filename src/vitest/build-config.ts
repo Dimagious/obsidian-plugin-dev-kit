@@ -31,6 +31,11 @@ function obsidianAliases(options: ResolvedUnitOptions): { readonly node: Alias |
     }
 }
 
+function isInside(parent: string, child: string): boolean {
+    const relative = path.relative(parent, child);
+    return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
 /** Test environments of the config: jsdom for the DOM files, node for the rest. */
 const DOM_ENVIRONMENT = "jsdom";
 
@@ -49,14 +54,23 @@ function rootAlias(
  * the built package on disk.
  *
  * The config is plain data. A plugin that needs more spreads or `mergeConfig`s it.
+ *
+ * `server.fs.allow`: Vite refuses to serve a file outside its workspace root, and a kit linked with `npm link` or
+ * `file:` has its real folder (where the DOM setup file lives) outside the plugin. When the kit's setup file is used
+ * and sits outside `rootDir`, the kit's folder is allowed, together with `workspaceRoot` (Vite's default, which an
+ * explicit `allow` replaces). Copies under `node_modules` need nothing and get no `server` key.
  */
 export function buildUnitConfig(
     options: ResolvedUnitOptions,
     setupFiles: { readonly dom: string; readonly mocks: string },
+    workspaceRoot: string,
 ): ViteUserConfig {
     const { dom, coverage, include } = options;
     const aliases = obsidianAliases(options);
     const domSetup = aliases.mocks ? [setupFiles.mocks] : [setupFiles.dom];
+    const kitDir = path.dirname(setupFiles.dom);
+    const kitSetupUsed = !aliases.mocks && (dom.kind === "all" || dom.kind === "split");
+    const fsAllow = kitSetupUsed && !isInside(options.rootDir, kitDir) ? [workspaceRoot, kitDir] : [];
     const alias = (value: Alias | undefined): { resolve?: { alias: Alias } } => (value === undefined ? {} : { resolve: { alias: value } });
     // One alias at the root when both sides agree; each project carries its own when they differ, so every
     // resolved project config shows exactly one `obsidian` entry. (A project alias would override a root one
@@ -90,6 +104,7 @@ export function buildUnitConfig(
             : [];
     return {
         ...rootAlias(dom.kind, aliases, sameAlias, alias),
+        ...(fsAllow.length > 0 ? { server: { fs: { allow: fsAllow } } } : {}),
         test: {
             // Projects append their own include to the root one (Vitest 5), so with projects the root must have none.
             ...(projects.length > 0 ? {} : { include: [...include] }),
