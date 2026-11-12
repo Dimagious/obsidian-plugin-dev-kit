@@ -137,7 +137,7 @@ then `npx vitest run --coverage`. Options, finding the files that need a DOM, th
 
 ## Agent skills
 
-The repository is also a Claude Code plugin, `opdk`, with one skill per module so a coding agent working in your plugin knows the commands, the options and the traps of that module:
+The repository is also a Claude Code plugin, `opdk`, with one skill per module so a coding agent working in your plugin knows the commands, the options and the traps of that module, plus `/opdk:audit` for a plugin that is already on the kit:
 
 | Skill | Use it for |
 | --- | --- |
@@ -147,6 +147,7 @@ The repository is also a Claude Code plugin, `opdk`, with one skill per module s
 | `/opdk:demo` | demo films, GIFs, MP4s, posters and README screenshots, `opdk demo` messages |
 | `/opdk:unit` | `defineUnitConfig()`, coverage gate failures, `createDiv is not defined`, the DOM helpers for jsdom, moving a plugin's Vitest config |
 | `/opdk:release` | `opdk release check`, cutting and publishing a release, a stopped release, the reusable release workflow |
+| `/opdk:audit` | a plugin already on the kit: what it still does by hand, pictures nothing can retake, code outside the coverage gate, tests that pass only in parallel, gaps in the kit; reads and measures first, changes only what you pick |
 
 Claude picks a skill by its description, so you can also just ask ("film a demo GIF of my plugin"). Install from inside Claude Code:
 
@@ -155,7 +156,7 @@ Claude picks a skill by its description, so you can also just ask ("film a demo 
 /plugin install opdk@obsidian-plugin-dev-kit
 ```
 
-No release has been tagged yet, so an installed plugin follows `main`: run `/plugin marketplace update obsidian-plugin-dev-kit`, then update the plugin, to get changes. Once releases exist, the plugin version follows the kit version and installed copies update when it changes; a fresh install takes `main` as it is then, which can be ahead of the latest tag. The plugin files live in `plugins/opdk/`. A copy of the skills matching the kit version you installed is in `node_modules/obsidian-plugin-dev-kit/plugins/opdk/skills/`; Claude Code loads them only through the plugin.
+The plugin version follows the kit version, and installed copies update when it changes (`/plugin marketplace update obsidian-plugin-dev-kit`, then update the plugin). A fresh install takes `main` as it is then, which can be ahead of the latest tag. The plugin files live in `plugins/opdk/`. A copy of the skills matching the kit version you installed is in `node_modules/obsidian-plugin-dev-kit/plugins/opdk/skills/`; Claude Code loads them only through the plugin.
 
 ## Roadmap
 
@@ -171,6 +172,7 @@ No release has been tagged yet, so an installed plugin follows `main`: run `/plu
 - [ ] Wave 3: integration tests preset
 - [ ] Wave 4: CDP launch mode, if a plugin needs the shipped Obsidian binary
 - [x] Agent skills for build, scanner, e2e, demo, release and unit, installable as a Claude Code plugin
+- [x] An audit skill for plugins already on the kit
 - [ ] Agent skills for the modules that are still to come, written along with them
 
 ## Development
