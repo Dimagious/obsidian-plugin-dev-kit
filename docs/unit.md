@@ -38,7 +38,7 @@ export default defineUnitConfig({
 
 Only `coverage.include` is required. Coverage is switched on in the config, so a plain `vitest run` also collects it; `vitest run --coverage.enabled=false` turns it off for a quick run. The config is plain data: spread it, or pass it to `mergeConfig` from `vitest/config`, to add whatever is yours (`test.setupFiles`, `test.testTimeout`, `resolve.alias`).
 
-Vitest 5 needs Node 22.12 or newer (22.22.2 with jsdom) and no longer installs `vite` itself, so add `vite` (6.4 or newer) as a dev dependency if your project does not have it.
+Vitest 5 needs Node 22.12 or newer (22.22.2 with jsdom). It declares `vite` (`^6.4 || ^7 || ^8`) as a peer dependency, which npm 7 and newer install automatically. List `vite` in your `devDependencies` anyway, so your `package.json` pins the version your tests run on.
 
 ## Options
 
@@ -47,7 +47,7 @@ All keys of the object passed to `defineUnitConfig()`. An unknown key, or a valu
 | Option | Type | Default | What it does |
 |---|---|---|---|
 | `coverage` | object | required | See the next table |
-| `obsidian` | string | no alias | How `import "obsidian"` resolves in tests: a path to your own stub (relative to `rootDir`), or `"obsidian-test-mocks"` |
+| `obsidian` | string or `{ node, dom }` | no alias | How `import "obsidian"` resolves in tests: a path to your own stub (relative to `rootDir`), `"obsidian-test-mocks"`, or one of each per project: `{ node: "<stub path>", dom: "obsidian-test-mocks" \| "<stub path>" }` |
 | `dom` | string[] or `"all"` | `[]` | Test files that need a DOM, as globs relative to the folder of `vitest.config.ts`. `"all"` puts every test file in jsdom; omitted or `[]` runs everything in node |
 | `include` | string[] | `["src/**/*.test.ts"]` | Test file globs, relative to the folder of `vitest.config.ts` |
 | `rootDir` | string | `process.cwd()` | The folder the `obsidian` stub path is resolved against. Pass `import.meta.dirname` so the config works from any working directory |
@@ -83,16 +83,50 @@ coverage: { include: ["src/**/*.ts"], thresholds: { branches: 70 }, allowLowerTh
 The `obsidian` package contains types only, so `import { Notice } from "obsidian"` fails at run time unless tests resolve it somewhere.
 
 - **A path** (`"./src/test/stubs/obsidian.ts"`): the kit aliases `obsidian` to that file in every project, node and DOM. The stub is yours and stays in the plugin.
-- **`"obsidian-test-mocks"`**: the [obsidian-test-mocks](https://www.npmjs.com/package/obsidian-test-mocks) package. The kit uses that package's `vitest-setup` file as the setup file of the DOM tests and does not install its own polyfill, because the package installs the same helpers (and patches more, among them some JavaScript built-ins). The kit also aliases `obsidian` to the package's own `obsidian` module, because the types package has no JavaScript entry. The package must be a dependency of your plugin (with its own peer dependencies), and it needs a DOM: `dom` must list files or be `"all"`, or the config throws. The package ships a new major every few weeks, so pin it to an exact version.
+- **`"obsidian-test-mocks"`**: the [obsidian-test-mocks](https://www.npmjs.com/package/obsidian-test-mocks) package. The kit uses that package's `vitest-setup` file as the setup file of the DOM tests and does not install its own polyfill, because the package installs the same helpers (and patches more, among them some JavaScript built-ins). The kit also aliases `obsidian` to the package's own `obsidian` module, because the types package has no JavaScript entry. It needs a DOM: `dom` must list files or be `"all"`, or the config throws. The alias and the setup file belong to the `dom` project only, so a node test that imports `obsidian` cannot resolve it. Use the `{ node, dom }` form below when the plugin has such tests.
+- **`{ node, dom }`**: one value per project. `node` is a path to your own stub, used by the files that run in node. `dom` is `"obsidian-test-mocks"` or another stub path, used by the files in the `dom` list. Both are required, unknown keys throw, and `node` cannot be `"obsidian-test-mocks"` (the package needs a DOM). With `dom: "all"` there is no node project, so only the `dom` side is used.
 - **Omitted**: no alias. Fine for tests of code that never imports `obsidian`.
 
-In mocks mode the alias and the setup file belong to the `dom` project only. A test file that runs in node and imports `obsidian`, directly or through the code it tests, cannot resolve it. Keep pure files free of `obsidian` imports, or list the file in `dom`. With `dom: "all"` there is no such split.
+```ts
+export default defineUnitConfig({
+    rootDir: import.meta.dirname,
+    obsidian: { node: "./src/test/stubs/obsidian.ts", dom: "obsidian-test-mocks" },
+    dom: ["src/ui/**/*.test.ts"],
+    coverage: { include: ["src/**/*.ts"] },
+});
+```
+
+#### obsidian-test-mocks for settings tabs and modals
+
+The kit has no mock of its own and recommends obsidian-test-mocks for UI tests of settings tabs and modals, where a hand-written stub grows quickly.
+
+- **Pin an exact version** (`"obsidian-test-mocks": "8.0.0"`, no `^`). The package ships a new major every few weeks, and a major can change what a test sees. Tell Dependabot to ignore major updates for it, and bump it on purpose.
+- **Install it in the plugin, use it in the `dom` project only.** The `{ node, dom }` form above does that: node tests keep the stub they have.
+- **Peer dependencies**: `obsidian`, `moment`, `@codemirror/view` and `@codemirror/state` (jest or vitest, optional). The `dom` project also needs `jsdom`, a peer of the kit.
+- **Known gaps in 8.0.0.** Check the package README before you rely on a behaviour; they may be fixed later:
+    - Declarative `control` setting rows are not modelled, so `renderTab` throws on a tab that uses them.
+    - `SettingTab.update()` does not redraw.
+    - `Modal.open()` closes on the next tick. Call `onOpen()` directly in the test.
+    - The mock app is a strict proxy: reading a private app property the package does not model throws. Assign it on the mock in the test.
 
 ## Running DOM tests in jsdom only where needed
 
 With `dom: [...]` globs, the config has two Vitest projects. `unit` runs every test file that matches `include` and is not in the `dom` list, in node. `dom` runs the listed files in jsdom, with the Obsidian DOM helpers installed by a setup file. The coverage gate stays at the root, so it counts both projects. With `dom: "all"` there is one project, in jsdom with the setup file; with `dom` omitted, one project in node.
 
-Finding the files that need a DOM: start with `dom: []`, run the tests, and look at the failures. A file that calls an Obsidian helper in node fails with `ReferenceError: createDiv is not defined` (or `createEl`, `createSpan`, `createFragment`, `activeDocument`, `activeWindow`), or with `document is not defined` when it touches the DOM directly. Add the globs of those files to `dom` and run again. Directory globs (`src/ui/**/*.test.ts`) cover most of it; single files cover the rest. The shape of such a list:
+Finding the files that need a DOM: start with `dom: []`, run the tests, and look at the failures. A file that needs a DOM fails in node with one of these errors, the first being `document is not defined`:
+
+- `ReferenceError: document is not defined`
+- `ReferenceError: window is not defined`
+- `ReferenceError: DOMParser is not defined`
+- `ReferenceError: createDiv is not defined` (or `createEl`, `createSpan`, `createFragment`, `activeDocument`, `activeWindow`)
+
+To list the failing files in one go:
+
+```bash
+npx vitest run --no-color --coverage.enabled=false 2>&1 | grep -E "^ FAIL " | sed 's/^ FAIL  //; s/^|[^|]*| //; s/ \[.*//; s/ >.*//' | sort -u
+```
+
+It needs a POSIX shell. It prints every failing file, not only the ones that lack a DOM, so read the error of each before listing it. Add the globs of those files to `dom` and run again. Directory globs (`src/ui/**/*.test.ts`) cover most of it; single files cover the rest. The shape of such a list:
 
 ```ts
 dom: [
@@ -146,20 +180,20 @@ The helpers call each other through the public methods, as the app does: `create
 | `vitest` | `^5.0.0` | Node 22.12 or newer (22.22.2 with jsdom). The kit's own tests run on it |
 | `@vitest/coverage-v8` | `^5.0.0` | Install the same version as `vitest`; a mismatch gives an `ERESOLVE` error |
 | `jsdom` | `^30.0.0` | Only when `dom` is used. Needs Node 22.22.2+, 24.15+ or 26+; older Node fails with `webidl.util.markAsUncloneable is not a function` |
-| `vite` | 6.4 or newer | Vitest 5 does not install it; add it to your dev dependencies |
+| `vite` | `^6.4 \|\| ^7 \|\| ^8` | A peer of Vitest 5 that npm 7 and newer install automatically; list it in your dev dependencies to pin the version |
 
 All three kit peers are optional, so a plugin that does not use the module does not install them.
 
 ## Type-check the tests
 
-Recommended, not required: let `tsc --noEmit` cover the test files. Many plugins exclude `*.test.ts` from `tsconfig.json`, so a type error in a test is found only when the test fails at run time. The preset does not check types. A plugin that wants it removes `*.test.ts` from the `exclude` of its `tsconfig.json`, so the `typecheck` script covers them.
+Recommended, not required: let `tsc --noEmit` cover the test files. Many plugins exclude `*.test.ts` from `tsconfig.json`, so a type error in a test is found only when the test fails at run time. The preset does not check types. A plugin that wants it removes `*.test.ts` from the `exclude` of its `tsconfig.json`, so the `typecheck` script covers them. Tests often spread a `NodeList` (`[...container.querySelectorAll("li")]`); if `lib` in `tsconfig.json` has `DOM` but not `DOM.Iterable`, add `DOM.Iterable` (TypeScript 5.x; TypeScript 6 includes it in `DOM`).
 
 ## Migrating a plugin
 
 List each change a plugin makes while adopting the module in its changelog, and run its end-to-end tests afterwards.
 
 1. **On Vitest 3 or older, bump to 5 first**, with `@vitest/coverage-v8` and `jsdom`, as a change of its own. Expect failures from mocks written for older versions: `vi.fn(arrow)` used as a constructor (a mock of `Notice`, for example) does not work on Vitest 5. Use a `class` or a `function` in the mock.
-2. **Delete your own copy of Obsidian's DOM helpers** and its `setupFiles` entry, and remove calls such as `installObsidianDomHelpers()` from `beforeAll`. The files that needed them go into `dom`. A test that relied on a fragment becoming a string in `setText` output was asserting a bug.
+2. **Delete your own copy of Obsidian's DOM helpers** and remove `environment`, `coverage.reportsDirectory` and the setup file of the old DOM polyfill (the preset adds its own to the `dom` project, or to the root with `dom: "all"`). Keep other setup files and add them with `mergeConfig`. Remove calls such as `installObsidianDomHelpers()` from `beforeAll`. The files that needed them go into `dom`. A test that relied on a fragment becoming a string in `setText` output was asserting a bug.
 3. **Replace `vitest.config.ts`** with `defineUnitConfig()`. Point `obsidian` at the plugin's existing stub, and copy its coverage lists into `coverage.include` and `coverage.exclude`. Reporters other than `text` and `json-summary` go into `extraReporters`.
 4. **Find the `dom` globs** with the method above. If the plugin ran every test file in jsdom, the files that do not need it now run in node: a visible change, list it in the changelog.
 5. **A plugin with no DOM tests** has nothing to split: leave `dom` out.

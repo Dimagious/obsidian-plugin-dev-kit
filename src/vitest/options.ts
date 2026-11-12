@@ -28,15 +28,25 @@ export interface UnitCoverageOptions {
     readonly extraReporters?: readonly ("lcov" | "html")[];
 }
 
+/** The `{ node, dom }` form of the `obsidian` option. */
+export interface ObsidianSplitOption {
+    /** Stub path for the test files that run in node, relative to `rootDir`. */
+    readonly node: string;
+    /** `"obsidian-test-mocks"`, or a stub path relative to `rootDir`, for the test files that run in jsdom. */
+    readonly dom: string;
+}
+
 export interface UnitConfigOptions {
     /** Required. See {@link UnitCoverageOptions}. */
     readonly coverage: UnitCoverageOptions;
     /**
      * How `import "obsidian"` resolves in tests: a path to the plugin's own stub, relative to `rootDir`, or
      * `"obsidian-test-mocks"` (the package's `vitest-setup` mocks the module and installs the DOM helpers; the
-     * package must be a dependency of the plugin, and it needs `dom`). Omitted: no alias.
+     * package must be a dependency of the plugin, and it needs `dom`). An object `{ node, dom }` picks one per
+     * project: `node` is a stub path for the node tests, `dom` is `"obsidian-test-mocks"` or a stub path for the
+     * DOM tests (with `dom: "all"` there is no node project and `node` is not used). Omitted: no alias.
      */
-    readonly obsidian?: string;
+    readonly obsidian?: string | ObsidianSplitOption;
     /**
      * Test files that need a DOM, as globs relative to the Vitest root (the folder of `vitest.config.ts`). They run
      * in jsdom with Obsidian's DOM helpers installed; every other test file runs in node. `"all"` puts every test file in jsdom. Omitted or `[]`: all node.
@@ -51,7 +61,8 @@ export interface UnitConfigOptions {
 export type ObsidianMode =
     | { readonly kind: "none" }
     | { readonly kind: "stub"; readonly path: string }
-    | { readonly kind: "mocks" };
+    | { readonly kind: "mocks" }
+    | { readonly kind: "split"; readonly node: string; readonly dom: { readonly kind: "mocks" } | { readonly kind: "stub"; readonly path: string } };
 
 export type DomMode =
     | { readonly kind: "none" }
@@ -110,7 +121,7 @@ export function resolveUnitOptions(options: UnitConfigOptions, cwd: string): Res
     }
     const obsidian = resolveObsidian(raw.obsidian);
     const dom = resolveDom(raw.dom);
-    if (obsidian.kind === "mocks" && dom.kind === "none") {
+    if ((obsidian.kind === "mocks" || (obsidian.kind === "split" && obsidian.dom.kind === "mocks")) && dom.kind === "none") {
         throw new Error(
             'defineUnitConfig(): obsidian "obsidian-test-mocks" patches the DOM and needs a DOM environment. ' +
                 'List the test files that use it in "dom", for example dom: ["src/ui/**/*.test.ts"], or pass dom: "all".',
@@ -119,14 +130,39 @@ export function resolveUnitOptions(options: UnitConfigOptions, cwd: string): Res
     return { rootDir, include, obsidian, dom, coverage: resolveCoverage(raw.coverage) };
 }
 
+const OBSIDIAN_FORMS =
+    'a path to the plugin\'s stub such as "./src/test/stubs/obsidian.ts", "obsidian-test-mocks", or { node: "./src/test/stubs/obsidian.ts", dom: "obsidian-test-mocks" }';
+
 function resolveObsidian(value: unknown): ObsidianMode {
     if (value === undefined) return { kind: "none" };
+    if (isRecord(value)) return resolveObsidianSplit(value);
     if (typeof value !== "string" || value === "") {
-        throw new Error(
-            'defineUnitConfig(): "obsidian" must be a path to the plugin\'s stub, for example "./src/test/stubs/obsidian.ts", or "obsidian-test-mocks".',
-        );
+        throw new Error(`defineUnitConfig(): "obsidian" must be ${OBSIDIAN_FORMS}.`);
     }
     return value === OBSIDIAN_TEST_MOCKS ? { kind: "mocks" } : { kind: "stub", path: value };
+}
+
+function resolveObsidianSplit(value: Record<string, unknown>): ObsidianMode {
+    const unknownKeys = Object.keys(value).filter((key) => key !== "node" && key !== "dom");
+    if (unknownKeys.length > 0) {
+        throw new Error(`defineUnitConfig(): unknown "obsidian" key(s): ${unknownKeys.join(", ")}. Allowed keys: node, dom.`);
+    }
+    const { node, dom } = value;
+    if (typeof node !== "string" || node === "") {
+        throw new Error(
+            'defineUnitConfig(): "obsidian.node" must be the path to a stub for the node tests, for example "./src/test/stubs/obsidian.ts".',
+        );
+    }
+    if (node === OBSIDIAN_TEST_MOCKS) {
+        throw new Error(
+            'defineUnitConfig(): "obsidian.node" cannot be "obsidian-test-mocks": the package patches the DOM and only works in the DOM tests. ' +
+                'Use a stub path for node, and put "obsidian-test-mocks" in "obsidian.dom".',
+        );
+    }
+    if (typeof dom !== "string" || dom === "") {
+        throw new Error('defineUnitConfig(): "obsidian.dom" must be "obsidian-test-mocks" or the path to a stub for the DOM tests.');
+    }
+    return { kind: "split", node, dom: dom === OBSIDIAN_TEST_MOCKS ? { kind: "mocks" } : { kind: "stub", path: dom } };
 }
 
 function resolveDom(value: unknown): DomMode {
@@ -155,6 +191,10 @@ function resolveCoverage(value: unknown): ResolvedUnitOptions["coverage"] {
     if (!isGlobList(exclude)) {
         throw new Error('defineUnitConfig(): "coverage.exclude" must be an array of non-empty glob strings.');
     }
+    const allowLower = value.allowLowerThresholds === undefined ? false : value.allowLowerThresholds;
+    if (typeof allowLower !== "boolean") {
+        throw new Error('defineUnitConfig(): "coverage.allowLowerThresholds" must be true or false.');
+    }
     const extra = value.extraReporters ?? [];
     if (!isReporterList(extra)) {
         throw new Error('defineUnitConfig(): "coverage.extraReporters" must be an array holding "lcov", "html" or both.');
@@ -162,7 +202,7 @@ function resolveCoverage(value: unknown): ResolvedUnitOptions["coverage"] {
     return {
         include: value.include,
         exclude: [...BASE_COVERAGE_EXCLUDE, ...exclude],
-        thresholds: resolveThresholds(value.thresholds, value.allowLowerThresholds === true),
+        thresholds: resolveThresholds(value.thresholds, allowLower),
         reporters: ["text", "json-summary", ...extra],
     };
 }
