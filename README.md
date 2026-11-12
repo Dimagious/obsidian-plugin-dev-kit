@@ -118,7 +118,7 @@ Dashy's default branch is `master`, so its caller uses `branches: [master]`. Inp
 
 `defineUnitConfig()` from `obsidian-plugin-dev-kit/vitest` is a Vitest config for Obsidian plugins: tests in `src/**/*.test.ts`, v8 coverage with a gate of 90 percent (80 for branches), an `obsidian` alias, and a list of the test files that need a DOM. Those files run in jsdom with Obsidian's DOM helpers (`createDiv`, `setText`, `addClass`, `activeDocument` and the rest) installed; every other file runs in node. Without a shared config, the same `vitest.config.ts` gets copied between plugins and drifts. Hand-written copies of the DOM helpers drift from the app too: a fragment passed to `setText` became a string, where Obsidian appends it. Booting jsdom for every test file is slow: on a plugin with 3,271 tests in 85 files, 32 of which need a DOM, the run went from 30 s to 15 s. `coverage.include` is required, because Vitest 4 and later leave out files no test imports, and an untested file would escape the gate.
 
-Quick start: a `vitest.config.ts` with the `vitest`, `@vitest/coverage-v8`, `jsdom` and `vite` dev dependencies,
+Quick start: a `vitest.config.ts` with the `vitest`, `@vitest/coverage-v8`, `jsdom` and `vite@^8` dev dependencies,
 
 ```ts
 import { defineUnitConfig } from "obsidian-plugin-dev-kit/vitest";

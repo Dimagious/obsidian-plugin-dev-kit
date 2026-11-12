@@ -10,7 +10,7 @@
     {
       "name": "opdk",
       "source": "./plugins/opdk",
-      "description": "Agent skills for obsidian-plugin-dev-kit (opdk): build, scan, release, test end to end and film demos of Obsidian plugins."
+      "description": "Agent skills for obsidian-plugin-dev-kit (opdk): build, scan, release, unit-test, test end to end and film demos of Obsidian plugins."
     }
   ]
 }

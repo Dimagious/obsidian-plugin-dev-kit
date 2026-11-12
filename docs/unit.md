@@ -6,7 +6,7 @@
 
 - **The same config gets copied between plugins.** The copies differ in coverage lists and the stub path, and each one tracks by hand that `vitest` and `@vitest/coverage-v8` move together (otherwise `ERESOLVE`) and which Node version Vitest 5 needs (jsdom 30 failed on Node 20 in CI).
 - **Hand-written copies of Obsidian's DOM helpers drift.** Two plugins each had their own polyfill (97 and 274 lines), and they disagreed. In one, `setText`, and `createEl({ text })` in both, turned a `DocumentFragment` into a string, while Obsidian appends the fragment. The kit's version follows the behaviour of the shipped app (Obsidian 1.14.5) and is tested.
-- **jsdom starts for every test file.** In a trial on a plugin with 85 test files and 3,271 tests, jsdom setup was 85 percent of the run: 30.3 s. With the 32 files that need a DOM in the `dom` list and the other 53 in node, the same tests ran in 15.0 s.
+- **jsdom starts for every test file.** In a trial on a plugin with 85 test files and 3,271 tests, the run took 30.3 s, 85 percent of it starting jsdom. With the 32 files that need a DOM in the `dom` list and the other 53 in node, the same tests ran in 15.0 s.
 - **A file nobody imports escapes the coverage gate.** Vitest 4 and later report only files a test imported, unless `coverage.include` says which files count. The preset makes `coverage.include` required.
 
 ## Quick start
@@ -14,7 +14,7 @@
 Install the peers next to the kit (the same version of `vitest` and `@vitest/coverage-v8`, and `jsdom` only if some tests need a DOM), then add `vitest.config.ts`:
 
 ```bash
-npm install --save-dev vitest@^5 @vitest/coverage-v8@^5 vite jsdom@^30
+npm install --save-dev vitest@^5 @vitest/coverage-v8@^5 vite@^8 jsdom@^30
 ```
 
 ```ts
@@ -38,11 +38,11 @@ export default defineUnitConfig({
 
 Only `coverage.include` is required. Coverage is switched on in the config, so a plain `vitest run` also collects it; `vitest run --coverage.enabled=false` turns it off for a quick run. The config is plain data: spread it, or pass it to `mergeConfig` from `vitest/config`, to add whatever is yours (`test.setupFiles`, `test.testTimeout`, `resolve.alias`).
 
-Vitest 5 needs Node 22.12 or newer and no longer installs `vite` itself, so add `vite` (6.4 or newer) as a dev dependency if your project does not have it.
+Vitest 5 needs Node 22.12 or newer (22.22.2 with jsdom) and no longer installs `vite` itself, so add `vite` (6.4 or newer) as a dev dependency if your project does not have it.
 
 ## Options
 
-All keys of the object passed to `defineUnitConfig()`. An unknown key, or a value of the wrong type, throws with the option name and an example.
+All keys of the object passed to `defineUnitConfig()`. An unknown key, or a value of the wrong type, throws and names the option.
 
 | Option | Type | Default | What it does |
 |---|---|---|---|
@@ -82,37 +82,24 @@ coverage: { include: ["src/**/*.ts"], thresholds: { branches: 70 }, allowLowerTh
 
 The `obsidian` package contains types only, so `import { Notice } from "obsidian"` fails at run time unless tests resolve it somewhere.
 
-- **A path** (`"./src/test/stubs/obsidian.ts"`): the kit aliases `obsidian` to that file in every project, node and DOM. This is what all three plugins do today. The stub is yours and stays in the plugin.
+- **A path** (`"./src/test/stubs/obsidian.ts"`): the kit aliases `obsidian` to that file in every project, node and DOM. The stub is yours and stays in the plugin.
 - **`"obsidian-test-mocks"`**: the [obsidian-test-mocks](https://www.npmjs.com/package/obsidian-test-mocks) package. The kit uses that package's `vitest-setup` file as the setup file of the DOM tests and does not install its own polyfill, because the package installs the same helpers (and patches more, among them some JavaScript built-ins). The kit also aliases `obsidian` to the package's own `obsidian` module, because the types package has no JavaScript entry. The package must be a dependency of your plugin (with its own peer dependencies), and it needs a DOM: `dom` must list files or be `"all"`, or the config throws. The package ships a new major every few weeks, so pin it to an exact version.
 - **Omitted**: no alias. Fine for tests of code that never imports `obsidian`.
 
 In mocks mode the alias and the setup file belong to the `dom` project only. A test file that runs in node and imports `obsidian`, directly or through the code it tests, cannot resolve it. Keep pure files free of `obsidian` imports, or list the file in `dom`. With `dom: "all"` there is no such split.
 
-Using the mocks in a plugin is planned as a pilot on a plugin's wizard and settings tab. It is not done, so no plugin runs on the package yet.
-
 ## Running DOM tests in jsdom only where needed
 
 With `dom: [...]` globs, the config has two Vitest projects. `unit` runs every test file that matches `include` and is not in the `dom` list, in node. `dom` runs the listed files in jsdom, with the Obsidian DOM helpers installed by a setup file. The coverage gate stays at the root, so it counts both projects. With `dom: "all"` there is one project, in jsdom with the setup file; with `dom` omitted, one project in node.
 
-Finding the files that need a DOM: start with `dom: []`, run the tests, and look at the failures. A file that calls an Obsidian helper in node fails with `ReferenceError: createDiv is not defined` (or `createEl`, `createSpan`, `createFragment`, `activeDocument`, `activeWindow`), or with `document is not defined` when it touches the DOM directly. Add the globs of those files to `dom` and run again. Directory globs (`src/ui/**/*.test.ts`) cover most of it; single files cover the rest. In a trial on a plugin with 85 test files, 32 needed a DOM: three directory globs and twelve single files. The shape of such a list:
+Finding the files that need a DOM: start with `dom: []`, run the tests, and look at the failures. A file that calls an Obsidian helper in node fails with `ReferenceError: createDiv is not defined` (or `createEl`, `createSpan`, `createFragment`, `activeDocument`, `activeWindow`), or with `document is not defined` when it touches the DOM directly. Add the globs of those files to `dom` and run again. Directory globs (`src/ui/**/*.test.ts`) cover most of it; single files cover the rest. The shape of such a list:
 
 ```ts
 dom: [
-    "src/blocks/**/*.test.ts",
     "src/ui/**/*.test.ts",
-    "src/preview/**/*.test.ts",
-    "src/adapters/adapters.test.ts",
-    "src/app/agent-tools.test.ts",
-    "src/app/api.test.ts",
-    "src/app/block.test.ts",
-    "src/app/indexing.test.ts",
-    "src/core/clock.test.ts",
-    "src/core/day-rollover.test.ts",
-    "src/core/vault-profile.test.ts",
-    "src/shared/render.test.ts",
-    "src/skill/skill-process.test.ts",
-    "src/test/guide-prompts.test.ts",
-    "src/test/site-script.test.ts",
+    "src/views/**/*.test.ts",
+    "src/core/render.test.ts",
+    "src/settings/tab.test.ts",
 ],
 ```
 
@@ -156,9 +143,9 @@ The helpers call each other through the public methods, as the app does: `create
 
 | Package | Range | Notes |
 |---|---|---|
-| `vitest` | `^5.0.0` | Node 22.12 or newer. The kit's own tests run on it |
+| `vitest` | `^5.0.0` | Node 22.12 or newer (22.22.2 with jsdom). The kit's own tests run on it |
 | `@vitest/coverage-v8` | `^5.0.0` | Install the same version as `vitest`; a mismatch gives an `ERESOLVE` error |
-| `jsdom` | `^30.0.0` | Only when `dom` is used. Node 20 fails with `webidl.util.markAsUncloneable is not a function` |
+| `jsdom` | `^30.0.0` | Only when `dom` is used. Needs Node 22.22.2+, 24.15+ or 26+; older Node fails with `webidl.util.markAsUncloneable is not a function` |
 | `vite` | 6.4 or newer | Vitest 5 does not install it; add it to your dev dependencies |
 
 All three kit peers are optional, so a plugin that does not use the module does not install them.
@@ -182,7 +169,7 @@ List each change a plugin makes while adopting the module in its changelog, and 
 A trial on a plugin with 85 test files, with the split in place (Vitest 5.1.0):
 
 ```text
- RUN  v5.1.0 /path/to/dashsidian
+ RUN  v5.1.0 /path/to/your-plugin
       Coverage enabled with v8
 
  Test Files  85 passed (85)
