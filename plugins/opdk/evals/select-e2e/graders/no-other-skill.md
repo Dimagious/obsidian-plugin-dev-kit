@@ -1,7 +1,7 @@
 ---
 type: tool_used
 tool: Skill
-input_match: '"skill"\s*:\s*"(?:opdk:)?(?:build|scanner|demo|release)"'
+input_match: '"skill"\s*:\s*"(?:opdk:)?(?:build|scanner|demo|release|unit)"'
 min: 0
 max: 0
 arm: both

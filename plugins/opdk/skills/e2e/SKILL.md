@@ -1,6 +1,6 @@
 ---
 name: e2e
-description: Set up, write or fix Playwright end-to-end tests for an Obsidian plugin that uses obsidian-plugin-dev-kit (opdk), run in the real Obsidian through Electron. Use it when a spec fails ("Stale build", "Electron binary is not downloaded", "plugin still loading", "Obsidian was not ready", a helper timeout), when a test needs settings, the command palette, the editor, IME input, the mobile layout or a fake plugin client, or when moving a plugin's own e2e fixtures to `obsidian-plugin-dev-kit/e2e`. Not for demo films, GIFs or README stills (demo), build errors (build) or scorecard warnings (scanner).
+description: Set up, write or fix Playwright end-to-end tests for an Obsidian plugin that uses obsidian-plugin-dev-kit (opdk), run in the real Obsidian through Electron. Use it when a spec fails ("Stale build", "Electron binary is not downloaded", "plugin still loading", "Obsidian was not ready", a helper timeout), when a test needs settings, the command palette, the editor, IME input, the mobile layout or a fake plugin client, or when moving a plugin's own e2e fixtures to `obsidian-plugin-dev-kit/e2e`. Not for Vitest unit tests (unit), demo films, GIFs or README stills (demo), build errors (build) or scorecard warnings (scanner).
 ---
 
 # opdk e2e module

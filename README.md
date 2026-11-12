@@ -16,7 +16,7 @@ Every Obsidian plugin needs the same tooling around its code: a bundle that also
 | Scanner and lint | `opdk scan` runs the community plugin scanner's ESLint configuration and its CSS, source and manifest checks before you release, with `eslint-plugin-obsidianmd` pinned in one place; `obsidianPlugin()` gives your own `eslint.config.js` the same base |
 | Release | `opdk release check` for CI and before a tag: versions in `package.json`, `manifest.json`, `package-lock.json` and `versions.json`, the manifest rules of the official Obsidian action, a CHANGELOG section, a production build built twice (working tree and committed tree) and compared, and the `minAppVersion` against the API the code calls. `opdk release patch` (or `minor`, `major`, `X.Y.Z`) bumps the files, moves the `[Unreleased]` notes under the new version, commits and tags, pushes only the tag, waits for the kit's reusable GitHub workflow, verifies its draft release (files, bytes against a local build of the tag, notes, build provenance), publishes it and only then pushes the branch. Release notes come from the CHANGELOG, and no zip is made unless asked |
 | Reusable CI | `plugin-ci.yml`, a reusable GitHub workflow: lint, typecheck, tests, `opdk scan`, `opdk release check`, build and bundle upload, with a read-only token, actions pinned to commit SHAs and a pinned runner |
-| Unit tests | A Vitest preset with coverage thresholds, and DOM helpers Obsidian adds (`createEl`, `createDiv`, `setText`) |
+| Unit tests | `defineUnitConfig()`, a Vitest config with v8 coverage and a 90/80 gate, an `obsidian` alias, and a split that runs only the files that need a DOM in jsdom; plus the DOM helpers Obsidian adds (`createEl`, `createDiv`, `setText`, `addClass`, `activeDocument` and more) for jsdom |
 | End-to-end tests | Playwright in a real Obsidian through Electron: an isolated vault per test, the trust dialog never shown, readiness by plugin state instead of sleeps, a check of which Obsidian version ran, a trace and a video of the Obsidian window for failures, and helpers for settings, commands, the editor, IME composition, the mobile layout and fakes. Launch over CDP and a mode for recording tests by hand with the Playwright Inspector are planned |
 | Demo films | Films of stills from the real Obsidian: a frozen UI, a visible cursor or tap dot, captions, slow typing, light and dark themes, and a privacy guard that refuses to film a vault that is not the plugin's own; `opdk demo` encodes them to MP4, GIF and poster with ffmpeg, can put a phone film beside its captions, and copies stills (shot at a fixed density) for the README and listings. No audio |
 | Integration tests | A preset for [obsidian-integration-testing](https://github.com/mnaoumov/obsidian-integration-testing): the same smoke tests on the latest public and catalyst builds, and on Android |
@@ -114,6 +114,25 @@ jobs:
 
 Dashy's default branch is `master`, so its caller uses `branches: [master]`. Inputs (all optional): `node-version`, `runs-on`, and a boolean per step (`lint`, `typecheck`, `test`, `scan`, `release-check`, `build`, `upload-bundle`, `coverage-artifact`). Inputs, what each step runs, how to add plugin-specific steps and what changes for each plugin: [docs/ci.md](docs/ci.md).
 
+## Unit tests
+
+`defineUnitConfig()` from `obsidian-plugin-dev-kit/vitest` is a Vitest config for Obsidian plugins: tests in `src/**/*.test.ts`, v8 coverage with a gate of 90 percent (80 for branches), an `obsidian` alias, and a list of the test files that need a DOM. Those files run in jsdom with Obsidian's DOM helpers (`createDiv`, `setText`, `addClass`, `activeDocument` and the rest) installed; every other file runs in node. Without a shared config, the same `vitest.config.ts` gets copied between plugins and drifts. Hand-written copies of the DOM helpers drift from the app too: a fragment passed to `setText` became a string, where Obsidian appends it. Booting jsdom for every test file is slow: on a plugin with 3,271 tests in 85 files, 32 of which need a DOM, the run went from 30 s to 15 s. `coverage.include` is required, because Vitest 4 and later leave out files no test imports, and an untested file would escape the gate.
+
+Quick start: a `vitest.config.ts` with the `vitest`, `@vitest/coverage-v8`, `jsdom` and `vite` dev dependencies,
+
+```ts
+import { defineUnitConfig } from "obsidian-plugin-dev-kit/vitest";
+
+export default defineUnitConfig({
+    rootDir: import.meta.dirname,
+    obsidian: "./src/test/stubs/obsidian.ts",
+    dom: ["src/ui/**/*.test.ts"],
+    coverage: { include: ["src/**/*.ts"], exclude: ["src/main.ts"] },
+});
+```
+
+then `npx vitest run --coverage`. Options, finding the files that need a DOM, the helper list and migration notes: [docs/unit.md](docs/unit.md).
+
 ## Agent skills
 
 The repository is also a Claude Code plugin, `opdk`, with one skill per module so a coding agent working in your plugin knows the commands, the options and the traps of that module:
@@ -124,6 +143,7 @@ The repository is also a Claude Code plugin, `opdk`, with one skill per module s
 | `/opdk:scanner` | `opdk scan`, community plugin scorecard warnings, `obsidianPlugin()` in `eslint.config.js` |
 | `/opdk:e2e` | Playwright specs in the real Obsidian, readiness and timeout failures, helpers |
 | `/opdk:demo` | demo films, GIFs, MP4s, posters and README screenshots, `opdk demo` messages |
+| `/opdk:unit` | `defineUnitConfig()`, coverage gate failures, `createDiv is not defined`, the DOM helpers for jsdom, moving a plugin's Vitest config |
 | `/opdk:release` | `opdk release check`, cutting and publishing a release, a stopped release, the reusable release workflow |
 
 Claude picks a skill by its description, so you can also just ask ("film a demo GIF of my plugin"). Install from inside Claude Code:
@@ -144,12 +164,12 @@ No release has been tagged yet, so an installed plugin follows `main`: run `/plu
   - [x] Demo films: films of stills, phone layout, stills presets, `opdk demo` (no audio)
 - [ ] Wave 2: release, unit-test preset, docs site and reusable CI
   - [x] Release: `opdk release check`, `opdk release <bump>`, `opdk release publish`, `opdk release notes`, the reusable `release.yml`
-  - [ ] Unit-test preset
+  - [x] Unit-test preset: `defineUnitConfig()`, the DOM helpers for jsdom
   - [ ] Docs site
   - [x] Reusable CI: `plugin-ci.yml`
 - [ ] Wave 3: integration tests preset
 - [ ] Wave 4: CDP launch mode, if a plugin needs the shipped Obsidian binary
-- [x] Agent skills for build, scanner, e2e, demo and release, installable as a Claude Code plugin
+- [x] Agent skills for build, scanner, e2e, demo, release and unit, installable as a Claude Code plugin
 - [ ] Agent skills for the modules that are still to come, written along with them
 
 Each module moves to Garmy first, then Dashy, then Snipsy. A plugin may change when it adopts a module (for example, Snipsy's bundle switches to the browser platform); each such change is listed in that plugin's changelog and checked by its end-to-end tests.
