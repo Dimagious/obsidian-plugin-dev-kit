@@ -59,8 +59,8 @@ Example:
 ```
 fix(build): keep styles.css when the plugin has no src/styles
 
-Garmy writes styles.css by hand. Building CSS unconditionally replaced it
-with an empty file.
+A plugin that writes styles.css by hand lost it: building CSS
+unconditionally replaced it with an empty file.
 ```
 
 ## Pull requests

@@ -8,10 +8,10 @@ It runs Obsidian through Electron (`_electron.launch` on Obsidian's `app.asar`).
 
 ## Why
 
-Three plugins each grew their own harness, and each paid for the same things separately:
+Plugins that grow their own harness each pay separately for the same things:
 
-- Dashy's specs broke on Obsidian 1.13 because Settings began to open in a second window. Five specs failed at once, and each plugin worked around it in its own way.
-- The "Trust author and enable plugins" dialog was handled by pressing Escape after a fixed wait, followed by sleeps to let plugins finish loading: Snipsy waited 800 ms and 500 ms and up to 5 s for the trust dialog, Dashy and Garmy a fixed 1500 ms. A slow start still raced them, and a plugin that never loaded was only noticed when a command was missing.
+- One plugin's specs broke on Obsidian 1.13 because Settings began to open in a second window. Five specs failed at once, and every harness has to work around it on its own.
+- The "Trust author and enable plugins" dialog was handled by pressing Escape after a fixed wait, followed by sleeps to let plugins finish loading: waits of 800 ms and 500 ms and up to 5 s for the trust dialog in one harness, a fixed 1500 ms in two others. A slow start still raced them, and a plugin that never loaded was only noticed when a command was missing.
 - Cleanup deleted the temp vault inside a `try` that ignored the error, so a folder Obsidian still held open stayed on disk, run after run.
 - Playwright's `trace` and `video` options do not reach a window opened through `_electron`, so a red test left nothing to look at.
 
@@ -142,7 +142,7 @@ On a CI runner, which is thrown away after the job, `git config --global url."ht
 ## What happens per test
 
 1. The kit checks everything that can be checked without creating anything: Obsidian's `app.asar` exists (`OBSIDIAN_PATH`, then `obsidianPath`, then the macOS default; the first one that is set must exist, with no silent fall-through), every plugin folder has `manifest.json` and a built `main.js`, plugin ids are unique, every `data` key is an installed plugin, and the `main.js` of each checked plugin is not older than the newest file under its `src/` (compared by modification time; a test file, whose name ends in `.test.<ext>` or `.spec.<ext>`, does not count, every other file does). Which plugins are checked is set by [`staleBuildCheck`](#stale-build-check). A plugin folder without `src/` is not checked for staleness.
-2. It checks that `electron` is installed and its binary is downloaded. The check runs once per run, in a global setup that `defineObsidianConfig` registers before your own `globalSetup`: a missing binary is one error and no test starts. A check in a fixture ran again for every test, because Playwright replaces a worker after each failed test and the fixture runs in the new one (Dashy's 59 tests gave 59 identical failures). A config that does not use `defineObsidianConfig` has no global setup, so the session repeats the check for each test and a missing binary fails every test with the same message.
+2. It checks that `electron` is installed and its binary is downloaded. The check runs once per run, in a global setup that `defineObsidianConfig` registers before your own `globalSetup`: a missing binary is one error and no test starts. A check in a fixture ran again for every test, because Playwright replaces a worker after each failed test and the fixture runs in the new one (59 tests gave 59 identical failures in one plugin). A config that does not use `defineObsidianConfig` has no global setup, so the session repeats the check for each test and a missing binary fails every test with the same message.
 3. It creates two temp folders, `opdk-e2e-vault-<title>-XXXXXX` (the test title lowercased, reduced to a-z, 0-9 and hyphens, and cut to 40 characters) and `opdk-e2e-userdata-XXXXXX`, and copies the seed vault into a `vault/` subfolder of the first with symlinks resolved, so nothing a test does reaches the repository or a linked build. A symlink loop or a dangling link fails the copy, naming the link.
 4. It writes `.obsidian/app.json` with `settingsPopoutWindow: false` and `alwaysUpdateLinks: true` unless the seed vault sets them (Settings in a popout is a second window the test does not drive, and renaming a file otherwise shows an "Update links?" modal that blocks forever).
 5. It copies each plugin's `main.js`, `manifest.json` and `styles.css` into `.obsidian/plugins/<id>/`, writes `community-plugins.json` as the ids the seed vault enables plus the installed ones, and writes `data.json` for every plugin in the `data` option (replacing a seeded one).
@@ -221,7 +221,7 @@ createObsidianTest({
     seedVault: "e2e/vault",
     plugins: [
         { dir: "." },                                        // follows the top-level option (off in this example)
-        { dir: "../dashsidian" },                            // not checked
+        { dir: "../sibling-plugin" },                        // not checked
         { dir: "../other-plugin", staleBuildCheck: true },   // checked
     ],
     staleBuildCheck: false,                                  // here: turns the check off for "." only
@@ -430,42 +430,40 @@ This replaces `--grep-invert` in a script: the default run needs no flag to leav
 ## Migrating from a plugin's own harness
 
 1. Install `@playwright/test` and `electron` as devDependencies, and the kit.
-2. Replace the plugin's `e2e/fixtures.ts` with `createObsidianTest({ seedVault, plugins, data, window })`. Delete the code it replaces: the vault copy, `obsidian.json`, plugin installation (Garmy's `e2e-setup.sh` too), `data.json` seeding, the Electron launch, the dialog handlers, the version reader, the folder removal.
+2. Replace the plugin's `e2e/fixtures.ts` with `createObsidianTest({ seedVault, plugins, data, window })`. Delete the code it replaces: the vault copy, `obsidian.json`, plugin installation (a setup shell script too), `data.json` seeding, the Electron launch, the dialog handlers, the version reader, the folder removal.
 3. Replace `playwright.config.ts` with `defineObsidianConfig()` and keep only what is yours (`globalSetup`, a different `testDir`).
-4. Move the shared helpers to the `obsidian` fixture (see the table below) and keep only the plugin's own (Snipsy's snippet pages, for example).
+4. Move the shared helpers to the `obsidian` fixture (see the table below) and keep only the plugin's own (page objects for its own views, for example).
 5. Replace `--grep-invert` scripts and `test.skip` env checks with `onlyWhen`.
-6. Search the plugin for callers of the old setup script (Garmy's `scripts/capture.mjs`, `e2e-setup.sh`, a `pretest` or `e2e` entry in `package.json`, CI steps, docs) and replace each with the build command, `opdk build`. `grep -rn "e2e-setup\|capture.mjs" --exclude-dir=node_modules .` finds them with your script names.
+6. Search the plugin for callers of the old setup script (a capture script, `e2e-setup.sh`, a `pretest` or `e2e` entry in `package.json`, CI steps, docs) and replace each with the build command, `opdk build`. `grep -rn "e2e-setup\|capture.mjs" --exclude-dir=node_modules .` finds them with your script names.
 7. Run the specs and read each difference below against your own.
 
 What changes:
 
 - `onlyWhen("X")` runs the file only when `X` is exactly `1`. An old `test.skip(!process.env.X)` gate accepted any non-empty value, so `X=true` or `X=yes` now skips the file; change the command that sets it.
 - The seed vault is copied as it is, then the plugins are installed over it. A plugin folder in the seed (`<seed>/.obsidian/plugins/<id>`, committed or generated by an old setup script) is overwritten by the kit's install of `main.js`, `manifest.json` and `styles.css` (other files there, such as a seeded `data.json`, stay unless the `data` option replaces them). Delete the committed copy, and drop the `.gitignore` line that hid a generated one. The seed's `community-plugins.json` is optional: the kit writes the ids it lists plus the installed plugins.
-- No fixed sleeps. Snipsy's 800 ms and 500 ms waits after enabling plugins and its 5 s wait for the trust dialog, and the fixed 1500 ms of Dashy and Garmy, are gone: the fixture waits for plugin state. The fixture waits for every plugin's `onload()` to finish, not for the plugin's first render. A spec that slept to let a view, a block or a reading-view render appear now needs a wait of its own for what it asserts (an assertion on the element, or `settle()` when the page just has to stop changing before a picture): `expect(locator).toBeVisible()` (a locator waits by itself), `expect.poll(...)` for a value read from the page, or `waitForFunction`. A spec like that fails on its own assertion or locator timeout, not with `plugin still loading`, which is reported only when an `onload()` is still running at `timeouts.ready`.
+- No fixed sleeps. Waits after enabling plugins, a wait for the trust dialog and fixed waits of 1500 ms are gone: the fixture waits for plugin state. The fixture waits for every plugin's `onload()` to finish, not for the plugin's first render. A spec that slept to let a view, a block or a reading-view render appear now needs a wait of its own for what it asserts (an assertion on the element, or `settle()` when the page just has to stop changing before a picture): `expect(locator).toBeVisible()` (a locator waits by itself), `expect.poll(...)` for a value read from the page, or `waitForFunction`. A spec like that fails on its own assertion or locator timeout, not with `plugin still loading`, which is reported only when an `onload()` is still running at `timeouts.ready`.
 - No Escape, no `setEnable`. The trust flag is set before the vault loads; if the dialog opens anyway the test fails and says so.
 - Cleanup retries and then fails with the folder path. A leftover that an old harness swallowed is now a failing test.
-- Snipsy's fallback that read the Obsidian version from the `obsidian.asar` on disk, and its `require("obsidian")` fallback (it never worked), are not carried over. The version is read with `ipcRenderer.sendSync("version")`, and an unreadable version fails the test when a version is pinned.
-- `editor().text()` and `clear()` throw `There is no active editor` where Snipsy's `ui.editorText` returned an empty string and `ui.clearEditor` clicked a missing editor.
-- `openFile` does not collapse the side splits, which Garmy's `openInReading` did. Call `collapseSidebars()` first (Dashy's `collapseSidebars(obsidian)` helper is the same thing).
-- `compose()` fails when CodeMirror is still composing after a commit and when the document did not change; it always commits, so Snipsy's `ime.spec.ts` lines 70 to 83 (an uncommitted preedit) keep a raw CDP session.
-- `DASHY_VAULT` becomes `OPDK_E2E_VAULT`. Dashy's `DASHY_VIDEO` option was read nowhere else; video now follows `use.video`.
-- Snipsy's `E2E_LAUNCH=cdp` mode has no replacement yet.
+- A fallback that read the Obsidian version from the `obsidian.asar` on disk, and a `require("obsidian")` fallback (it never worked), are not carried over. The version is read with `ipcRenderer.sendSync("version")`, and an unreadable version fails the test when a version is pinned.
+- `editor().text()` and `clear()` throw `There is no active editor` where a hand-written `editorText` helper returned an empty string and a `clearEditor` helper clicked a missing editor.
+- `openFile` does not collapse the side splits, which a hand-written `openInReading` helper did. Call `collapseSidebars()` first.
+- `compose()` fails when CodeMirror is still composing after a commit and when the document did not change; it always commits, so a spec that tests an uncommitted preedit keeps a raw CDP session.
+- A plugin-specific vault variable becomes `OPDK_E2E_VAULT`. A video option read nowhere else goes; video now follows `use.video`.
+- A harness mode that launches Obsidian over CDP (`E2E_LAUNCH=cdp`) has no replacement yet.
 
-Where each shared helper went:
+Where a shared helper goes:
 
-| In the plugin | In the kit |
+| A helper you may have written | In the kit |
 |---|---|
-| Snipsy `ui.openSettings`, Garmy `settings.spec.ts`, Dashy `openSettings` | `obsidian.openSettings(tab)`, `closeSettings()` |
-| Snipsy `ui.openCommandPalette`, `ui.runCommand` | `openCommandPalette()`, `runCommandFromPalette(name)`, `runCommand(id)` |
-| Snipsy `ui.typeInEditor`, `ui.editorText`, `ui.clearEditor` | `editor().type()`, `text()`, `clear()` |
-| Snipsy `ime.spec.ts` | `editor().compose()` |
-| Dashy and Garmy `changeTheme`, the index wait, notice removal, the scroll that draws lazy blocks | `setTheme()`, `waitForMetadataCache()`, `clearNotices()`, `hideProperties()`, `scrollThrough()` |
-| The `emulateMobile` block copied into three specs | `mobile()`, `desktop()` |
-| Garmy's `fakeGarmin` | `replace()` |
-| Dashy `collapseSidebars`, the split collapse in Garmy's `openInReading` | `collapseSidebars()`, `expandSidebars()` |
-| The fixed `waitForTimeout` sleeps before a screenshot in Dashy and Garmy | `settle()` |
-
-The per-plugin differences are also listed in the kit's `CHANGELOG.md`.
+| Open settings, a settings spec | `obsidian.openSettings(tab)`, `closeSettings()` |
+| Open the command palette, run a command | `openCommandPalette()`, `runCommandFromPalette(name)`, `runCommand(id)` |
+| Type in the editor, read its text, clear it | `editor().type()`, `text()`, `clear()` |
+| An IME composition spec | `editor().compose()` |
+| Change the theme, wait for the index, remove notices, scroll so lazy blocks draw | `setTheme()`, `waitForMetadataCache()`, `clearNotices()`, `hideProperties()`, `scrollThrough()` |
+| An `emulateMobile` block copied into several specs | `mobile()`, `desktop()` |
+| A fake for a network client | `replace()` |
+| Collapse the sidebars, collapse the splits before opening in reading view | `collapseSidebars()`, `expandSidebars()` |
+| A fixed `waitForTimeout` before a screenshot | `settle()` |
 
 ## Limits today
 
@@ -474,7 +472,3 @@ The per-plugin differences are also listed in the kit's `CHANGELOG.md`.
 - The kit checks the installed Obsidian's version; it does not download one.
 - The Obsidian window opens on your screen during a run. The kit does not hide it.
 - The e2e specs of the kit itself (`npm run e2e:smoke`) run by hand before a release, never in `npm test` or CI.
-
-## Credits
-
-The code comes from Snipsy's `e2e/fixtures.ts`, `obsidian-version.ts` and `remove-dir.ts`, Garmy's `e2e-setup.sh` and settings spec, and the capture and film specs of Dashy and Garmy.

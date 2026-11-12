@@ -33,9 +33,11 @@ npm install --save-dev github:Dimagious/obsidian-plugin-dev-kit#vX.Y.Z
 npx opdk --help
 ```
 
+Install size, measured on 2026-11-12: the package is 260 KB packed and 1.4 MB installed. In an empty project it brings about 100 MB with its required dependencies, mostly TypeScript, esbuild and the ESLint stack a plugin usually has already. Electron, Playwright, Vitest, `@vitest/coverage-v8` and jsdom are optional peer dependencies, installed only for end-to-end tests, demo films and unit tests.
+
 ## Build
 
-`opdk build` builds your plugin's CSS, bundles it with esbuild for the browser platform, and then checks `main.js` for code that only exists under Node. Dashy 1.0.0 failed on every phone because its build passed `--platform=node`: esbuild took the `node` branch of the `yaml` package and bundled code that reads `process.env`. Desktop Obsidian has `process`, so only mobile showed it. The platform is fixed here, and the check fails the build if Node-only code gets in anyway.
+`opdk build` builds your plugin's CSS, bundles it with esbuild for the browser platform, and then checks `main.js` for code that only exists under Node. A plugin whose build passed `--platform=node` failed on every phone: esbuild took the `node` branch of the `yaml` package and bundled code that reads `process.env`. Desktop Obsidian has `process`, so only mobile showed it. The platform is fixed here, and the check fails the build if Node-only code gets in anyway.
 
 ![Terminal: opdk build prints the CSS step, the bundle size and "free of Node-only references", then ls shows main.js and styles.css](docs/media/build.gif)
 
@@ -47,7 +49,7 @@ Quick start: `npx opdk build`. Details: [docs/build.md](docs/build.md).
 
 ## Scanner
 
-`opdk scan` runs the community plugin scanner's own ESLint configuration (published upstream), a CSS check and a few source checks that reproduce findings seen on plugin listings, over the files git tracks. It fails when a step has a finding; the scanner's ESLint warnings count as findings, advisory `!` lines do not. Dashy lost three points of its public score to a joined domain string that no local check saw; this catches that kind of thing before the tag.
+`opdk scan` runs the community plugin scanner's own ESLint configuration (published upstream), a CSS check and a few source checks that reproduce findings seen on plugin listings, over the files git tracks. It fails when a step has a finding; the scanner's ESLint warnings count as findings, advisory `!` lines do not. A plugin lost three points of its public score to a joined domain string that no local check saw; this catches that kind of thing before the tag.
 
 ![Terminal: opdk scan prints lint, css, code and meta with 0 findings each, then the summary and exit code 0](docs/media/scan.gif)
 
@@ -55,7 +57,7 @@ Quick start: `npx opdk scan`. Details: [docs/scanner.md](docs/scanner.md).
 
 ## End-to-end tests
 
-`obsidian-plugin-dev-kit/e2e` runs Playwright specs in the real Obsidian: every test gets its own Obsidian process, a copy of your seed vault and a fresh user-data folder, with your built plugin installed and trusted before the window opens. Obsidian 1.13 moved Settings into a second window and took down five of Dashy's specs at once, and Snipsy pressed Escape on the trust dialog and slept to let plugins load. The kit keeps Settings in the main window, sets the trust flag before the vault loads and waits for every plugin's `onload()` to finish, and a failed test leaves a trace and a video of the Obsidian window.
+`obsidian-plugin-dev-kit/e2e` runs Playwright specs in the real Obsidian: every test gets its own Obsidian process, a copy of your seed vault and a fresh user-data folder, with your built plugin installed and trusted before the window opens. Obsidian 1.13 moved Settings into a second window and took down five specs of one plugin at once, and harnesses that pressed Escape on the trust dialog and slept to let plugins load raced a slow start. The kit keeps Settings in the main window, sets the trust flag before the vault loads and waits for every plugin's `onload()` to finish, and a failed test leaves a trace and a video of the Obsidian window.
 
 ![Obsidian driven by the kit: in a note, text is typed key by key, the command palette finds a command, a notice appears, and the plugin's settings tab opens](docs/media/e2e.gif)
 
@@ -63,7 +65,7 @@ Quick start: `createObsidianTest({ seedVault })` in `e2e/fixtures.ts`, `defineOb
 
 ## Demo films
 
-The `demo` fixture records your plugin in the real Obsidian as a film of stills: each shot freezes the UI and takes a sharp picture at 2x, with a hold and a caption, and `opdk demo` turns the film into an MP4, a GIF and a poster. Snipsy recorded the Obsidian window and needed Python to finish the job, Garmy's retake appended frames to the old film, and Dashy's reel script only warned when ffmpeg failed, so a run that made no GIF still ended green. Here the timing is the script's, a retake replaces the frames, a failed encode fails the film, and a film of a vault that is not the plugin's own is refused.
+The `demo` fixture records your plugin in the real Obsidian as a film of stills: each shot freezes the UI and takes a sharp picture at 2x, with a hold and a caption, and `opdk demo` turns the film into an MP4, a GIF and a poster. Recording the Obsidian window as video caught every stutter of the machine, and the script that finished the job needed Python; a retake that appended frames to the old film made a longer film, and a reel script that only warned when ffmpeg failed let a run that made no GIF end green. Here the timing is the script's, a retake replaces the frames, a failed encode fails the film, and a film of a vault that is not the plugin's own is refused.
 
 ![A phone film made by the kit: a note opens, a heading and a line of text are typed in three stages, the command palette finds "Show notice" and a notice appears, and the plugin's settings tab opens, while the list of steps beside the phone lights the current one](docs/media/demo.gif)
 
@@ -71,7 +73,7 @@ Quick start: `demo.film({ kind: "phone", captions })` and `film.shot({ hold })` 
 
 ## Releases
 
-`opdk release` checks a commit, bumps the version everywhere, tags it and publishes the GitHub release, pushing the branch last so the manifest on the default branch moves only after the release is public. Plugins that pushed the branch and the tag together let the directory read a new `manifest.json` before the release workflow had finished, and their hand-written CHANGELOG never reached the release page. Here only the tag is pushed first, the kit's reusable workflow builds, attests and creates a draft with the CHANGELOG section as notes, and `opdk release` checks the draft byte for byte against a build of the tag on your machine before it publishes. The incidents behind this, in [docs/release.md](docs/release.md).
+`opdk release` checks a commit, bumps the version everywhere, tags it and publishes the GitHub release, pushing the branch last so the manifest on the default branch moves only after the release is public. Pushing the branch and the tag together lets the directory read a new `manifest.json` before the release workflow had finished, and a hand-written CHANGELOG never reached the release page. Here only the tag is pushed first, the kit's reusable workflow builds, attests and creates a draft with the CHANGELOG section as notes, and `opdk release` checks the draft byte for byte against a build of the tag on your machine before it publishes. The incidents behind this, in [docs/release.md](docs/release.md).
 
 Quick start: a tag workflow in the plugin that calls the kit's, pinned to a full commit SHA of the kit,
 
@@ -94,7 +96,7 @@ then `npx opdk release check` to see what would stop a release, and `npx opdk re
 
 ## Continuous integration
 
-`.github/workflows/plugin-ci.yml` is a reusable workflow that checks a plugin on every push and pull request: lint, typecheck, unit tests, `opdk scan`, `opdk release check`, the build, and an upload of the bundle as `<plugin id>-bundle`. The three plugins each kept a 45 to 75 line `ci.yml` that had drifted (Snipsy's never ran its lint script). Here the job has a read-only token, every action is pinned to a commit SHA, the runner is pinned to `ubuntu-24.04` instead of `ubuntu-latest`, and the inputs are switches, never commands. Steps that belong to one plugin stay in a second job of its own `ci.yml`.
+`.github/workflows/plugin-ci.yml` is a reusable workflow that checks a plugin on every push and pull request: lint, typecheck, unit tests, `opdk scan`, `opdk release check`, the build, and an upload of the bundle as `<plugin id>-bundle`. Three plugins each kept a hand-written `ci.yml` of 45 to 75 lines, and they had drifted (one never ran its lint script). Here the job has a read-only token, every action is pinned to a commit SHA, the runner is pinned to `ubuntu-24.04` instead of `ubuntu-latest`, and the inputs are switches, never commands. Steps that belong to one plugin stay in a second job of its own `ci.yml`.
 
 Quick start: call it from the plugin's `ci.yml`, pinned to a full commit SHA of the kit,
 
@@ -112,7 +114,7 @@ jobs:
     uses: Dimagious/obsidian-plugin-dev-kit/.github/workflows/plugin-ci.yml@<full commit SHA of the kit>
 ```
 
-Dashy's default branch is `master`, so its caller uses `branches: [master]`. Inputs (all optional): `node-version`, `runs-on`, and a boolean per step (`lint`, `typecheck`, `test`, `scan`, `release-check`, `build`, `upload-bundle`, `coverage-artifact`). Inputs, what each step runs, how to add plugin-specific steps and what changes for each plugin: [docs/ci.md](docs/ci.md).
+If your default branch is not `main`, use its name in `branches`. Inputs (all optional): `node-version`, `runs-on`, and a boolean per step (`lint`, `typecheck`, `test`, `scan`, `release-check`, `build`, `upload-bundle`, `coverage-artifact`). Inputs, what each step runs, how to add plugin-specific steps and how to move an existing `ci.yml`: [docs/ci.md](docs/ci.md).
 
 ## Unit tests
 
@@ -172,8 +174,6 @@ No release has been tagged yet, so an installed plugin follows `main`: run `/plu
 - [x] Agent skills for build, scanner, e2e, demo, release and unit, installable as a Claude Code plugin
 - [ ] Agent skills for the modules that are still to come, written along with them
 
-Each module moves to Garmy first, then Dashy, then Snipsy. A plugin may change when it adopts a module (for example, Snipsy's bundle switches to the browser platform); each such change is listed in that plugin's changelog and checked by its end-to-end tests.
-
 ## Development
 
 Requires Node 22.13 or newer, or Node 24 or newer.
@@ -198,6 +198,13 @@ Releasing: bump `version` in `package.json`, move the `[Unreleased]` entries in 
 ## Credits
 
 The kit's code is moved from the owner's plugins: [Snipsy](https://github.com/Dimagious/snipsidian), [Dashy](https://github.com/Dimagious/dashsidian) and [Garmy](https://github.com/Dimagious/garmidian).
+
+Where each module came from:
+
+- Build, bundle check, scanner and the vault copy: Dashy's `build`, `assert-bundle`, `build-css`, `build-vault` and `scorecard-check` scripts and its scanner ESLint configuration.
+- End-to-end fixture: Snipsy's `e2e/fixtures.ts`, `obsidian-version.ts` and `remove-dir.ts` and Garmy's `e2e-setup.sh`.
+- End-to-end helpers: Snipsy's UI helpers (settings, command palette, editor typing, text and clear, IME composition) and Garmy's settings and reading-view helpers; the theme, metadata-cache, notice, properties and scroll helpers and the mobile block come from Dashy's and Garmy's capture and film specs; the sidebar collapse from Dashy and Garmy; the fake swap (`replace`) from Garmy's fake.
+- Demo: Snipsy's cursor and caption overlays, Dashy's tap dot and phone film, and Garmy's reels.
 
 ## License
 

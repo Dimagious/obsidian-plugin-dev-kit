@@ -1,5 +1,5 @@
 # Regenerate with `npm run build && npm run docs:media` from the kit root.
-# Dashy's 1.1.6 regression: a host assembled from joined strings, plus a bare timer, an !important and a
+# A plugin's 1.1.6 regression: a host assembled from joined strings, plus a bare timer, an !important and a
 # description that starts with the plugin name. Every check fails; the exit code is 1.
 Output docs/media/scan-fails.gif
 

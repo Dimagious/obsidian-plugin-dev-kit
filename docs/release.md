@@ -4,13 +4,13 @@
 
 ## Why
 
-Obsidian reads the version from `manifest.json` on the default branch, then downloads `main.js`, `manifest.json` and `styles.css` from the GitHub release with that tag. Since 2026-05 the community directory scans every release. Its [documentation](https://docs.obsidian.md/community-directory/manage-entry) says it verifies that the build matches what is committed, and developers report that `main.js` is compared byte for byte. Snipsy, Dashy and Garmy each had their own release scripts, with these problems:
+Obsidian reads the version from `manifest.json` on the default branch, then downloads `main.js`, `manifest.json` and `styles.css` from the GitHub release with that tag. Since 2026-05 the community directory scans every release. Its [documentation](https://docs.obsidian.md/community-directory/manage-entry) says it verifies that the build matches what is committed, and developers report that `main.js` is compared byte for byte. Hand-written release scripts in real plugins had these problems:
 
 - **Branch and tag were pushed together** (`git push --follow-tags`), so the directory could read the new `manifest.json` before the release workflow had finished, or after it failed.
-- **GitHub's release listing can lag behind a successful release.** Dashy 1.0.2 failed its directory review with "release is missing the main.js file" although the release had its assets: the list of assets of the release stayed empty for 90 minutes after a successful run. The kit cannot shorten that wait. It makes sure the manifest on the default branch moves only after the release is public.
-- **The audit exited 0 on problems.** Dashy's `release-audit.cjs` printed its findings and "READY FOR OBSIDIAN REVIEW ❌", then exited 0 (it exited 1 only when no zip was found), and its zip step dropped a missing `main.js` without a word.
-- **`versions.json` entries could be rewritten.** Dashy's `version-sync.cjs` rewrote an existing entry whenever `minAppVersion` changed, including the entry of a released version. Snipsy had no `versions.json` at all and never compared the tag with the manifest.
-- **The CHANGELOG never reached the release.** All three keep a hand-written CHANGELOG, and the release page showed GitHub's list of pull requests (or, for Garmy, only a compare link).
+- **GitHub's release listing can lag behind a successful release.** A plugin's 1.0.2 release failed its directory review with "release is missing the main.js file" although the release had its assets: the list of assets of the release stayed empty for 90 minutes after a successful run. The kit cannot shorten that wait. It makes sure the manifest on the default branch moves only after the release is public.
+- **The audit exited 0 on problems.** A `release-audit.cjs` script printed its findings and "READY FOR OBSIDIAN REVIEW ❌", then exited 0 (it exited 1 only when no zip was found), and its zip step dropped a missing `main.js` without a word.
+- **`versions.json` entries could be rewritten.** A `version-sync.cjs` script rewrote an existing entry whenever `minAppVersion` changed, including the entry of a released version. Another plugin had no `versions.json` at all and never compared the tag with the manifest.
+- **The CHANGELOG never reached the release.** Plugins keep a hand-written CHANGELOG, and the release page showed GitHub's list of pull requests (or only a compare link).
 - **Any tag built from any commit.** A tag on a commit outside the default branch was built and published as it was.
 - **Attestations were produced and never verified.**
 
@@ -312,25 +312,25 @@ error: failed to push some refs to 'github.com:you/my-plugin.git'
 
 ## Migrating from a plugin's own release scripts
 
-What the kit replaces is the same in all three plugins; what stays is each plugin's own.
+What the kit replaces is usually the same; what stays is your own.
 
-**Dashy and Garmy** (their `version-sync.cjs`, `assert-versions.cjs`, `make-zip.cjs` and `release.yml` are byte-identical):
+**The release scripts and workflow:**
 
-- `scripts/version-sync.cjs` is replaced by `opdk release <bump>`, which also refuses to rewrite a released `versions.json` entry and checks the lockfile.
-- `scripts/assert-versions.cjs` is replaced by `opdk release check`.
-- `scripts/make-zip.cjs` goes away, and so does `scripts/release-audit.cjs` where a plugin has one (Dashy; Garmy has none). No release ships a zip by default, so there is nothing to audit; the draft is verified against a build of the tag instead, and `--zip` exists if you want a zip.
+- A version-sync script (`scripts/version-sync.cjs`) is replaced by `opdk release <bump>`, which also refuses to rewrite a released `versions.json` entry and checks the lockfile.
+- A version assertion script (`scripts/assert-versions.cjs`) is replaced by `opdk release check`. If the script never compared the tag with the manifest, the workflow now does.
+- A zip script (`scripts/make-zip.cjs`) goes away, and so does a release audit script (`scripts/release-audit.cjs`). No release ships a zip by default, so there is nothing to audit; the draft is verified against a build of the tag instead, and `--zip` exists if you want a zip. If you had added an attestation after a scorecard flagged its absence, it is now made, and verified, by the flow.
 - `.github/workflows/release.yml` becomes the short caller from Quick start.
-- What changes for the plugin: the release is created as a draft and published by `opdk release` after verification, its body is the CHANGELOG section instead of GitHub's list of pull requests, the workflow no longer runs `npm run test` (the plugins' release workflows ran only that and `npm run build`; run tests, lint and typecheck in branch CI and in your own `release:check` script before you cut the release), and the branch is pushed after the release instead of with the tag. The tag is annotated, which was already true for Dashy and is new for Garmy (its tags were lightweight). The release commit still goes straight to the default branch, so a protection rule that blocks that push ends the flow at its last step (see the table of stops).
-- Dashy keeps its own schema version policy and its "instructions review" gate: run them before `opdk release`, because the release needs a clean tree. Its `build:skill` output names the plugin version and its CI runs `build:skill -- --check`, while the release commit holds only the version files. So after `opdk release`, run `npm run build:skill` and `npm run build:reference` and commit the result, or CI fails. The `npm run release:zip` step in Dashy's `ci.yml` goes away together with `make-zip.cjs`. A GitHub Pages workflow on the same tag keeps working; the release wait ignores it.
-- Both need `scripts.build` to run `opdk build` and `uses: ...@<full commit SHA of the kit>` in place of their workflow steps.
+- `scripts.build` has to run `opdk build`.
+- What changes: the release is created as a draft and published by `opdk release` after verification, its body is the CHANGELOG section instead of GitHub's list of pull requests, the workflow no longer runs `npm run test` (a release workflow that ran only that and `npm run build` loses the test run; run tests, lint and typecheck in branch CI and in your own `release:check` script before you cut the release), and the branch is pushed after the release instead of with the tag. The tag is annotated, which is new if your tags were lightweight. The release commit still goes straight to the default branch, so a protection rule that blocks that push ends the flow at its last step (see the table of stops).
+- If you keep your own schema version policy or an "instructions review" gate, run them before `opdk release`, because the release needs a clean tree. If generated files name the plugin version and your CI checks them in sync (`build:skill -- --check`), the release commit holds only the version files, so after `opdk release` regenerate them and commit the result, or CI fails. A GitHub Pages workflow on the same tag keeps working; the release wait ignores it.
 
-**All three plugins, in `ci.yml` and `package.json`** (each `ci.yml` runs `node scripts/assert-versions.cjs`, `npm run release:zip` and uploads `<plugin>-*.zip` with the bundle):
+**In `ci.yml` and `package.json`** (if your `ci.yml` runs `node scripts/assert-versions.cjs`, `npm run release:zip` and uploads `<plugin>-*.zip` with the bundle):
 
 - Replace the `node scripts/assert-versions.cjs` step with `npx opdk release check --no-build --no-api`. Branch CI already installs and runs `npm run build` as a step of its own, so `--no-build` skips the build, asset and reproducibility checks, which would build twice more, and `--no-api` skips the `minAppVersion` check against the Obsidian API, which needs a type-aware lint pass. What stays: the version files agree, `versions.json`, the manifest rules, the CHANGELOG section and the format of the JSON files the release rewrites. The full check (build, assets, reproducibility, API) runs in the release workflow on the tag and in `opdk release <bump>` before anything is committed. Drop both flags to run the full check in branch CI as well, at the price of the two extra builds and the type-aware pass. The kit's reusable [`plugin-ci.yml`](ci.md) runs this step with the flags above, together with lint, typecheck, tests, the scanner and the build.
 - Remove the `Pack plugin zip` step (`npm run release:zip`) and the `<plugin>-*.zip` line from the artifact `path:` list.
-- In `package.json`, rewrite `release:check` by replacing `node scripts/version-sync.cjs` with `opdk release check` (it builds, so a trailing `npm run build` is redundant), and remove `release:zip` (all three), `release` (Dashy and Snipsy; Garmy has none) and `release:audit` (Dashy and Snipsy; Garmy has none). `release:check` keeps the plugin's own steps (scorecard and tests; Dashy and Garmy also lint and typecheck).
+- In `package.json`, rewrite `release:check` by replacing `node scripts/version-sync.cjs` with `opdk release check` (it builds, so a trailing `npm run build` is redundant), and remove `release:zip`, `release` and `release:audit` if you have them. `release:check` keeps your own steps (scorecard and tests, and lint and typecheck if it ran them).
 
-**Snipsy:**
+**If the plugin has no `versions.json`:**
 
 - Create `versions.json` before the first `opdk release check`, in the format the kit writes (two-space indent, final newline), not on one line:
 
@@ -341,7 +341,5 @@ What the kit replaces is the same in all three plugins; what stays is each plugi
   ```
 
   `opdk release <bump>` also creates a missing file, but `check` fails without it. `check` also fails on a one-line file, because the release rewrites it and refuses a file it cannot write back as it is. Prettier keeps a one-entry object on one line, so use the `node -e` command in the hint of that error (it writes LF line endings, so a CRLF file that is misformatted for another reason becomes LF).
-- Its `scripts/version-sync.cjs`, `assert-versions.cjs`, `make-zip.cjs` and `release-audit.cjs` (three of them, `version-sync.cjs`, `make-zip.cjs` and `release-audit.cjs`, with the plugin id written into them) are replaced the same way, and `scripts/assert-versions.cjs` never compared the tag with the manifest; the workflow now does.
-- Its `build` script has to run `opdk build`.
-- Releases have shipped no zip since 2026-05 (its ADR 0002, 2026-05-14), which is also the kit's default. The attestation it added after the scorecard flagged its absence is now made, and verified, by the flow.
-- Legacy `v0.x` tags stay as they are. The kit looks for the exact tag it is releasing and never lists or touches other tags.
+
+**Existing tags:** legacy tags such as `v0.x` stay as they are. The kit looks for the exact tag it is releasing and never lists or touches other tags.
