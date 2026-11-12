@@ -73,3 +73,64 @@ describe("the projects Vitest builds from defineUnitConfig()", () => {
         expect(files.every((entry) => entry.split(":")[1] === "jsdom")).toBe(true);
     });
 });
+
+describe("the obsidian { node, dom } option in a real Vitest run", () => {
+    beforeEach(() => {
+        // Only the files of this describe: the ones made for the assignment tests above are empty.
+        fs.rmSync(path.join(root, "src"), { recursive: true, force: true });
+    });
+
+    function write(file: string, content: string): void {
+        fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+        fs.writeFileSync(path.join(root, file), content);
+    }
+
+    function writeConfig(obsidian: unknown): void {
+        const entry = fileURLToPath(new URL("./define-unit-config.ts", import.meta.url));
+        const given = JSON.stringify({ coverage: { include: ["src/**/*.ts"] }, rootDir: root, dom: ["src/ui/**/*.test.ts"], obsidian });
+        // The kit's own setup file lives outside the temp root; a plugin finds it under its node_modules instead.
+        write(
+            "vitest.config.ts",
+            `import { defineUnitConfig } from ${JSON.stringify(entry)};\n` +
+                `export default { ...defineUnitConfig(${given}), server: { fs: { strict: false } } };\n`,
+        );
+    }
+
+    it("a node file imports the plugin's stub while a dom file imports its own", async () => {
+        write("stubs/node.ts", 'export const kind = "node-stub";\n');
+        write("stubs/dom.ts", 'export const kind = "dom-stub";\n');
+        for (const [file, expected] of [["src/core/a.test.ts", "node-stub"], ["src/ui/b.test.ts", "dom-stub"]] as const) {
+            write(file, `import { expect, it } from "vitest";\nimport { kind } from "obsidian";\nit("resolves", () => { expect(kind).toBe("${expected}"); });\n`);
+        }
+        writeConfig({ node: "./stubs/node.ts", dom: "./stubs/dom.ts" });
+        const vitest = await createVitest({ root, watch: false, coverage: { enabled: false }, reporters: [] }, { logLevel: "silent" });
+        try {
+            await vitest.start();
+            const files = vitest.state.getFiles();
+            expect(files.map((file) => path.relative(root, file.filepath)).sort()).toEqual(["src/core/a.test.ts", "src/ui/b.test.ts"]);
+            expect(files.map((file) => file.result?.state)).toEqual(["pass", "pass"]);
+        } finally {
+            await vitest.close();
+        }
+    });
+
+    it("with obsidian-test-mocks for dom the node project keeps the stub and only the dom project gets the mocks alias", async () => {
+        // The mocks package is not a dependency of the kit, so this checks the aliases Vitest resolved, not an import.
+        write("stubs/node.ts", 'export const kind = "node-stub";\n');
+        write("src/core/a.test.ts", "");
+        write("src/ui/b.test.ts", "");
+        writeConfig({ node: "./stubs/node.ts", dom: "obsidian-test-mocks" });
+        const vitest = await createVitest({ root, watch: false, coverage: { enabled: false } }, { logLevel: "silent" });
+        try {
+            const aliases = new Map<string, unknown>();
+            for (const spec of await vitest.globTestSpecifications()) {
+                const entries: readonly { find: unknown; replacement: string }[] = spec.project.vite.config.resolve.alias;
+                aliases.set(spec.project.name, entries.filter((entry) => entry.find === "obsidian"));
+            }
+            expect(aliases.get("unit")).toEqual([{ find: "obsidian", replacement: path.join(root, "stubs/node.ts") }]);
+            expect(aliases.get("dom")).toEqual([{ find: "obsidian", replacement: "obsidian-test-mocks/obsidian" }]);
+        } finally {
+            await vitest.close();
+        }
+    });
+});

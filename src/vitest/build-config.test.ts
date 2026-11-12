@@ -52,6 +52,46 @@ describe("buildUnitConfig obsidian", () => {
     });
 });
 
+describe("buildUnitConfig obsidian { node, dom }", () => {
+    const globs = ["src/ui/**/*.test.ts"];
+
+    it("gives the node project the stub and the dom project the mocks, with no alias at the root", () => {
+        const config = build({ obsidian: { node: "./stubs/node.ts", dom: "obsidian-test-mocks" }, dom: globs, rootDir: "/plugin" });
+        expect(config.resolve).toBeUndefined();
+        expect(config.test?.projects?.[0]).toMatchObject({
+            test: { name: "unit" },
+            resolve: { alias: { obsidian: path.resolve("/plugin", "./stubs/node.ts") } },
+        });
+        expect(config.test?.projects?.[1]).toMatchObject({
+            test: { name: "dom", setupFiles: [setup.mocks] },
+            resolve: { alias: { obsidian: "obsidian-test-mocks/obsidian" } },
+        });
+    });
+
+    it("two stubs: each project gets its own alias and the dom project keeps the kit polyfill", () => {
+        const config = build({ obsidian: { node: "./a.ts", dom: "./b.ts" }, dom: globs, rootDir: "/plugin" });
+        expect(config.test?.projects?.[0]).toMatchObject({ resolve: { alias: { obsidian: path.resolve("/plugin", "a.ts") } } });
+        expect(config.test?.projects?.[1]).toMatchObject({
+            test: { setupFiles: [setup.dom] },
+            resolve: { alias: { obsidian: path.resolve("/plugin", "b.ts") } },
+        });
+    });
+
+    it("the same stub on both sides is one root alias, as the string form", () => {
+        const config = build({ obsidian: { node: "./a.ts", dom: "./a.ts" }, dom: globs, rootDir: "/plugin" });
+        expect(config).toEqual(build({ obsidian: "./a.ts", dom: globs, rootDir: "/plugin" }));
+    });
+
+    it("dom: 'all' uses the dom side at the root, no dom globs uses the node side", () => {
+        expect(build({ obsidian: { node: "./a.ts", dom: "obsidian-test-mocks" }, dom: "all" }).resolve?.alias).toEqual({
+            obsidian: "obsidian-test-mocks/obsidian",
+        });
+        expect(build({ obsidian: { node: "./a.ts", dom: "./b.ts" }, rootDir: "/plugin" }).resolve?.alias).toEqual({
+            obsidian: path.resolve("/plugin", "a.ts"),
+        });
+    });
+});
+
 describe("buildUnitConfig dom", () => {
     it("'all' runs everything in jsdom with the kit setup file and no projects", () => {
         const { test } = build({ dom: "all" });

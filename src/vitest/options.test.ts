@@ -56,6 +56,17 @@ describe("resolveUnitOptions values", () => {
         expect(resolveUnitOptions({ ...minimal, obsidian: "obsidian-test-mocks", dom: "all" }, "/p").obsidian).toEqual({ kind: "mocks" });
     });
 
+    it("the { node, dom } form picks a stub for node and mocks or another stub for the DOM tests", () => {
+        expect(
+            resolveUnitOptions({ ...minimal, obsidian: { node: "./stubs/node.ts", dom: "obsidian-test-mocks" }, dom: ["src/ui/**/*.test.ts"] }, "/p").obsidian,
+        ).toEqual({ kind: "split", node: "./stubs/node.ts", dom: { kind: "mocks" } });
+        expect(resolveUnitOptions({ ...minimal, obsidian: { node: "./stubs/node.ts", dom: "./stubs/dom.ts" } }, "/p").obsidian).toEqual({
+            kind: "split",
+            node: "./stubs/node.ts",
+            dom: { kind: "stub", path: "./stubs/dom.ts" },
+        });
+    });
+
     it("dom: globs split, [] means none, 'all' means all", () => {
         expect(resolveUnitOptions({ ...minimal, dom: ["src/ui/**/*.test.ts"] }, "/p").dom).toEqual({
             kind: "split",
@@ -106,6 +117,32 @@ describe("resolveUnitOptions errors", () => {
         expect(fails({ coverage: { include: ["a"], exclude: "x" } })).toContain('"coverage.exclude"');
         expect(fails({ coverage: { include: ["a"], extraReporters: ["text"] } })).toContain('"coverage.extraReporters"');
         expect(fails({ coverage: { include: ["a"], thresholds: 90 } })).toContain('"coverage.thresholds"');
+    });
+
+    it("rejects a wrong { node, dom } object, naming the key", () => {
+        const dom = ["src/ui/**/*.test.ts"];
+        expect(fails({ ...minimal, dom, obsidian: { dom: "obsidian-test-mocks" } })).toContain('"obsidian.node"');
+        expect(fails({ ...minimal, dom, obsidian: { node: "", dom: "obsidian-test-mocks" } })).toContain('"obsidian.node"');
+        expect(fails({ ...minimal, dom, obsidian: { node: "./stub.ts" } })).toContain('"obsidian.dom"');
+        expect(fails({ ...minimal, dom, obsidian: { node: "./stub.ts", dom: 1 } })).toContain('"obsidian.dom"');
+        expect(fails({ ...minimal, dom, obsidian: { node: "./stub.ts", dom: "x", mocks: true } })).toContain("unknown \"obsidian\" key(s): mocks");
+        expect(fails({ ...minimal, dom, obsidian: ["./stub.ts"] })).toContain('"obsidian"');
+        const mocksInNode = fails({ ...minimal, dom, obsidian: { node: "obsidian-test-mocks", dom: "obsidian-test-mocks" } });
+        expect(mocksInNode).toContain('"obsidian.node" cannot be "obsidian-test-mocks"');
+    });
+
+    it("{ node, dom: 'obsidian-test-mocks' } needs dom globs like the string form, a stub for dom does not", () => {
+        for (const dom of [undefined, []]) {
+            expect(fails({ ...minimal, dom, obsidian: { node: "./stub.ts", dom: "obsidian-test-mocks" } })).toContain("needs a DOM environment");
+        }
+        expect(resolveUnitOptions({ ...minimal, obsidian: { node: "./a.ts", dom: "./b.ts" } }, "/p").obsidian.kind).toBe("split");
+    });
+
+    it("coverage.allowLowerThresholds must be a boolean", () => {
+        for (const bad of ["true", 1, null, {}]) {
+            expect(fails({ coverage: { include: ["a"], allowLowerThresholds: bad } })).toContain('"coverage.allowLowerThresholds" must be true or false');
+        }
+        expect(resolveUnitOptions({ coverage: { include: ["a"], allowLowerThresholds: false } }, "/p").coverage.thresholds).toEqual(DEFAULT_THRESHOLDS);
     });
 
     it("rejects an unknown or out-of-range threshold", () => {
