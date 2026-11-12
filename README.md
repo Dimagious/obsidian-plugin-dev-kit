@@ -199,6 +199,13 @@ Releasing: bump `version` in `package.json`, move the `[Unreleased]` entries in 
 
 The kit's code is moved from the owner's plugins: [Snipsy](https://github.com/Dimagious/snipsidian), [Dashy](https://github.com/Dimagious/dashsidian) and [Garmy](https://github.com/Dimagious/garmidian).
 
+Where each module came from:
+
+- Build, bundle check, scanner and the vault copy: Dashy's `build`, `assert-bundle`, `build-css`, `build-vault` and `scorecard-check` scripts and its scanner ESLint configuration.
+- End-to-end fixture: Snipsy's `e2e/fixtures.ts`, `obsidian-version.ts` and `remove-dir.ts` and Garmy's `e2e-setup.sh`.
+- End-to-end helpers: Snipsy's UI helpers (settings, command palette, editor typing, text and clear, IME composition) and Garmy's settings and reading-view helpers; the theme, metadata-cache, notice, properties and scroll helpers and the mobile block come from Dashy's and Garmy's capture and film specs; the sidebar collapse from Dashy and Garmy; the fake swap (`replace`) from Garmy's fake.
+- Demo: Snipsy's cursor and caption overlays, Dashy's tap dot and phone film, and Garmy's reels.
+
 ## License
 
 MIT
