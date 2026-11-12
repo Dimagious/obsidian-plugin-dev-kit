@@ -2,7 +2,7 @@
 
 Build, lint, release, test and film [Obsidian](https://obsidian.md/) plugins from one dev dependency.
 
-> **Status: work in progress, nothing to install yet.** The code is being moved here from three plugins that each kept their own copy: [Snipsy](https://github.com/Dimagious/snipsidian), [Dashy](https://github.com/Dimagious/dashsidian) and [Garmy](https://github.com/Dimagious/garmidian). The roadmap below shows what is done.
+> **Status: 0.1.0 is released and installs by git tag (see [Install](#install)).** The code was moved here from three plugins that each kept their own copy: [Snipsy](https://github.com/Dimagious/snipsidian), [Dashy](https://github.com/Dimagious/dashsidian) and [Garmy](https://github.com/Dimagious/garmidian). The roadmap below shows what is done and what is planned.
 
 ## Why
 
@@ -24,12 +24,12 @@ Every Obsidian plugin needs the same tooling around its code: a bundle that also
 
 Your plugin keeps only what is its own: specs, the seed vault and demo scenes.
 
-## Install (planned)
+## Install
 
-No tag exists yet, so these commands do not work today. Replace `vX.Y.Z` with the first tag once it is out.
+The kit is installed from a git tag on GitHub; it is not published to npm.
 
 ```bash
-npm install --save-dev github:Dimagious/obsidian-plugin-dev-kit#vX.Y.Z
+npm install -D "github:Dimagious/obsidian-plugin-dev-kit#v0.1.0"
 npx opdk --help
 ```
 
@@ -192,7 +192,7 @@ npm run e2e:smoke  # the kit's own e2e specs against a real Obsidian; by hand be
 
 `dist/` is not committed. `npm install` from a git tag runs `prepare`, which builds it, so a broken build breaks every plugin install. CI runs the same checks plus the smoke on every pull request.
 
-Releasing: bump `version` in `package.json`, move the `[Unreleased]` entries in `CHANGELOG.md` under the new version, merge, then the owner tags `vX.Y.Z` and pushes the tag. A workflow fails the tag if it differs from `package.json`. Plugins pin the tag, for example `github:Dimagious/obsidian-plugin-dev-kit#vX.Y.Z`.
+Releasing: bump `version` in `package.json`, move the `[Unreleased]` entries in `CHANGELOG.md` under the new version, merge, then the owner tags `vX.Y.Z` and pushes the tag. A workflow fails the tag if it differs from `package.json`. Plugins pin the tag, for example `github:Dimagious/obsidian-plugin-dev-kit#v0.1.0`.
 
 ## Credits
 

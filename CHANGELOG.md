@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-12
+
 ### Added
 
 - `defineUnitConfig({ obsidian: { node, dom } })`: a stub path for the test files that run in node and `"obsidian-test-mocks"` (or another stub path) for the files in `dom`. Before, `"obsidian-test-mocks"` left the node project with no `obsidian` alias (`Failed to resolve entry for package "obsidian"`), and a plugin had to merge a root alias by hand. The string forms work as before. A missing or non-string `node` or `dom`, an unknown key, and `node: "obsidian-test-mocks"` throw with the option named; `dom: "obsidian-test-mocks"` still needs `dom` globs.

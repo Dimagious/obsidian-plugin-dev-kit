@@ -22,7 +22,7 @@ Add the command to `package.json` and run it before every release:
   "devDependencies": {
     "eslint": "^10.14.0",
     "typescript": "^6.0.3",
-    "obsidian-plugin-dev-kit": "github:Dimagious/obsidian-plugin-dev-kit#vX.Y.Z"
+    "obsidian-plugin-dev-kit": "github:Dimagious/obsidian-plugin-dev-kit#v0.1.0"
   }
 }
 ```
