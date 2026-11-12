@@ -51,7 +51,7 @@ Options: `rootDir` (default `process.cwd()`), `tsconfig` (default `./tsconfig.js
 - `@typescript-eslint/no-require-imports`: replace `require(...)` with an `import`; phones have no `require`.
 - `obsidianmd/prefer-create-el`: `el.createEl("div", {...})` becomes `el.createDiv({...})`.
 - `no-domain-assembly`: write the URL as one string literal.
-- `css-no-important`: raise the selector's specificity. `css-no-has`: put a class on the element from TS. `css-browser-feature/<name>`: check the feature on caniuse for Chrome 142; "partially supported" is reported on the public scorecard too. `@typescript-eslint/no-unsafe-*`: an `any` or unresolved type flows into the value; type it.
+- `css-no-important`: raise the selector's specificity. `css-no-has`: put a class on the element from TS. `css-browser-feature/<name>`: check the feature on caniuse for Chrome 142; "partially supported" is reported on the public scorecard too. `@typescript-eslint/no-unsafe-*`: an `any` or unresolved type flows into the value; type it. If the public scorecard shows these on `moment(...)` imported from `obsidian` and `opdk scan` does not, the scorecard type-checks with TypeScript 6: run the scan with `typescript@6.0` installed and cast `moment` to a small typed function (see "Differences from the public scorecard" in docs/scanner.md).
 - `manifest-description-no-name-prefix`: reword the description so it does not begin with the plugin name.
 - The scan does not know which tracked files are plugin code: web assets a repository keeps besides the plugin (a docs site, demos) are checked by the same rules. Fixing them, moving them out or listing them under `scan.ignore` is each plugin's choice.
 

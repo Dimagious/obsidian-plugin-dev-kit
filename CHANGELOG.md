@@ -12,6 +12,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 - `obsidianPlugin()` turns on two more rules for every plugin that uses it, both taken from the plugins' own lint configs. `@typescript-eslint/no-require-imports` is an `error` (the `recommended` preset leaves it off; phones have no `require`). A bare `window.<member>` (`window.addEventListener`, `window.innerWidth`, `window["x"]`) is an `error` through `no-restricted-syntax`, because it breaks in a popout window; use `activeWindow`. `window.open` and the timer functions stay allowed. The community scanner reports neither rule, so `opdk scan` is unchanged. To opt out, add a block after the preset with `"@typescript-eslint/no-require-imports": "off"` or `"no-restricted-syntax": "off"`; a plugin that sets `no-restricted-syntax` itself replaces the kit's selector (`BARE_WINDOW_SELECTOR` is exported).
 
+### Fixed
+
+- Docs: `opdk scan` reported 0 where the public scorecard flagged `moment(date).format(...)` (`moment` imported from `obsidian`) as `no-unsafe-call`, `-member-access` and `-return`. Reproduced: the cause is the TypeScript version, not a missing `moment` install. Under TypeScript 6 the `obsidian` typing of `moment` is not callable, under 5.9 it is; the scan uses the plugin's own TypeScript. [docs/scanner.md](docs/scanner.md) describes the gap, how to see it (`typescript@6.0` for the check) and the plugin-side fix. `ui/sentence-case` is documented as off on the scorecard too.
+
 ## [0.1.0] - 2026-11-12
 
 ### Added
