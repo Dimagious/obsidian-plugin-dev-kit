@@ -22,8 +22,10 @@ eslint_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.j
 typescript_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies.typescript")"
 # The version of Playwright the e2e step below installs.
 playwright_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies['@playwright/test']")"
-# The version of Vitest the unit step below installs.
+# The versions of Vitest, its coverage package and jsdom the unit step below installs.
 vitest_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies.vitest")"
+coverage_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies['@vitest/coverage-v8']")"
+jsdom_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies.jsdom")"
 
 # The agent skills ship in the tarball at the same path as in the repository.
 tarball_files="$(tar -tzf "$tmp/$tarball")"
@@ -40,11 +42,11 @@ npm init -y >/dev/null
 npm install --no-audit --no-fund --loglevel=error "eslint@$eslint_version" "typescript@$typescript_version"
 npm install --no-audit --no-fund --loglevel=error "$tmp/$tarball"
 
-# Playwright and Electron are optional peers: installing the kit must not bring them. Everything up to the e2e step
+# Playwright and Electron are not dependencies of the kit: installing the kit must not bring them. Everything up to the e2e step
 # below runs without them, which is the proof that the CLI, the build and the scanner never load Playwright.
 for optional_peer in node_modules/@playwright/test node_modules/electron node_modules/vitest node_modules/jsdom; do
     if [ -e "$optional_peer" ]; then
-        echo "smoke: $optional_peer exists before the e2e step; the kit's optional peers must not be installed with it" >&2
+        echo "smoke: $optional_peer exists before the e2e step; the kit's optional packages must not be installed with it" >&2
         exit 1
     fi
 done
@@ -195,7 +197,7 @@ if (!Array.isArray(config) || config.length === 0) throw new Error('obsidianPlug
 "
 
 echo "--- import obsidian-plugin-dev-kit/e2e (Playwright installed only now: nothing above needed it)"
-# The e2e subpath is the only part of the kit that loads Playwright. Playwright is an optional peer, so a plugin
+# The e2e subpath is the only part of the kit that loads Playwright. Playwright is not a dependency of the kit, so a plugin
 # that uses e2e installs it itself; the version here is the one the kit is developed against.
 npm install --no-audit --no-fund --loglevel=error "@playwright/test@$playwright_version"
 node --input-type=module -e "
@@ -210,8 +212,18 @@ if (!rejected) throw new Error('createObsidianTest accepted options without seed
 if (defineObsidianConfig().workers !== 1) throw new Error('defineObsidianConfig did not set workers: 1');
 "
 
-echo "--- import obsidian-plugin-dev-kit/vitest and /vitest/dom (Vitest installed only now: it is an optional peer)"
+echo "--- import obsidian-plugin-dev-kit/vitest and /vitest/dom (Vitest installed only now: the kit does not depend on it)"
 npm install --no-audit --no-fund --loglevel=error "vitest@$vitest_version"
+# The preset checks the plugin's packages when it runs: the coverage package and jsdom are missing so far.
+node --input-type=module -e "
+import { defineUnitConfig } from 'obsidian-plugin-dev-kit/vitest';
+let message = '';
+try { defineUnitConfig({ coverage: { include: ['src/**/*.ts'] } }); } catch (error) { message = String(error); }
+if (!/@vitest\\/coverage-v8\" is not installed/.test(message) || !/Run: npm install --save-dev @vitest\\/coverage-v8@/.test(message)) {
+    throw new Error('defineUnitConfig did not report the missing coverage package: ' + message);
+}
+"
+npm install --no-audit --no-fund --loglevel=error "@vitest/coverage-v8@$coverage_version" "jsdom@$jsdom_version"
 node --input-type=module -e "
 import fs from 'node:fs';
 import { defineUnitConfig } from 'obsidian-plugin-dev-kit/vitest';

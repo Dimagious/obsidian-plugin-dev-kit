@@ -12,6 +12,12 @@ let root: string;
 beforeEach(() => {
     // realpath: Vitest reports files by their real path, and the temp folder is a symlink on macOS.
     root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "opdk-vitest-projects-")));
+    // The packages defineUnitConfig() checks for in the plugin: links to the ones the kit itself runs on.
+    const kitModules = fileURLToPath(new URL("../../node_modules", import.meta.url));
+    fs.mkdirSync(path.join(root, "node_modules/@vitest"), { recursive: true });
+    for (const name of ["vitest", "@vitest/coverage-v8", "jsdom"]) {
+        fs.symlinkSync(path.join(kitModules, name), path.join(root, "node_modules", name), "dir");
+    }
     for (const file of ["src/core/a.test.ts", "src/core/b.test.ts", "src/ui/c.test.ts", "src/ui/d.test.ts", "scripts/e.test.ts"]) {
         fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
         fs.writeFileSync(path.join(root, file), "");
@@ -149,7 +155,7 @@ describe("kit installs: a dom file loads the kit's setup file wherever the kit i
     /** What `tsc` puts in `dist/`: the vitest module compiled to ESM next to a package.json, with the peers it imports. */
     function installBuiltKit(kitDir: string): void {
         const source = fileURLToPath(new URL(".", import.meta.url));
-        for (const [from, to] of [[source, "dist/vitest"], [path.join(source, "dom"), "dist/vitest/dom"]] as const) {
+        for (const [from, to] of [[source, "dist/vitest"], [path.join(source, "dom"), "dist/vitest/dom"], [path.join(source, "../peers"), "dist/peers"]] as const) {
             fs.mkdirSync(path.join(kitDir, to), { recursive: true });
             for (const name of fs.readdirSync(from)) {
                 if (!name.endsWith(".ts") || name.endsWith(".test.ts")) continue;

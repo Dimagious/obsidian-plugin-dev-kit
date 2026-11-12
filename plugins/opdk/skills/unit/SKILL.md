@@ -15,7 +15,7 @@ description: Set up, extend or fix the Vitest unit tests of an Obsidian plugin t
 
 ## Set up a plugin
 
-1. devDependencies: `vitest` and `@vitest/coverage-v8` at the same `^5` version, `vite` (`^6.4 || ^7 || ^8`; a peer of Vitest 5 that npm installs automatically, listed so `package.json` pins it), `jsdom` `^30` when some tests need a DOM, and the kit pinned to an exact tag. Vitest 5 needs Node 22.12 or newer (22.22.2 with jsdom).
+1. devDependencies: `vitest` and `@vitest/coverage-v8` at the same `^5` version, `vite` (`^6.4 || ^7 || ^8`; a peer of Vitest 5 that npm installs automatically, listed so `package.json` pins it), `jsdom` `^30` when some tests need a DOM, and the kit pinned to an exact tag (the kit declares none of these as peers; `defineUnitConfig()` checks their versions and throws with the install command). Vitest 5 needs Node 22.12 or newer (22.22.2 with jsdom).
 2. `vitest.config.ts`:
 
 ```ts
@@ -53,7 +53,7 @@ Tests run in node unless listed in `dom`. To find the files that need a DOM:
 - A node-project test cannot resolve `obsidian` in mocks mode (`Failed to resolve entry for package "obsidian"`): the alias is in the `dom` project only. Use `obsidian: { node: "<stub path>", dom: "obsidian-test-mocks" }`, keep the file free of `obsidian` imports, or list it in `dom`.
 - `defineUnitConfig(): "obsidian.node" ...` or `"obsidian.dom" ...`: the `{ node, dom }` form needs both keys as non-empty strings, and `node` cannot be `"obsidian-test-mocks"`.
 - `"coverage.allowLowerThresholds" must be true or false`: pass a boolean, not a string.
-- `ERESOLVE` between `vitest` and `@vitest/coverage-v8`: the two must be the same version. `webidl.util.markAsUncloneable is not a function`: Node is older than jsdom 30 supports (22.22.2, 24.15 or 26).
+- `defineUnitConfig(): "<package>" <version> is installed; the kit needs ...` (or `is not installed`): run the `Run: npm install --save-dev ...` command in the message. `vitest` must be 5, `@vitest/coverage-v8` the same version, `jsdom` 30 or newer when `dom` is used. `ERESOLVE` between `vitest` and `@vitest/coverage-v8`: the same cause, two versions of the pair. `webidl.util.markAsUncloneable is not a function`: Node is older than jsdom 30 supports (22.22.2, 24.15 or 26).
 - Many tests fail after a plugin moves from Vitest 3 to 5, with `vi.fn(arrow)` used as a constructor in an `obsidian` mock (`Notice`): use a `class` or `function` in the mock.
 - `isShown()` is true in jsdom for an element in the document without `display: none` (inline, on itself or an ancestor); the app asks for layout, which jsdom does not have. `scrollIntoView` is a no-op.
 
@@ -62,7 +62,7 @@ Tests run in node unless listed in `dom`. To find the files that need a DOM:
 `obsidian-test-mocks` is the recommended way to test UI code (settings tabs, modals); the kit has no mock of its own. `obsidian: "obsidian-test-mocks"` uses that package's `vitest-setup` and its `obsidian` module in the `dom` project and skips the kit's polyfill, because the package installs the same helpers. When node tests also import `obsidian`, keep the plugin's stub for them: `obsidian: { node: "./src/test/stubs/obsidian.ts", dom: "obsidian-test-mocks" }`.
 
 - Install it in the plugin, pinned to an exact version (no `^`), and set Dependabot to ignore major updates for it: new majors come often.
-- Its peers: `obsidian`, `moment`, `@codemirror/view`, `@codemirror/state` (jest or vitest, optional). The `dom` project also needs `jsdom`, a peer of the kit.
+- Its peers: `obsidian`, `moment`, `@codemirror/view`, `@codemirror/state` (jest or vitest, optional). The `dom` project also needs `jsdom` in the plugin.
 - Known gaps in 8.0.0 (check the package README): declarative `control` setting rows are not modelled (`renderTab` throws), `SettingTab.update()` does not redraw, `Modal.open()` closes on the next tick (call `onOpen()` directly), and reading a private app property the mock does not model throws (assign it on the mock in the test).
 - Do not switch a plugin to it unless the user asks.
 
