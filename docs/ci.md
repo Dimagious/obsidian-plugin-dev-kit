@@ -4,7 +4,7 @@
 
 ## Why
 
-Snipsy, Dashy and Garmy each had a `ci.yml` of 45 to 75 lines: the same steps in a different order, on `ubuntu-latest`, with actions pinned to a major tag. They had drifted. Snipsy has a lint script that its CI never ran, and each plugin carried its own version check. The workflow keeps the common part in one place, pinned the way `release.yml` is, with a read-only token.
+Three plugins each kept a hand-written `ci.yml` of 45 to 75 lines, and they had drifted: the same steps in a different order, on `ubuntu-latest`, with actions pinned to a major tag. One plugin had a lint script that its CI never ran, and each carried its own version check. The workflow keeps the common part in one place, pinned the way `release.yml` is, with a read-only token.
 
 ## Quick start
 
@@ -15,7 +15,7 @@ Add a workflow that calls the kit's, pinned to a full commit SHA, not to a branc
 name: ci
 on:
   push:
-    branches: [main]   # Dashy's default branch is master
+    branches: [main]   # use your default branch name
   pull_request:
 
 concurrency:
@@ -87,7 +87,7 @@ On 2026-11-11 the `ubuntu-latest` image (26.04) could not resolve the Ubuntu arc
 
 ## Keeping plugin-specific steps
 
-Put them in a second job of the caller. The two jobs run in parallel; add `needs: kit` to a job that should wait. Examples that stay in plugins: Dashy's `build:skill -- --check`, `build:reference -- --check` and `site:check`; `readme:check` in Dashy and Garmy; Snipsy's `site:check` and Codecov upload.
+Put them in a second job of the caller. The two jobs run in parallel; add `needs: kit` to a job that should wait. Examples that stay in plugins: checks that generated files are in sync (`build:skill -- --check`), a project site check (`site:check`), a README check (`readme:check`) and a Codecov upload.
 
 For coverage services, ask for the report and download it in the second job:
 
@@ -106,7 +106,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: snipsidian-coverage
+          name: <plugin id>-coverage
       - uses: codecov/codecov-action@<full commit SHA> # v<version>
         with:
           files: ./lcov.info
@@ -115,12 +115,15 @@ jobs:
 
 ## Migrating a plugin
 
-Checked against the `ci.yml` of each plugin on 2026-11-11. Step names are shortened from the plugin's own; an unnamed step is named by what it runs.
+Compare your current `ci.yml` with the workflow, step by step:
 
-| Plugin | Replaced by the workflow | Stays in the plugin's own job | Changes to expect |
-|---|---|---|---|
-| Dashy | Install, Lint, Typecheck, Verify versions (`assert-versions.cjs`), Scorecard regression gate (`opdk scan`), Unit tests, Build, Upload plugin bundle | Skill in sync (`build:skill -- --check`), Site block reference in sync (`build:reference -- --check`), Project site (`site:check`), README (`readme:check`) | The zip is no longer built or uploaded (`release:zip`, `dashsidian-*.zip`); the release workflow makes one only on request. The release check is stricter than `assert-versions.cjs` (a CHANGELOG section, the manifest rules, the versions in `package-lock.json`). Keep `branches: [master]` in the caller |
-| Garmy | Install, Lint, Typecheck, Versions agree (`assert-versions.cjs`), Scorecard regression gate, Unit tests, Build, Upload bundle | README (`readme:check`) | Same as Dashy for the zip and the release check (the stricter parts: a CHANGELOG section, the manifest rules, the versions in `package-lock.json`). `garmidian-bundle` keeps its name |
-| Snipsy | Install, Typecheck, Verify versions, Scorecard regression gate, Unit tests, Build, Upload plugin bundle | Project site (`site:check`), Codecov upload (needs `coverage-artifact: true`, see above) | The zip is no longer built or uploaded. Snipsy has a `lint` script that its CI never ran: the workflow runs it, so fix its findings or pass `lint: false`. It has no `typecheck` script, so `tsc --noEmit` runs (the same as `npx tsc -p tsconfig.json --noEmit` while the tsconfig is the default one). The release check needs a `versions.json`, which the plugin does not have yet (see the release docs). The separate coverage artifact becomes `snipsidian-coverage` |
+- **Replaced by the workflow.** Install, lint, typecheck, a version check (`assert-versions`-style scripts), a scorecard gate (`opdk scan`), unit tests, the build and the bundle upload. Delete them from your `ci.yml` and call the workflow.
+- **Stays in your own job.** Steps that belong to one plugin: generated files in sync, a project site build, README checks, a coverage service upload (needs `coverage-artifact: true`, see above).
+- **A zip is no longer built or uploaded.** If your CI ran a `release:zip` script and uploaded `<plugin>-*.zip`, drop both; the release workflow makes a zip only on request.
+- **The release check is stricter than a hand-written version script.** It also wants a CHANGELOG section, the manifest rules and the versions in `package-lock.json`, and it needs a `versions.json` (see the release docs).
+- **A lint script your CI never ran now runs.** Fix its findings, or pass `lint: false` until you do.
+- **No `typecheck` script.** The workflow runs `tsc --noEmit` (the same as `npx tsc -p tsconfig.json --noEmit` while the tsconfig is the default one).
+- **A default branch that is not `main`.** Use its name in `branches` in the caller.
+- **The separate coverage artifact** is named `<plugin id>-coverage`.
 
-For all three: the runner moves from `ubuntu-latest` to `ubuntu-24.04`; actions move from major tags to pinned SHAs; the bundle artifact keeps the name `<id>-bundle`. The plugin's `release:check` and `release:zip` npm scripts are not used by this workflow.
+The runner moves from `ubuntu-latest` to `ubuntu-24.04`; actions move from major tags to pinned SHAs; the bundle artifact keeps the name `<id>-bundle`. The plugin's `release:check` and `release:zip` npm scripts are not used by this workflow.

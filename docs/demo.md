@@ -8,11 +8,11 @@ The film above is the kit's own: `test/e2e-fixture/e2e/docs-film.spec.ts` record
 
 ## Why
 
-Three plugins each had their own way of making a demo, and each paid for it:
+Hand-written demo scripts have cost real plugins these things:
 
-- Snipsy recorded the Obsidian window as video, which caught every stutter of the machine and the cursor wherever it was, and its build script needed `python3` to do the rest.
-- Garmy's retake appended frames to the old ones instead of replacing them.
-- Dashy's reel script only warned when ffmpeg failed, so a run that made no GIF still ended green. Its films were twice as sharp only because the machine is a Retina Mac. Its drawn phone film also showed a navigation bar that was wrong for the app; the kit frames the real Obsidian window instead of drawing a phone.
+- Recording the Obsidian window as video caught every stutter of the machine and the cursor wherever it was, and that plugin's build script needed `python3` to do the rest.
+- A retake appended frames to the old ones instead of replacing them.
+- A reel script only warned when ffmpeg failed, so a run that made no GIF still ended green. Its films were twice as sharp only because the machine is a Retina Mac. A drawn phone film also showed a navigation bar that was wrong for the app; the kit frames the real Obsidian window instead of drawing a phone.
 
 A film of stills makes timing a property of the script (`hold`) and not of the machine, pictures are taken at a fixed density (2x by default, on any monitor), a retake replaces the frames, and every encode step that fails fails the film.
 
@@ -150,7 +150,7 @@ A film is encoded only when its recording test passed. A test that failed, timed
 
 **The cursor follows every mouse action.** The arrow is drawn wherever Playwright's mouse is, so a plain `click()`, `check()`, `selectOption()` or `hover()` moves it too, not only `moveAndClick()`. A film that never meant to show a cursor then has an arrow at the place of the last click. Pass `cursor: false` to `demo.film()` and the arrow stays hidden in that film's frames, however the page was clicked. The setting belongs to the film: a later film or still of the same test without it shows the arrow again. The tap dot of a phone film is not affected. `demo.still(name, { cursor: false })` does the same for one still and, like the film's setting, does not carry over to the next picture (the workaround `demo.hideCursor()` also works, until the mouse moves again).
 
-**Pauses in a recorded take.** `demo.beat(seconds)` is a deliberate pause for the viewer of a recording. It is for pacing a Playwright video of a test; the kit films stills only, so use `hold`. It takes seconds (Snipsy's `beat` took milliseconds) and throws above 60. The helpers do not pause by themselves.
+**Pauses in a recorded take.** `demo.beat(seconds)` is a deliberate pause for the viewer of a recording. It is for pacing a Playwright video of a test; the kit films stills only, so use `hold`. It takes seconds (a helper that took milliseconds needs its calls converted) and throws above 60. The helpers do not pause by themselves.
 
 **A clean UI.** `demo.cleanUi()` hides the ribbon, the view header and the inline title through Obsidian's own settings (saved at once, because `reload()` reloads without saving) and the status bar and tab headers through a class on the page. It also folds the left and right sidebars (`obsidian.collapseSidebars()`, waiting until they are folded): a frame with the file explorer open loses a fifth of its width to it. `cleanUi({ sidebars: false })` leaves the sidebars as they are. It survives `reload()`, `mobile()` and `desktop()`. Each call sets the five hidden parts, so `cleanUi({ statusBar: false })` hides the other four and shows the status bar, and the last call decides. Nothing is put back afterwards: the window is closed with the test. The sidebars are folded once and not unfolded by a later call. Overlays, the hidden parts and the frozen time all survive a reload, and a film goes on across it.
 
@@ -315,33 +315,20 @@ A film needs the real Obsidian, so recording belongs on a machine that has it. `
    Pictures for the README or the listing that a script takes with `win.screenshot()` move to `demo.still(name, { preset })`; `opdk demo` then puts them in the output folder, and their density no longer depends on the display. A `waitForTimeout` before such a picture becomes `settle: true` (or `obsidian.settle()` before an assertion); a pause longer than `quietMs` before the render looks settled, so assert on the element or raise `quietMs`.
 4. Run the specs and `opdk demo`, compare the files with the old ones and list the differences in the plugin's CHANGELOG.
 
-What changes, plugin by plugin. Anything not listed behaves as before.
+What changes for a plugin that had its own scripts. Anything not listed behaves as before.
 
-All plugins:
-
-- The poster is `<name>-poster.png` and the output folder `docs/screens`, the plugins' own names and folder. The theme suffix is `-light` or `-dark`, as the fixture names themed films. ffmpeg is looked up through `OPDK_FFMPEG` first. A film is only encoded when its recording finished.
-- The GIF defaults (128 colours, 10 fps at most, as wide as the frames up to 1000 px) replace each script's own numbers, which are now `gif` options per film.
-- Dashy and Garmy take their README and listing pictures with plain `win.screenshot`, whose density is the display's. They move to `demo.still(name, { preset, settle: true })` (2x on any monitor, exactly the pixels of the destination), and `opdk demo` copies them to the output folder; a fixed `waitForTimeout` before such a picture becomes `settle: true` (a pause longer than `quietMs` before the render looks settled, so assert on the element or raise `quietMs`). Pictures that were committed from a 1x or a 2x display change size, so list them in the plugin's CHANGELOG.
+- The poster is `<name>-poster.png` and the output folder `docs/screens`, the names and folder such plugins already used. The theme suffix is `-light` or `-dark`, as the fixture names themed films. ffmpeg is looked up through `OPDK_FFMPEG` first. A film is only encoded when its recording finished.
+- The GIF defaults (128 colours, 10 fps at most, as wide as the frames up to 1000 px) replace each script's own numbers, which are now `gif` options per film. To keep your old output, copy its numbers: for example `gif: { colors: 256, fps: 4, width: 760 }`, or `gif: { fps: 12, width: 720 }`. The dither is the kit's (`stats_mode=diff`, bayer scale 5, `diff_mode=rectangle`), so only the numbers change.
+- README and listing pictures taken with plain `win.screenshot` have the display's density. They move to `demo.still(name, { preset, settle: true })` (2x on any monitor, exactly the pixels of the destination), and `opdk demo` copies them to the output folder; a fixed `waitForTimeout` before such a picture becomes `settle: true` (a pause longer than `quietMs` before the render looks settled, so assert on the element or raise `quietMs`). Pictures that were committed from a 1x or a 2x display change size, so list them in the plugin's CHANGELOG.
 - `beat()` takes seconds, not milliseconds. The helpers no longer pause by themselves: pacing is `beat()` for a Playwright video of a test and `hold` for films of stills.
-
-Dashy (`scripts/film-phone.cjs`, `scripts/capture.cjs`):
-
-- The phone film's MP4, GIF and poster come from the one command. The poster is the first frame (2000 x 1240, the size of Dashy's); Dashy took the first frame of the first long step. The GIF is made for the dark film too (Dashy made a light GIF only); set `gif: false` on the dark film to keep that.
-- The composed page is Dashy's (a phone with a lit step beside a list) with the layout drawn from `phone`. The phone height is 540 px (Dashy 580), and the heading and steps are the film's `title` and `captions`; a caption with a line break gives Dashy's heading and text. The text is HTML-escaped now.
-- The reels (`capture.cjs`) used 256 colours at 4 fps, 760 px wide (1000 px for the wide one), bayer scale 3 and no `diff_mode`: set `gif: { colors: 256, fps: 4, width: 760 }` per film; the dither is the kit's. A failed ffmpeg was only a warning there and fails the film now.
-- It rendered the page in Chrome through Playwright; the kit uses the plugin's Electron.
-- The phone GIF was 15 fps: set `gif: { fps: 15 }` to keep it.
-- Dashy points its runs at `.capture/vault` through `OPDK_E2E_VAULT`, and the demo fixture refuses any set `OPDK_E2E_VAULT`. Make the generated vault the `seedVault`, or pass `allowForeignVault: true`.
-
-Garmy (`scripts/capture.mjs`):
-
-- The reels used 160 colours at 8 fps with the width per reel (760 to 1000 px): set `gif: { colors: 160, fps: 8, width: 900 }` per film. The poster was named `film-<name>-poster.png`: name the film `film-<name>` to keep the file names. A failed ffmpeg threw there and fails the film now.
-- The GIF filter (`stats_mode=diff`, bayer scale 5, `diff_mode=rectangle`) is Garmy's, so only the numbers change.
-
-Snipsy (`scripts/build-demo.sh`):
-
-- The script composes voice-over and an outro; the kit does neither (no audio, no intro or outro cards), so only the film-to-media step moves. Its GIF was 12 fps and 720 px wide with 128 colours and no `stats_mode=diff`: set `gif: { fps: 12, width: 720 }` per film; the dither is the kit's (Snipsy used bayer scale 4 without `diff_mode`). A failed ffmpeg stopped the script (`set -euo pipefail`) and fails the film now.
-- Snipsy recorded the window; the kit takes stills, so the demo is shot again as a silent film of stills.
+- A phone film's MP4, GIF and poster come from the one command. The poster is the first frame (2000 x 1240). The GIF is made for the dark film too; set `gif: false` on the dark film to keep a light GIF only. The GIF is 10 fps at most by default: set `gif: { fps: 15 }` to keep a 15 fps phone GIF.
+- The composed page (a phone with a lit step beside a list) is drawn from `phone`. The phone height is 540 px, and the heading and steps are the film's `title` and `captions`; a caption with a line break gives a heading and a text. The text is HTML-escaped.
+- The kit renders with the plugin's Electron, not with Chrome through Playwright.
+- A poster named `film-<name>-poster.png` keeps its name if the film is named `film-<name>`.
+- A failed ffmpeg is not a warning: it fails the film (a script that used `set -euo pipefail` already stopped).
+- If your runs point at a generated vault through `OPDK_E2E_VAULT`, note that the demo fixture refuses any set `OPDK_E2E_VAULT`. Make the generated vault the `seedVault`, or pass `allowForeignVault: true`.
+- A script that composed voice-over and an outro: the kit does neither (no audio, no intro or outro cards), so only the film-to-media step moves.
+- A demo recorded as a video of the window is shot again as a silent film of stills.
 
 ## Limits today
 
@@ -353,7 +340,3 @@ Snipsy (`scripts/build-demo.sh`):
 - `freezeTime` does not freeze the file dates in the explorer, and code that measures elapsed time sees none pass.
 - The loop check treats a pixel as equal when each channel differs by at most 8 of 255, so noise below that is not reported. A tour that does not end where it began still warns; see **Loops**.
 - A frame can hold network content (a page that loads data when it runs, a remote image), which differs between takes and can fail the loop check. For a stable film replace the plugin's fetching function with `obsidian.replace()` and return fixture data ([docs/e2e.md](e2e.md)).
-
-## Credits
-
-The code and the settings come from Snipsy's demo overlays, Dashy's phone film and its tap dot, and Garmy's reels.

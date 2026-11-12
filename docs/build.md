@@ -6,7 +6,7 @@
 
 ## Why
 
-Dashy 1.0.0 failed on every phone. Its build passed `--platform=node`, so esbuild took the `node` branch of the `yaml` package's export map and bundled a build that reads `process.env`. Desktop Obsidian has `process`, so the bug only showed on mobile. Nothing in Dashy's `src/` referred to `process`; it arrived through a dependency's export conditions, which is why reading the sources cannot catch it and the built file has to be checked. Snipsy's current bundle has the same problem.
+A plugin released as 1.0.0 failed on every phone. Its build passed `--platform=node`, so esbuild took the `node` branch of the `yaml` package's export map and bundled a build that reads `process.env`. Desktop Obsidian has `process`, so the bug only showed on mobile. Nothing in the plugin's `src/` referred to `process`; it arrived through a dependency's export conditions, which is why reading the sources cannot catch it and the built file has to be checked. A second plugin built with `--platform=node` has the same problem today.
 
 The kit fixes the platform to `browser`, and the check fails the build if Node-only code gets in anyway. The check is skipped when `manifest.json` says `isDesktopOnly: true`.
 
@@ -25,7 +25,7 @@ The plugin id comes from `manifest.json`, the settings from the optional `opdk.c
 2. The build refuses, exits 1 and writes nothing when `dir/manifest.json` holds another plugin id (`--force` overrides this one only), when `dir` is the plugin root, when `dir` starts with `~` (nothing expands it), or when `--vault` is empty (`--vault ""`, `--vault=`). The last three are refused even with `--force`. With no `dir` and no `VAULT_PLUGIN` it stops and says to pass one.
 3. An unminified `main.js` is written into `dir`.
 4. `styles.css` is rebuilt from the CSS entry and copied into `dir` together with `manifest.json`. It is rebuilt rather than copied as is, because a stale copy is silent: a vault once shipped without the styles of two whole blocks while the TypeScript was fresh. With `css: false`, a `styles.css` in the plugin root is copied if it exists.
-   Only these three files are copied, the ones Obsidian loads. Snipsy's old `build:vault` script also copied `docs/screens`; the kit leaves it out on purpose, because nothing in a vault's plugin folder reads screenshots. Put such files in the seed vault of a spec that needs them.
+   Only these three files are copied, the ones Obsidian loads. A hand-written `build:vault` script may also copy a screenshots folder; the kit leaves it out on purpose, because nothing in a vault's plugin folder reads screenshots. Put such files in the seed vault of a spec that needs them.
 5. There is no bundle check in this mode.
 
 With `--watch` the build then keeps running:
@@ -124,7 +124,7 @@ The CSS bundler inlines `@import "x.css"` lines recursively, each path relative 
 | a `process` reference | `process.env`, `process.emitWarning`, `process.platform`, `process.version`, `process.cwd` or `process.argv` is in the bundle |
 | a `node:` builtin import | a `require("node:...")` call |
 | `__dirname` or `__filename` | either name is in the bundle |
-| `LOG_TOKENS`, `LOG_STREAM`, `emitWarning` | property names from the Node build of a dependency; these three come from the Node build of `yaml`, the one Dashy 1.0.0 shipped. Minification renames variables but keeps property names, so the check looks for these |
+| `LOG_TOKENS`, `LOG_STREAM`, `emitWarning` | property names from the Node build of a dependency; these three come from the Node build of `yaml`, the one the 1.0.0 plugin above shipped. Minification renames variables but keeps property names, so the check looks for these |
 
 ## Example output
 
@@ -200,9 +200,9 @@ $ opdk build --vault ~/vault/.obsidian/plugins/hello-plugin
 ✓ css     src/styles/main.css -> styles.css (2 files, 4 lines)
 ✓ build   hello-plugin: assets copied to /Users/me/vault/.obsidian/plugins/hello-plugin
 
-$ VAULT_PLUGIN=~/vault/.obsidian/plugins/snipsy opdk build --vault
-· build   hello-plugin: vault target /Users/me/vault/.obsidian/plugins/snipsy (from VAULT_PLUGIN)
-✗ build   hello-plugin: /Users/me/vault/.obsidian/plugins/snipsy holds plugin snipsy, not hello-plugin. Check VAULT_PLUGIN / --vault, or pass --force to overwrite it.
+$ VAULT_PLUGIN=~/vault/.obsidian/plugins/other-plugin opdk build --vault
+· build   hello-plugin: vault target /Users/me/vault/.obsidian/plugins/other-plugin (from VAULT_PLUGIN)
+✗ build   hello-plugin: /Users/me/vault/.obsidian/plugins/other-plugin holds plugin other-plugin, not hello-plugin. Check VAULT_PLUGIN / --vault, or pass --force to overwrite it.
 ```
 
 The second command exits 1 and writes nothing.
