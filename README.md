@@ -8,7 +8,7 @@ Build, lint, release, test and film [Obsidian](https://obsidian.md/) plugins fro
 
 Every Obsidian plugin needs the same tooling around its code: a bundle that also runs on phones, a lint setup that matches the community plugin scanner, a release workflow, end-to-end tests in a real Obsidian, and a demo GIF for the README. Copying it between plugins works until the copies drift. In the three plugins above, a fix for the mobile build reached two of them and not the third. This kit keeps that tooling in one place and versions it.
 
-## What it will include
+## What it includes
 
 | Module | What it does |
 |---|---|
