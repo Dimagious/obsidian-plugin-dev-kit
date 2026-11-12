@@ -85,6 +85,22 @@ describe("composePhoneFrames", () => {
         expect(two?.equals(three ?? Buffer.alloc(0))).toBe(true);
     });
 
+    it("checks the Playwright and Electron versions before rendering", async () => {
+        await expect(
+            composePhoneFrames({
+                cwd: dir,
+                filmDir: dir,
+                frames: [],
+                captions: [],
+                layout: resolvePhoneLayout([], null),
+                outDir: path.join(dir, "out"),
+                tmpDir: tmp,
+                readVersion: (name) => (name === "electron" ? "30.0.0" : undefined),
+            }),
+        ).rejects.toThrow(/layout "phone-captions": "@playwright\/test" is not installed.*"electron" 30\.0\.0 is installed.*Run: npm install --save-dev @playwright\/test@\^1\.62\.0 "electron@>=39\.0\.0"/s);
+        expect(fs.readdirSync(tmp)).toEqual([]);
+    });
+
     it("says what to install when the plugin has no electron", async () => {
         await expect(
             composePhoneFrames({
@@ -95,6 +111,7 @@ describe("composePhoneFrames", () => {
                 layout: resolvePhoneLayout([], null),
                 outDir: path.join(dir, "out"),
                 tmpDir: tmp,
+                readVersion: (name) => (name === "electron" ? "39.0.0" : "1.62.0"),
             }),
         ).rejects.toThrow(/layout "phone-captions" renders its frames in Electron.*Cannot find the "electron" package from .*npm install --save-dev electron/s);
     });

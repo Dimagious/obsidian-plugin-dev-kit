@@ -11,7 +11,7 @@
 
 ## Quick start
 
-Install the peers next to the kit (the same version of `vitest` and `@vitest/coverage-v8`, and `jsdom` only if some tests need a DOM), then add `vitest.config.ts`:
+Install what the preset runs on next to the kit (the same version of `vitest` and `@vitest/coverage-v8`, and `jsdom` only if some tests need a DOM), then add `vitest.config.ts`. The kit does not declare these as peer dependencies: `defineUnitConfig()` checks their versions when it runs ([Required versions](#required-versions-checked-at-run-time)).
 
 ```bash
 npm install --save-dev vitest@^5 @vitest/coverage-v8@^5 vite@^8 jsdom@^30
@@ -102,7 +102,7 @@ The kit has no mock of its own and recommends obsidian-test-mocks for UI tests o
 
 - **Pin an exact version** (`"obsidian-test-mocks": "8.0.0"`, no `^`). The package ships a new major every few weeks, and a major can change what a test sees. Tell Dependabot to ignore major updates for it, and bump it on purpose.
 - **Install it in the plugin, use it in the `dom` project only.** The `{ node, dom }` form above does that: node tests keep the stub they have.
-- **Peer dependencies**: `obsidian`, `moment`, `@codemirror/view` and `@codemirror/state` (jest or vitest, optional). The `dom` project also needs `jsdom`, a peer of the kit.
+- **Peer dependencies**: `obsidian`, `moment`, `@codemirror/view` and `@codemirror/state` (jest or vitest, optional). The `dom` project also needs `jsdom` in the plugin.
 - **Known gaps in 8.0.0.** Check the package README before you rely on a behaviour; they may be fixed later:
     - Declarative `control` setting rows are not modelled, so `renderTab` throws on a tab that uses them.
     - `SettingTab.update()` does not redraw.
@@ -175,16 +175,27 @@ Two deviations from the app, both forced by jsdom:
 
 The helpers call each other through the public methods, as the app does: `createDiv` and `createSpan` go through `this.createEl`, the global `createDiv` through the global `createEl`, `addClass` through `addClasses`, `removeClass` through `removeClasses` and `toggle` through `show` and `hide`. A test that spies on `createEl` therefore sees the calls of `createDiv`. Like the app, `createEl` on a node writes `parent` into the info object it was given; the global `createEl` does not mutate it.
 
-## Peer versions
+## Required versions, checked at run time
 
-| Package | Range | Notes |
-|---|---|---|
-| `vitest` | `^5.0.0` | Node 22.12 or newer (22.22.2 with jsdom). The kit's own tests run on it |
-| `@vitest/coverage-v8` | `^5.0.0` | Install the same version as `vitest`; a mismatch gives an `ERESOLVE` error |
-| `jsdom` | `^30.0.0` | Only when `dom` is used. Needs Node 22.22.2+, 24.15+ or 26+; older Node fails with `webidl.util.markAsUncloneable is not a function` |
-| `vite` | `^6.4 \|\| ^7 \|\| ^8` | A peer of Vitest 5 that npm 7 and newer install automatically; list it in your dev dependencies to pin the version |
+The kit declares no peer dependency on `vitest`, `@vitest/coverage-v8` or `jsdom`. npm checks even an optional peer when the package is installed, so a plugin still on Vitest 3 or jsdom 26 could not install the kit at all (`ERESOLVE`), although it never uses the unit preset. `defineUnitConfig()` looks the packages up from `rootDir` instead, the way the plugin's own code resolves them, and throws before building the config when a version does not fit:
 
-All three kit peers are optional, so a plugin that does not use the module does not install them.
+| Package | Required | When | Notes |
+|---|---|---|---|
+| `vitest` | major 5 (`^5.0.0`) | always | Node 22.12 or newer (22.22.2 with jsdom). The kit's own tests run on it |
+| `@vitest/coverage-v8` | the same version as `vitest` | always | Two versions of the pair fail with `ERESOLVE` in the plugin and are rejected here |
+| `jsdom` | 30 or newer (`>=30.0.0`) | `dom` globs or `"all"` | The version the `dom` project and the kit's own tests run on, and the lowest one tested. Needs Node 22.22.2+, 24.15+ or 26+; older Node fails with `webidl.util.markAsUncloneable is not a function` |
+| `vite` | `^6.4 \|\| ^7 \|\| ^8` | not checked | A peer of Vitest 5 that npm 7 and newer install automatically; list it in your dev dependencies to pin the version |
+
+Every problem is reported in one error, with the command that fixes all of them:
+
+```
+defineUnitConfig(): "vitest" 3.2.4 is installed; the kit needs ^5.0.0.
+defineUnitConfig(): "@vitest/coverage-v8" 3.2.4 is installed; the kit needs ^5.0.0.
+defineUnitConfig(): "jsdom" 26.1.0 is installed; the kit needs >=30.0.0.
+Run: npm install --save-dev vitest@^5.0.0 @vitest/coverage-v8@^5.0.0 "jsdom@>=30.0.0"
+```
+
+A package that is not installed gives `"<name>" is not installed; the kit needs <range>.` With `vitest` 5 present and a different `@vitest/coverage-v8`, the message names both versions and installs the coverage package at the version of `vitest`. `jsdom` is not checked when every test runs in node.
 
 ## Type-check the tests
 

@@ -32,7 +32,7 @@ Obsidian's own `app` object (`app.workspace`, `app.plugins`) lives in the page, 
 
 ## Quick start
 
-Install the kit and the two things it runs on. Both are optional peer dependencies of the kit, so a plugin without e2e installs neither:
+Install the kit and the two things it runs on. The kit does not declare them as peer dependencies (npm would refuse to install the kit next to an older Playwright or Electron, even in a plugin without e2e); the e2e `globalSetup` checks them before the first test and fails with the install command when `@playwright/test` is older than 1.62 (or not major 1) or `electron` is older than 39:
 
 ```json
 {

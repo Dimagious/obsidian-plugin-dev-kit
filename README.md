@@ -33,7 +33,7 @@ npm install --save-dev github:Dimagious/obsidian-plugin-dev-kit#vX.Y.Z
 npx opdk --help
 ```
 
-Install size, measured on 2026-11-12: the package is 260 KB packed and 1.4 MB installed. In an empty project it brings about 100 MB with its required dependencies, mostly TypeScript, esbuild and the ESLint stack a plugin usually has already. Electron, Playwright, Vitest, `@vitest/coverage-v8` and jsdom are optional peer dependencies, installed only for end-to-end tests, demo films and unit tests.
+Install size, measured on 2026-11-12: the package is 260 KB packed and 1.4 MB installed. In an empty project it brings about 100 MB with its required dependencies, mostly TypeScript, esbuild and the ESLint stack a plugin usually has already. Electron, Playwright, Vitest, `@vitest/coverage-v8` and jsdom are not dependencies of the kit at all: the plugin installs them for end-to-end tests, demo films and unit tests, and the kit checks their versions when it runs and fails with the install command. ESLint and TypeScript are the only peer dependencies.
 
 ## Build
 

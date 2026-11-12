@@ -3,6 +3,9 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import type { FilmFrame } from "../e2e/demo/manifest.js";
+import { assertE2ePeers } from "../e2e/peers.js";
+import { createVersionReader } from "../peers/resolve.js";
+import type { VersionReader } from "../peers/versions.js";
 import { assertElectronInstalled, createElectronProbe } from "../e2e/electron-binary.js";
 import { readPngSize } from "../e2e/demo/png.js";
 import { buildPhonePage, captionSteps, PAGE_HEIGHT, PAGE_SCALE, PAGE_WIDTH, type PhoneLayout } from "./phone-layout.js";
@@ -64,10 +67,13 @@ export interface ComposeParams {
     readonly outDir: string;
     /** Where the render keeps its profile and script while it runs; removed at the end. Default: the OS temp folder. */
     readonly tmpDir?: string;
+    /** Reads installed package versions for the Playwright and Electron check. Default: resolve them from `cwd`. */
+    readonly readVersion?: VersionReader;
 }
 
 /** Composes every frame into the caption page. Throws with what to do when Electron or Playwright is missing. */
 export async function composePhoneFrames(params: ComposeParams): Promise<void> {
+    assertE2ePeers(params.readVersion ?? createVersionReader(params.cwd), 'layout "phone-captions"');
     const executablePath = resolveElectron(params.cwd);
     const { _electron } = await loadPlaywright();
     const workDir = fs.mkdtempSync(path.join(params.tmpDir ?? os.tmpdir(), "opdk-demo-electron-"));

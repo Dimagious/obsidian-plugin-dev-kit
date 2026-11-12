@@ -44,7 +44,7 @@ export const defaultDeps: DemoDeps = {
         return tool;
     },
     compose: async (params) => {
-        // Loaded here: Playwright and Electron are optional peers and only the phone layout needs them.
+        // Loaded here: Playwright and Electron are not dependencies of the kit and only the phone layout needs them.
         const { composePhoneFrames } = await import("./phone-render.js");
         await composePhoneFrames(params);
     },
