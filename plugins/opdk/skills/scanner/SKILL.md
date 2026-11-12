@@ -41,12 +41,14 @@ import { obsidianPlugin } from "obsidian-plugin-dev-kit/eslint";
 export default [...obsidianPlugin({ rootDir: import.meta.dirname, ignores: ["site/**"] })];
 ```
 
-Options: `rootDir` (default `process.cwd()`), `tsconfig` (default `./tsconfig.json`), `ignores` (added to the defaults). It is obsidianmd's `recommended` preset plus `prefer-window-timers` and `settings-tab/prefer-setting-definitions` as errors and strict unused-variable rules. Run `eslint . --max-warnings=0`. Do not enable `@typescript-eslint/no-misused-promises`: the preset swaps in `obsidianmd/no-misused-promises`.
+Options: `rootDir` (default `process.cwd()`), `tsconfig` (default `./tsconfig.json`), `ignores` (added to the defaults). It is obsidianmd's `recommended` preset plus `prefer-window-timers` and `settings-tab/prefer-setting-definitions` as errors, `@typescript-eslint/no-require-imports` as an error, a bare `window.<member>` as an error (use `activeWindow`; `window.open` and the timer functions are exempt; the community scanner does not report it, so `opdk scan` does not either; opt out with `"no-restricted-syntax": "off"` in a later block) and strict unused-variable rules. Run `eslint . --max-warnings=0`. Do not enable `@typescript-eslint/no-misused-promises`: the preset swaps in `obsidianmd/no-misused-promises`.
 
 ## Fixing common findings
 
 - `obsidianmd/prefer-active-doc`: `document.x` becomes `activeDocument.x` (`window` is left alone).
 - `obsidianmd/prefer-window-timers`: `setTimeout(...)` and `activeWindow.setTimeout(...)` become `window.setTimeout(...)`; same for `setInterval`, `clearTimeout`, `clearInterval`, `requestAnimationFrame`, `cancelAnimationFrame`. Only `activeWindow.requestAnimationFrame` and `activeWindow.cancelAnimationFrame` are left alone.
+- `no-restricted-syntax` (bare `window`): `window.innerWidth` becomes `activeWindow.innerWidth`; `window.open` and the timer functions stay on `window`.
+- `@typescript-eslint/no-require-imports`: replace `require(...)` with an `import`; phones have no `require`.
 - `obsidianmd/prefer-create-el`: `el.createEl("div", {...})` becomes `el.createDiv({...})`.
 - `no-domain-assembly`: write the URL as one string literal.
 - `css-no-important`: raise the selector's specificity. `css-no-has`: put a class on the element from TS. `css-browser-feature/<name>`: check the feature on caniuse for Chrome 142; "partially supported" is reported on the public scorecard too. `@typescript-eslint/no-unsafe-*`: an `any` or unresolved type flows into the value; type it.

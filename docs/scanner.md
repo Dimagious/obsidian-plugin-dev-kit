@@ -81,13 +81,24 @@ export default [
 ];
 ```
 
-It is `eslint-plugin-obsidianmd`'s `recommended` preset (which carries ESLint's core rules and typescript-eslint's `recommendedTypeChecked`) plus what three real plugins all added to it: `prefer-window-timers` and `settings-tab/prefer-setting-definitions` as errors, and unused arguments, variables and caught errors as errors unless they start with `_`. Run `eslint . --max-warnings=0` so the warnings the preset leaves count as well.
+It is `eslint-plugin-obsidianmd`'s `recommended` preset (which carries ESLint's core rules and typescript-eslint's `recommendedTypeChecked`) plus what three real plugins all added to it: `prefer-window-timers` and `settings-tab/prefer-setting-definitions` as errors, and unused arguments, variables and caught errors as errors unless they start with `_`. Two more rules are errors that the preset leaves off or does not have: `@typescript-eslint/no-require-imports` (phones have no `require`) and a bare `window.<member>` (below). Run `eslint . --max-warnings=0` so the warnings the preset leaves count as well.
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
 | `rootDir` | string | `process.cwd()` | Folder the tsconfig is looked up from. Pass `import.meta.dirname` so an editor that starts ESLint elsewhere finds it |
 | `tsconfig` | string | `"./tsconfig.json"` | tsconfig for the type-aware rules, relative to `rootDir` |
 | `ignores` | string[] | `[]` | ESLint globs added to `DEFAULT_IGNORES`, which the entry point also exports so a config can extend or print it. It is what three real plugins all left out of their own lint (the intersection of their lists): `node_modules/**`, `coverage/**`, `dist/**`, `main.js`, `scripts/**`, `src/**/*.test.ts`, `vitest.config.ts`, `e2e/**`, `e2e-vault.pristine/**`, `playwright.config.ts`, `.obsidian-unpacked/**`, `design/**`. Paths only some plugins have (`site/**`, `.preview/**`, `src/test/**`, `tools/**`) go in your own `ignores` |
+
+**Bare `window`.** A plain `window` is the main window; in a popout window the code must use `activeWindow`. The preset reports `window.addEventListener`, `window.innerWidth`, `window?.x` and `window["x"]` through `no-restricted-syntax`, and lets `window.open` and the timer functions (`setTimeout`, `clearTimeout`, `setInterval`, `clearInterval`, `requestAnimationFrame`, `cancelAnimationFrame`) through, because `prefer-window-timers` asks for those on `window`. This is the kit's own rule: the community scanner does not report it (`prefer-active-doc` covers `document` only), so `opdk scan` does not check it either. To turn it off, add a block after the preset:
+
+```js
+export default [
+    ...obsidianPlugin({ rootDir: import.meta.dirname }),
+    { files: ["**/*.ts"], rules: { "no-restricted-syntax": "off" } },
+];
+```
+
+If the plugin sets `no-restricted-syntax` itself in a later block, that setting replaces the kit's selector; repeat the selector (`BARE_WINDOW_SELECTOR` is exported from `obsidian-plugin-dev-kit/eslint`) next to your own if you want both. A bare `window` that is not a member access (`const w = window`) is not reported.
 
 Do not enable `@typescript-eslint/no-misused-promises` next to it: the preset replaces it with `obsidianmd/no-misused-promises`, which does not count Obsidian's chaining `then` (every `Setting` chain) as a Promise. The preset reads ESLint's core rules from the ESLint resolved next to `eslint-plugin-obsidianmd`. `no-useless-assignment` and `preserve-caught-error` exist in ESLint 9.39 but only ESLint 10 added them to `recommended`, so on 9 enable them yourself.
 
