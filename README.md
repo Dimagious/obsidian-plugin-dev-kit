@@ -164,10 +164,9 @@ No release has been tagged yet, so an installed plugin follows `main`: run `/plu
   - [x] Scanner and lint: `opdk scan`, `obsidianPlugin()`
   - [ ] End-to-end harness: launch, isolation, readiness, trace and video, and the helpers are done; CDP mode is pending
   - [x] Demo films: films of stills, phone layout, stills presets, `opdk demo` (no audio)
-- [ ] Wave 2: release, unit-test preset, docs site and reusable CI
+- [x] Wave 2: release, unit-test preset and reusable CI
   - [x] Release: `opdk release check`, `opdk release <bump>`, `opdk release publish`, `opdk release notes`, the reusable `release.yml`
   - [x] Unit-test preset: `defineUnitConfig()`, the DOM helpers for jsdom
-  - [ ] Docs site
   - [x] Reusable CI: `plugin-ci.yml`
 - [ ] Wave 3: integration tests preset
 - [ ] Wave 4: CDP launch mode, if a plugin needs the shipped Obsidian binary
