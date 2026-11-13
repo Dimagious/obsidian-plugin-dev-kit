@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- Docs: "Updating the kit" in the README and [docs/ci.md](docs/ci.md#updating-the-kit), and the `/opdk:release` skill, told a plugin on v0.1.0 to run `npx opdk kit upgrade`, which v0.1.0 does not have (`unknown command "kit"`). They now give the one-time `npx -y -p github:Dimagious/obsidian-plugin-dev-kit#v0.2.0 opdk kit upgrade v0.2.0`.
+
 ## [0.2.0] - 2026-11-13
 
 ### Added

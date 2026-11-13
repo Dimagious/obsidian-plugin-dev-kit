@@ -110,6 +110,14 @@ A plugin pins the kit in three places that have to name one release: the tag in 
   npx opdk kit upgrade             # latest release; or: npx opdk kit upgrade v0.2.0
   ```
 
+  A plugin on v0.1.0 has no `kit` command yet, so `npx opdk kit upgrade` stops with `unknown command "kit"`. Run the new release's `opdk` once through npx instead; npx builds the kit in its own cache, which took about a minute on each of three plugins:
+
+  ```bash
+  npx -y -p github:Dimagious/obsidian-plugin-dev-kit#v0.2.0 opdk kit upgrade v0.2.0
+  ```
+
+  From v0.2.0 on, the installed `opdk` has the command.
+
   The command finds the latest `vX.Y.Z` tag with `git ls-remote --tags` on the kit's repository (no GitHub login), resolves the tag to its commit, rewrites the tag in `package.json`, runs `npm install` for that one package so the lockfile follows (npm builds the kit, which takes a minute), rewrites every kit `uses:` line to the new commit with a `# vX.Y.Z` comment, and then runs the `kit` step of `opdk release check`. If `npm install` fails, `package.json` and the lockfile are put back and no workflow file is touched; npm may have left `node_modules` half installed, so run `npm ci` if it looks off. Only `uses:` lines of the owner named in `package.json` are rewritten. Without a lockfile npm does not run, the command says so, and `node_modules` keeps the old kit until you run `npm install`. `git ls-remote` is stopped after 60 seconds and `npm install` after 10 minutes. Before it writes anything it prints the kit's CHANGELOG sections between your version and the new one, read from the tag on GitHub (when GitHub cannot be reached it says so and goes on).
 - **Review and ship.** The command never commits or pushes. Look at `git diff`, read the changelog it printed, commit on a branch, open a pull request and let CI run: it is the first run with the new kit.
 - **The check.** `opdk release check`, and so the CI workflow's `release-check` step, fails when the places disagree. It needs no network: the lockfile's `version` stands for the tag. The failure names each place with the commit it holds and points at `opdk kit upgrade`; running the command again, with the tag you meant, repairs a plugin that drifted.

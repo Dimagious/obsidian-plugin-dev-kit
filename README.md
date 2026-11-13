@@ -125,7 +125,7 @@ npx opdk kit upgrade --dry-run   # what would change, and the kit's CHANGELOG si
 npx opdk kit upgrade             # latest release; or: npx opdk kit upgrade v0.2.0
 ```
 
-It needs a clean git tree, never commits or pushes, and puts `package.json` and the lockfile back if `npm install` fails (run `npm ci` if `node_modules` looks off). Review the diff and open a pull request. Configure Dependabot to ignore the kit (a lone bump of one pin breaks the check; the `ignore` entries are in the docs) and watch the kit's releases on GitHub. Details: [docs/ci.md](docs/ci.md#updating-the-kit).
+On v0.1.0, which has no `kit` command, run it once as `npx -y -p github:Dimagious/obsidian-plugin-dev-kit#v0.2.0 opdk kit upgrade v0.2.0`. It needs a clean git tree, never commits or pushes, and puts `package.json` and the lockfile back if `npm install` fails (run `npm ci` if `node_modules` looks off). Review the diff and open a pull request. Configure Dependabot to ignore the kit (a lone bump of one pin breaks the check; the `ignore` entries are in the docs) and watch the kit's releases on GitHub. Details: [docs/ci.md](docs/ci.md#updating-the-kit).
 
 ## Unit tests
 
