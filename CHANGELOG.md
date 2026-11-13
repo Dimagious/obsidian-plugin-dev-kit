@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-13
+
 ### Added
 
 - `obsidian.checkLayout({ root, overflow?, touchTargets?, focusRing? })` and `obsidian.layoutProblems(...)`: layout checks inside a root selector that fail with the list of everything wrong: horizontal overflow, touch targets under 44 px (on by default only in the mobile emulation) and Tab stops without a focus ring (opt in). Each check can be turned off; with every check off, or a root that matches nothing, the call fails instead of passing. The checks measure and do not judge a design: for shots a person looks through use `demo.still(name, { publish: false })` with a name prefix such as `review-`.

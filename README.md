@@ -29,7 +29,7 @@ Your plugin keeps only what is its own: specs, the seed vault and demo scenes.
 The kit is installed from a git tag on GitHub; it is not published to npm.
 
 ```bash
-npm install -D "github:Dimagious/obsidian-plugin-dev-kit#v0.1.0"
+npm install -D "github:Dimagious/obsidian-plugin-dev-kit#v0.2.0"
 npx opdk --help
 ```
 
@@ -205,7 +205,7 @@ npm run e2e:smoke  # the kit's own e2e specs against a real Obsidian; by hand be
 
 `dist/` is not committed. `npm install` from a git tag runs `prepare`, which builds it, so a broken build breaks every plugin install. CI runs the same checks plus the smoke on every pull request.
 
-Releasing: bump `version` in `package.json`, move the `[Unreleased]` entries in `CHANGELOG.md` under the new version, merge, then the owner tags `vX.Y.Z` and pushes the tag. A workflow fails the tag if it differs from `package.json`. Plugins pin the tag, for example `github:Dimagious/obsidian-plugin-dev-kit#v0.1.0`.
+Releasing: bump `version` in `package.json`, move the `[Unreleased]` entries in `CHANGELOG.md` under the new version, merge, then the owner tags `vX.Y.Z` and pushes the tag. A workflow fails the tag if it differs from `package.json`. Plugins pin the tag, for example `github:Dimagious/obsidian-plugin-dev-kit#v0.2.0`.
 
 ## Credits
 
