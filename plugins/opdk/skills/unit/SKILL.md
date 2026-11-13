@@ -72,7 +72,13 @@ Tests run in node unless listed in `dom`. To find the files that need a DOM:
 
 ## Type-check the tests
 
-Recommended: let `tsc --noEmit` in the `typecheck` script include the `*.test.ts` files. Not required by the preset. If `[...nodeList]` fails to type-check, add `DOM.Iterable` to `lib`.
+Recommended: type-check the `*.test.ts` files, but through a `tsconfig.test.json` (`extends` the root, `lib` `["ES2022", "DOM", "DOM.Iterable"]`, `noEmit`, `include` the sources, tests and `src/test`) and a script such as `tsc -p tsconfig.test.json`, so the plugin's own tsconfig keeps its target `lib`. Not required by the preset.
+- A test that imports the plugin from `../main` gets the built `main.js` as `any`: import from the source file instead.
+- `obsidianPlugin()` ignores `src/**/*.test.ts` in lint (`DEFAULT_IGNORES`), so tests are not linted; helper files such as `src/test/helpers.ts` are, unless the plugin puts them in `ignores`. The type check is what covers the tests.
+
+## `isolate: false`
+
+Only on request, never a default (the preset does not set it). Add `{ test: { isolate: false } }` with `mergeConfig`, and accept it only when every run passes: `vitest run --maxWorkers=1 --sequence.shuffle --sequence.seed=N` for several seeds, the default order on one worker, and the default order on two and three workers. Many-worker shuffles hide leaks (each worker gets few files). Typical leaks: a `vi.mock` that never reaches a module another file loaded, the `moment` locale, date and locale overrides, DOM left in `document`, globals. One plugin gained 3x after four fixes; another failed on one worker in every seed. See `node_modules/obsidian-plugin-dev-kit/docs/unit.md`.
 
 ## Migrating a plugin
 

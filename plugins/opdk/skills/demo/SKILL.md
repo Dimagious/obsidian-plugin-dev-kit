@@ -88,6 +88,7 @@ npx opdk demo [names...]                   # encodes every complete film, copies
 - `! the dark film "x-dark" is missing`: record both themes, or encode with the pair's name.
 - `! media published by an earlier run of this command belongs to films or stills that no longer exist: ...`: files `opdk demo` itself wrote (recorded in `<outDir>/published.json`) for a film or still that was renamed or removed; the command never deletes, so delete them by hand. Unrelated media in the output folder is never listed.
 - `! media published by an earlier run of this command is no longer written by its film or still (an output turned off, or moved): ...`: recorded files of a film or still that still exists and was written without a failure this run but not these files (for example after `mp4: false`, a new `demo.output` or `demo.stills.output`). Delete them by hand.
+- `settle` does not see canvas drawing (charts): before a still of a canvas, poll a pixel or the chart library's ready flag yourself.
 - `settle(): the page was not quiet for N ms within M ms (...)`: something keeps changing the DOM, a font or an image in view is slow. Pass `settle` only where the page can be still, call `obsidian.settle({ root })` with a `root` that leaves out a part that never stops changing, or raise `timeouts.helpers.ui`.
 - `layout "phone-captions" ... has none` / `is for phone films`: pass `captions` to `demo.film()`, and use `kind: "phone"`.
 - `... must be a CSS value without "..."`: a `phone` colour or font holds `; { } < > \ /* url(` or quotes; use a plain value.

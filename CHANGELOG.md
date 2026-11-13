@@ -15,6 +15,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- Docs and the e2e launch hint told users to fetch the Electron binary with `npx electron --version`, which starts Electron. They now say `node node_modules/electron/install.js` (the command CI uses), also in the e2e migration steps for a fresh checkout and in the `/opdk:e2e` skill.
+- `docs/*.md` are in the package now (`files`), so a plugin's skill can link `node_modules/obsidian-plugin-dev-kit/docs/<module>.md`. The GIFs and tapes in `docs/media` stay out of the tarball.
+- Docs, e2e: `vault.write` is plain file system access and Obsidian's index learns of the file when its watcher fires, so a spec that writes and then acts through the index polls `app.vault.getFileByPath(p) !== null` (or uses `waitForMetadataCache()`). Said next to the `vault` fixture and in the e2e skill.
+- Docs, e2e and demo: `settle()` does not see drawing on a canvas (a chart); a still of a canvas needs its own wait (a pixel poll, the chart library's ready flag). Also in the e2e and demo skills.
+- Docs and the `/opdk:unit` skill: `isolate: false` as an option for jsdom-heavy suites with the proof it needs (one worker, shuffled, several seeds, plus default order on one to three workers), the typical leaks and the two measured outcomes; never a default.
+- Docs and the `/opdk:unit` skill: type-check tests through a `tsconfig.test.json`, import the plugin type from the source and not from the built `main.js` (which is `any`), and what the preset's lint ignoring `src/**/*.test.ts` means for test helpers.
+- Plugin names removed from the JSDoc and comments in `src/`, which ship in the `.d.ts` and `.js` files. One runtime message changed with them: the `beat()` seconds error no longer names a plugin.
+
 - Docs: `opdk scan` reported 0 where the public scorecard flagged `moment(date).format(...)` (`moment` imported from `obsidian`) as `no-unsafe-call`, `-member-access` and `-return`. Reproduced: the cause is `esModuleInterop` (TypeScript 6 forces it on; TypeScript 5 with `esModuleInterop: true` behaves the same), under which the namespace import of an `export =` module such as `moment` is not callable. It is TS2349 in the plugin's own `tsc --noEmit` too. The live scanner very likely runs TypeScript 6 (inferred). [docs/scanner.md](docs/scanner.md) has the version table, how to see it (`typescript@6.0` for the check, which also breaks the plugin's typecheck until the call is fixed) and the plugin-side fix.
 
 ## [0.1.0] - 2026-11-12
