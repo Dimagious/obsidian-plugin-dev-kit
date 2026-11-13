@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { findOverflow, findSmallTargets, focusWalkStart, readFocusStop, rootExists } from "./layout-page-scripts.js";
+import { findOverflow, findSmallTargets, focusWalkStart, pixelStep, readFocusStop, rootExists } from "./layout-page-scripts.js";
 
 interface FakeStyle {
     overflowX: string;
@@ -30,6 +30,10 @@ interface FakeElement extends FakeStyle {
     closestMatches: string[];
     /** Style changes that apply while the element has focus. */
     focused: Partial<FakeStyle>;
+    /** Style of a pseudo-element at rest, and the changes that apply to it while the element has focus. */
+    pseudo: Record<string, Partial<FakeStyle>>;
+    pseudoFocused: Record<string, Partial<FakeStyle>>;
+    type?: string;
     focus: () => void;
     blur: () => void;
     getClientRects: () => unknown[];
@@ -67,6 +71,8 @@ function el(tagName: string, className: unknown = "", extra: Partial<FakeElement
         children: [],
         closestMatches: [],
         focused: {},
+        pseudo: {},
+        pseudoFocused: {},
         focus: () => {
             page.active = element;
         },
@@ -104,7 +110,13 @@ function stubDocument(selectors: Record<string, FakeElement>, active: FakeElemen
             },
         },
     });
-    vi.stubGlobal("getComputedStyle", (element: FakeElement): FakeStyle => ({ ...element, ...(page.active === element ? element.focused : {}) }));
+    vi.stubGlobal("getComputedStyle", (element: FakeElement, pseudo?: string): FakeStyle => {
+        const on = page.active === element;
+        if (pseudo !== undefined) {
+            return { ...el("span"), ...element.pseudo[pseudo], ...(on ? element.pseudoFocused[pseudo] : {}) };
+        }
+        return { ...element, ...(on ? element.focused : {}) };
+    });
 }
 
 afterEach(() => {
@@ -181,7 +193,10 @@ describe("findOverflow", () => {
         const legacyClip = el("span", "legacy", { scrollWidth: 60, clientWidth: 1, clientHeight: 1, clip: "rect(0px, 0px, 0px, 0px)" });
         const thinButOpen = el("div", "thin", { scrollWidth: 60, clientWidth: 1, clientHeight: 1 });
         const bigAndClipped = el("div", "big", { scrollWidth: 600, clientWidth: 100, clientHeight: 20, overflowX: "hidden" });
-        stubDocument({ ".wizard": el("div", "wizard", { children: [srOnly, clipped, legacyClip, thinButOpen, bigAndClipped] }) });
+        // Clipped and 1 px in one direction only: still a hidden box (kills `||` -> `&&`).
+        const narrow = el("span", "narrow", { scrollWidth: 60, clientWidth: 1, clientHeight: 20, overflowX: "hidden" });
+        const flat = el("span", "flat", { scrollWidth: 600, clientWidth: 100, clientHeight: 1, overflowY: "hidden" });
+        stubDocument({ ".wizard": el("div", "wizard", { children: [srOnly, clipped, legacyClip, narrow, flat, thinButOpen, bigAndClipped] }) });
         const result = findOverflow(overflowArgs);
         expect(result.rootFound && result.findings.map((finding) => finding.where)).toEqual(["div.thin", "div.big"]);
     });
@@ -302,60 +317,61 @@ describe("focusWalkStart", () => {
 });
 
 describe("readFocusStop", () => {
+    const RS = { root: ".m", ignore: null as string | null };
     const OBSIDIAN_REST = "rgba(0, 0, 0, 0.1) 0px 1px 1px 0px";
 
     it("is null without a root or a focused element", () => {
         stubDocument({}, null);
-        expect(readFocusStop(".m")).toBeNull();
+        expect(readFocusStop(RS)).toBeNull();
         stubDocument({ ".m": el("div", "m") }, null);
-        expect(readFocusStop(".m")).toBeNull();
+        expect(readFocusStop(RS)).toBeNull();
     });
 
     it("sees an outline that appears with focus as a ring, and leaves the element focused", () => {
         const button = el("button", "go", { focused: { outlineStyle: "solid", outlineWidth: "2px" } });
         stubDocument({ ".m": el("div", "m", { children: [button] }) }, button);
-        expect(readFocusStop(".m")).toMatchObject({ inRoot: true, repeat: false, where: "button.go", hasRing: true });
+        expect(readFocusStop(RS)).toMatchObject({ inRoot: true, repeat: false, where: "button.go", hasRing: true });
         expect(page.active).toBe(button);
     });
 
     it("sees a box-shadow that appears with focus as a ring", () => {
         const input = el("input", "name", { focused: { boxShadow: "0 0 0 2px blue" } });
         stubDocument({ ".m": el("div", "m", { children: [input] }) }, input);
-        expect(readFocusStop(".m")?.hasRing).toBe(true);
+        expect(readFocusStop(RS)?.hasRing).toBe(true);
     });
 
     it("does not take a resting box-shadow for a ring: a button whose focus ring was removed is reported", () => {
         const stripped = el("button", "stripped", { boxShadow: OBSIDIAN_REST });
         stubDocument({ ".m": el("div", "m", { children: [stripped] }) }, stripped);
-        expect(readFocusStop(".m")).toMatchObject({ hasRing: false, detail: `focus changes neither the outline (none 0px rgb(0, 0, 0)) nor the box-shadow (${OBSIDIAN_REST})` });
+        expect(readFocusStop(RS)).toMatchObject({ hasRing: false, detail: `focus changes neither the outline (none 0px rgb(0, 0, 0)) nor the box-shadow (${OBSIDIAN_REST}), on the element or its ::before, ::after` });
     });
 
     it("passes a button whose resting shadow gets a ring on focus", () => {
         const normal = el("button", "normal", { boxShadow: OBSIDIAN_REST, focused: { boxShadow: `${OBSIDIAN_REST}, rgb(0, 0, 255) 0px 0px 0px 2px` } });
         stubDocument({ ".m": el("div", "m", { children: [normal] }) }, normal);
-        expect(readFocusStop(".m")?.hasRing).toBe(true);
+        expect(readFocusStop(RS)?.hasRing).toBe(true);
     });
 
     it("does not count an outline that is there without focus, or an outline of width 0", () => {
         const always = el("a", "always", { outlineStyle: "solid", outlineWidth: "2px" });
         const zero = el("a", "zero", { focused: { outlineStyle: "solid", outlineWidth: "0px" } });
         stubDocument({ ".m": el("div", "m", { children: [always, zero] }) }, always);
-        expect(readFocusStop(".m")?.hasRing).toBe(false);
+        expect(readFocusStop(RS)?.hasRing).toBe(false);
         stubDocument({ ".m": el("div", "m", { children: [always, zero] }) }, zero);
-        expect(readFocusStop(".m")?.hasRing).toBe(false);
+        expect(readFocusStop(RS)?.hasRing).toBe(false);
     });
 
     it("switches transitions off for the reads and removes the style afterwards", () => {
         const button = el("button", "b");
         stubDocument({ ".m": el("div", "m", { children: [button] }) }, button);
-        readFocusStop(".m");
+        readFocusStop(RS);
         expect(page.styleSheets).toBe(0);
     });
 
     it("reports an element outside the root, so the walk can end", () => {
         const outside = el("button", "ribbon");
         stubDocument({ ".m": el("div", "m") }, outside);
-        expect(readFocusStop(".m")).toMatchObject({ inRoot: false, where: "button.ribbon" });
+        expect(readFocusStop(RS)).toMatchObject({ inRoot: false, where: "button.ribbon" });
     });
 
     it("notices an element that a walk visits a second time", () => {
@@ -363,10 +379,88 @@ describe("readFocusStop", () => {
         const second = el("button", "second");
         stubDocument({ ".m": el("div", "m", { children: [first, second] }) }, first);
         expect(focusWalkStart({ root: ".m", from: null })).toBe("ok");
-        expect(readFocusStop(".m")?.repeat).toBe(false);
+        expect(readFocusStop(RS)?.repeat).toBe(false);
         page.active = second;
-        expect(readFocusStop(".m")?.repeat).toBe(false);
+        expect(readFocusStop(RS)?.repeat).toBe(false);
         page.active = first;
-        expect(readFocusStop(".m")?.repeat).toBe(true);
+        expect(readFocusStop(RS)?.repeat).toBe(true);
+    });
+
+    it("sees a ring drawn on ::after (a Obsidian .setting-item), and one on ::before", () => {
+        const item = el("div", "setting-item", { pseudoFocused: { "::after": { boxShadow: "rgb(0, 0, 255) 0px 0px 0px 2px inset" } } });
+        stubDocument({ ".m": el("div", "m", { children: [item] }) }, item);
+        expect(readFocusStop(RS)?.hasRing).toBe(true);
+        const before = el("div", "x", { pseudoFocused: { "::before": { outlineStyle: "solid", outlineWidth: "2px" } } });
+        stubDocument({ ".m": el("div", "m", { children: [before] }) }, before);
+        expect(readFocusStop(RS)?.hasRing).toBe(true);
+    });
+
+    it("does not count a pseudo-element shadow that is there without focus", () => {
+        const item = el("div", "setting-item", { pseudo: { "::after": { boxShadow: "0 0 0 2px red" } } });
+        stubDocument({ ".m": el("div", "m", { children: [item] }) }, item);
+        expect(readFocusStop(RS)?.hasRing).toBe(false);
+    });
+
+    it("hands a range or colour input without a readable ring to the pixel comparison, and only those", () => {
+        const range = el("input", "slider", { type: "range", rect: { x: 5, y: 6, width: 100, height: 20 } as never });
+        stubDocument({ ".m": el("div", "m", { children: [range] }) }, range);
+        expect(readFocusStop(RS)).toMatchObject({ hasRing: false, pixelBox: { x: 5, y: 6, width: 100, height: 20 } });
+        const color = el("input", "swatch", { type: "color" });
+        stubDocument({ ".m": el("div", "m", { children: [color] }) }, color);
+        expect(readFocusStop(RS)?.pixelBox).not.toBeNull();
+        const text = el("input", "text", { type: "text" });
+        stubDocument({ ".m": el("div", "m", { children: [text] }) }, text);
+        expect(readFocusStop(RS)?.pixelBox).toBeNull();
+        const ringed = el("input", "slider", { type: "range", focused: { boxShadow: "0 0 0 2px blue" } });
+        stubDocument({ ".m": el("div", "m", { children: [ringed] }) }, ringed);
+        expect(readFocusStop(RS)).toMatchObject({ hasRing: true, pixelBox: null });
+    });
+
+    it("skips an element inside the ignore selector", () => {
+        const bare = el("input", "prompt-input", { closestMatches: [".prompt"] });
+        stubDocument({ ".m": el("div", "m", { children: [bare] }) }, bare);
+        expect(readFocusStop({ root: ".m", ignore: ".prompt" })).toMatchObject({ hasRing: true, detail: "ignored" });
+        expect(readFocusStop({ root: ".m", ignore: ".other" })?.hasRing).toBe(false);
+    });
+
+    it("throws a clear error, and removes its style, when the element does not take focus back after the blur", () => {
+        const button = el("button", "self-replacing");
+        const replacement = el("button", "self-replacing");
+        button.blur = () => {
+            page.active = replacement;
+        };
+        button.focus = () => undefined;
+        stubDocument({ ".m": el("div", "m", { children: [button, replacement] }) }, button);
+        expect(() => readFocusStop(RS)).toThrow(/button\.self-replacing did not take focus back.*focusRing\.ignore/);
+        expect(page.styleSheets).toBe(0);
+    });
+});
+
+describe("pixelStep", () => {
+    it("blurs between begin and end, gives focus back, and removes its style", () => {
+        const slider = el("input", "slider");
+        stubDocument({}, slider);
+        expect(pixelStep("begin")).toBe(true);
+        expect(page.styleSheets).toBe(1);
+        expect(pixelStep("blur")).toBe(true);
+        expect(page.active).toBeNull();
+        expect(pixelStep("end")).toBe(true);
+        expect(page.active).toBe(slider);
+        expect(page.styleSheets).toBe(0);
+        Reflect.deleteProperty(globalThis, "__opdkPixel");
+    });
+
+    it("says no when nothing has focus, when begin was not called, and when the element is gone after end", () => {
+        stubDocument({}, null);
+        expect(pixelStep("begin")).toBe(false);
+        expect(pixelStep("blur")).toBe(false);
+        const gone = el("input", "gone");
+        gone.focus = () => undefined;
+        stubDocument({}, gone);
+        expect(pixelStep("begin")).toBe(true);
+        gone.blur();
+        expect(pixelStep("end")).toBe(false);
+        expect(page.styleSheets).toBe(0);
+        Reflect.deleteProperty(globalThis, "__opdkPixel");
     });
 });

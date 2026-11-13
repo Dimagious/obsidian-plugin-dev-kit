@@ -154,3 +154,70 @@ test.describe("focus ring", () => {
         expect(await obsidian.layoutProblems({ root: ROOT, overflow: false, touchTargets: false, focusRing: true })).toEqual([]);
     });
 });
+
+test.describe("focus ring on Obsidian's own UI", () => {
+    const only = { overflow: false, touchTargets: false } as const;
+
+    test("passes a click-first start: a mouse click does not make the first stop look ring-less", async ({ win, obsidian }) => {
+        await addBox(win, '<div class="modal"><div class="vertical-tab-content"><button class="a">A</button><button class="b">B</button></div></div>');
+        await win.locator(`${ROOT} button.b`).click();
+        expect(await obsidian.layoutProblems({ root: ROOT, ...only, focusRing: true })).toEqual([]);
+    });
+
+    test("passes a .setting-item that rings itself on ::after, and a range slider that rings its thumb", async ({ win, obsidian }) => {
+        await addBox(
+            win,
+            '<div class="modal"><div class="vertical-tab-content"><div class="setting-item mod-toggle" tabindex="0"><div class="setting-item-info"><div class="setting-item-name">Name</div></div><div class="setting-item-control"></div></div>' +
+                '<input type="range" class="slider" min="0" max="10"></div></div>',
+        );
+        expect(await obsidian.layoutProblems({ root: ROOT, ...only, focusRing: true })).toEqual([]);
+    });
+
+    test("fails, never loses the walk, when a control replaces itself on blur; focusRing.ignore skips it", async ({ win, obsidian }) => {
+        await addBox(win, '<div class="modal"><button class="a">a</button><button class="swap">swap</button></div>');
+        await win.evaluate(`(() => { const b = document.querySelector("#opdk-layout-box .swap"); b.addEventListener("blur", () => b.replaceWith(b.cloneNode(true))); })()`);
+        await expect(obsidian.checkLayout({ root: ROOT, ...only, focusRing: true })).rejects.toThrow(/button\.swap did not take focus back/);
+        await addBox(win, '<div class="modal"><button class="a">a</button><button class="swap">swap</button></div>');
+        await win.evaluate(`(() => { const b = document.querySelector("#opdk-layout-box .swap"); b.addEventListener("blur", () => b.replaceWith(b.cloneNode(true))); })()`);
+        await obsidian.checkLayout({ root: ROOT, ...only, focusRing: { ignore: ".swap" } });
+    });
+
+    test("passes every core tab of the real settings modal", async ({ win, obsidian }) => {
+        await obsidian.openSettings();
+        const tabs = win.locator(".modal.mod-settings .vertical-tab-nav-item");
+        const count = await tabs.count();
+        expect(count).toBeGreaterThan(3);
+        const failures: string[] = [];
+        for (let index = 0; index < count; index++) {
+            const tab = tabs.nth(index);
+            const name = ((await tab.textContent()) ?? String(index)).trim();
+            await tab.click();
+            // A tab that is only text (a plugin's, here) has no Tab stop: the check says so instead of passing.
+            if ((await win.locator(".modal.mod-settings .vertical-tab-content").locator("button, input, select, [tabindex='0']").count()) === 0) {
+                continue;
+            }
+            const problems = await obsidian
+                .layoutProblems({ root: ".modal.mod-settings .vertical-tab-content", ...only, focusRing: { maxStops: 100 } })
+                .catch((error: unknown) => [{ check: "focus-ring", where: name, detail: String(error) }]);
+            if (problems.length > 0) {
+                failures.push(`${name}: ${JSON.stringify(problems)}`);
+            }
+        }
+        await obsidian.closeSettings();
+        expect(failures).toEqual([]);
+    });
+
+    test("passes the command palette once its search field is ignored: Obsidian shows the caret there, no ring", async ({ win, obsidian }) => {
+        await win.evaluate(`globalThis.app.commands.executeCommandById("command-palette:open")`);
+        await win.locator(".prompt").waitFor();
+        expect(await obsidian.layoutProblems({ root: ".prompt", ...only, focusRing: { ignore: ".prompt-input" } })).toEqual([]);
+        const bare = await obsidian.layoutProblems({ root: ".prompt", ...only, focusRing: true });
+        expect(bare.map((problem) => problem.where)).toEqual(["input.prompt-input"]);
+    });
+
+    test("names a range input whose thumb ring was removed, by comparing pixels", async ({ win, obsidian }) => {
+        await addBox(win, '<div class="modal"><div class="vertical-tab-content"><input type="range" class="slider flat" min="0" max="10"></div></div><style>.flat::-webkit-slider-thumb{box-shadow:none !important;border-color:transparent !important;outline:none !important}</style>');
+        const problems = await obsidian.layoutProblems({ root: ROOT, ...only, focusRing: true });
+        expect(problems.map((problem) => problem.where)).toEqual(["input.slider.flat"]);
+    });
+});

@@ -6,6 +6,8 @@
  */
 
 interface LayoutRect {
+    x: number;
+    y: number;
     width: number;
     height: number;
 }
@@ -23,6 +25,7 @@ interface LayoutElement {
     querySelectorAll(selector: string): ArrayLike<LayoutElement>;
     closest(selector: string): unknown;
     contains(other: unknown): boolean;
+    type?: string;
     focus(): void;
     blur(): void;
 }
@@ -54,9 +57,11 @@ interface LayoutGlobals {
         createElement(tag: string): LayoutStyleSheet;
         documentElement: { append(node: unknown): void };
     };
-    getComputedStyle?(element: LayoutElement): LayoutStyle;
+    getComputedStyle?(element: LayoutElement, pseudo?: string): LayoutStyle;
     /** The elements a focus walk has visited, to notice a trap. Replaced by `focusWalkStart`. */
     __opdkFocusSeen?: WeakSet<object>;
+    /** The element and the style sheet of a pixel comparison between `begin` and `end` (see `pixelStep`). */
+    __opdkPixel?: { element: LayoutElement; quiet: LayoutStyleSheet };
 }
 
 /** One thing a layout check found; `where` names the element the way a person finds it (`button.save-button`). */
@@ -195,17 +200,29 @@ export interface FocusStop {
     where: string;
     hasRing: boolean;
     detail: string;
+    /**
+     * Set when `hasRing` is false for an element whose ring Obsidian draws on a vendor pseudo-element that
+     * `getComputedStyle` cannot read (the thumb of a range input, the swatch of a colour input): the box to compare as
+     * pixels, focused against blurred, with `pixelStep`. Null for every other element.
+     */
+    pixelBox: { x: number; y: number; width: number; height: number } | null;
 }
 
 /**
- * Reads the element that has focus. It counts as showing a focus ring only when its outline or its box-shadow
- * differs from the same element without focus: Obsidian gives every button a resting `box-shadow`, so "has a
- * shadow" would pass a button whose ring was removed. The element is blurred for the second read and focused again.
- * Transitions are switched off for both reads, because a style that has just changed would read as the old value.
+ * Reads the element that has focus. It counts as showing a focus ring only when an outline or a box-shadow differs
+ * from the same element without focus: Obsidian gives every button a resting `box-shadow`, so "has a shadow" would
+ * pass a button whose ring was removed. Obsidian also draws some rings on a pseudo-element (a `.setting-item` rings
+ * itself with `:focus-visible::after`), so the element, its `::before` and its `::after` are all compared; a change
+ * in any of them is a ring. Vendor pseudo-elements (`::-webkit-slider-thumb`, `::-webkit-color-swatch`) are not
+ * readable: `getComputedStyle` answers with the style of the element itself. A range or colour input without a ring
+ * in the readable parts is returned with a `pixelBox`, and the walk compares pixels for it. The
+ * element is blurred for the second read and focused again; if it did not take focus back (it was replaced or
+ * detached on blur) the walk cannot go on and this throws. Transitions are switched off for both reads, because a
+ * style that has just changed would read as the old value. An element inside `ignore` passes without a read.
  */
-export function readFocusStop(rootSelector: string): FocusStop | null {
+export function readFocusStop(args: { root: string; ignore: string | null }): FocusStop | null {
     const globals = globalThis as unknown as LayoutGlobals;
-    const root = globals.document?.querySelector(rootSelector) ?? null;
+    const root = globals.document?.querySelector(args.root) ?? null;
     const element = globals.document?.activeElement ?? null;
     if (root === null || element === null || globals.document === undefined || globals.getComputedStyle === undefined) {
         return null;
@@ -217,35 +234,84 @@ export function readFocusStop(rootSelector: string): FocusStop | null {
     seen.add(element);
     const inRoot = root.contains(element);
     if (!inRoot) {
-        return { inRoot, repeat, where, hasRing: true, detail: "outside the root" };
+        return { inRoot, repeat, where, hasRing: true, detail: "outside the root", pixelBox: null };
+    }
+    if (args.ignore !== null && element.closest(args.ignore) !== null) {
+        return { inRoot, repeat, where, hasRing: true, detail: "ignored", pixelBox: null };
     }
     const quiet = globals.document.createElement("style");
     quiet.textContent = "*, *::before, *::after { transition: none !important; animation: none !important; }";
     globals.document.documentElement.append(quiet);
-    const read = (): { outline: string; outlineVisible: boolean; shadow: string } => {
-        const style = globals.getComputedStyle?.(element);
-        const shadow = style === undefined || style.boxShadow === "" ? "none" : style.boxShadow;
-        return {
-            outline: style === undefined ? "" : `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor} offset ${style.outlineOffset}`,
-            outlineVisible: style !== undefined && style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) > 0,
-            shadow,
-        };
-    };
+    const parts = ["", "::before", "::after"];
+    const vendorRing = element.tagName.toLowerCase() === "input" && (element.type === "range" || element.type === "color");
+    const read = (): { outline: string; outlineVisible: boolean; shadow: string }[] =>
+        parts.map((part) => {
+            const style = globals.getComputedStyle?.(element, part === "" ? undefined : part);
+            return {
+                outline: style === undefined ? "" : `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor} offset ${style.outlineOffset}`,
+                outlineVisible: style !== undefined && style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) > 0,
+                shadow: style === undefined || style.boxShadow === "" ? "none" : style.boxShadow,
+            };
+        });
     try {
         const focused = read();
         element.blur();
         const plain = read();
         element.focus();
-        const outlineRing = focused.outlineVisible && focused.outline !== plain.outline;
-        const shadowRing = focused.shadow !== "none" && focused.shadow !== plain.shadow;
+        if (globals.document.activeElement !== element) {
+            throw new Error(`${where} did not take focus back after the focus ring check blurred it: it was replaced or detached on blur, so the Tab walk cannot go on. Add it to focusRing.ignore, or keep the element in place on blur.`);
+        }
+        const ring = focused.some((now, index) => {
+            const before = plain[index];
+            return before !== undefined && ((now.outlineVisible && now.outline !== before.outline) || (now.shadow !== "none" && now.shadow !== before.shadow));
+        });
+        const own = focused[0];
+        const box = element.getBoundingClientRect();
         return {
             inRoot,
             repeat,
             where,
-            hasRing: outlineRing || shadowRing,
-            detail: `focus changes neither the outline (${focused.outline.replace(/ offset .*$/, "")}) nor the box-shadow (${focused.shadow})`,
+            hasRing: ring,
+            pixelBox: !ring && vendorRing ? { x: box.x, y: box.y, width: box.width, height: box.height } : null,
+            detail: `focus changes neither the outline (${(own?.outline ?? "").replace(/ offset .*$/, "")}) nor the box-shadow (${own?.shadow ?? "none"}), on the element or its ${parts.slice(1).join(", ")}`,
         };
     } finally {
         quiet.remove();
     }
+}
+
+/**
+ * The page side of the pixel comparison for an element whose ring cannot be read (see `FocusStop.pixelBox`). `begin`
+ * switches transitions off, `blur` takes focus away, anything else (`end`) gives it back and removes the style. The caller takes a
+ * screenshot between the steps. It is false when `end` finds the element did not take focus back.
+ */
+export function pixelStep(step: string): boolean {
+    const globals = globalThis as unknown as LayoutGlobals;
+    const doc = globals.document;
+    if (doc === undefined) {
+        return false;
+    }
+    if (step === "begin") {
+        const element = doc.activeElement;
+        if (element === null) {
+            return false;
+        }
+        const quiet = doc.createElement("style");
+        quiet.textContent = "*, *::before, *::after { transition: none !important; animation: none !important; }";
+        doc.documentElement.append(quiet);
+        globals.__opdkPixel = { element, quiet };
+        return true;
+    }
+    const state = globals.__opdkPixel;
+    if (state === undefined) {
+        return false;
+    }
+    if (step === "blur") {
+        state.element.blur();
+        return true;
+    }
+    state.element.focus();
+    state.quiet.remove();
+    Reflect.deleteProperty(globals, "__opdkPixel");
+    return doc.activeElement === state.element;
 }

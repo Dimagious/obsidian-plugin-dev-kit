@@ -3,7 +3,7 @@ import type { HelperTimeouts } from "../options.js";
 import { waitForReady } from "../readiness.js";
 import { commandDeclinedMessage, commandNotFoundMessage, toPlaywrightKeys } from "./commands.js";
 import { planComposition } from "./ime.js";
-import { findOverflow, findSmallTargets, focusWalkStart, MAX_FINDINGS_PER_CHECK, readFocusStop, rootExists, type LayoutResult } from "./layout-page-scripts.js";
+import { findOverflow, findSmallTargets, focusWalkStart, MAX_FINDINGS_PER_CHECK, pixelStep, readFocusStop, rootExists, type FocusStop, type LayoutResult } from "./layout-page-scripts.js";
 import { capProblems, focusStartMessage, layoutFailureMessage, noChecksMessage, resolveLayoutOptions, rootMissingMessage, type LayoutCheckName, type LayoutCheckOptions, type LayoutCut, type LayoutProblem, type ResolvedLayoutOptions } from "./layout.js";
 import { createDeviceMetricsTracker, type DeviceMetricsTracker } from "./device-metrics.js";
 import { deviceMetrics, isReloadRejection, type MobileOptions } from "./mobile.js";
@@ -517,11 +517,48 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
     }
 
     /**
+     * For a control whose ring is drawn on a vendor pseudo-element that cannot be read as a style (the thumb of a
+     * range input): whether the pixels around it change when it loses focus. The element ends up focused again.
+     */
+    async function ringShowsInPixels(box: NonNullable<FocusStop["pixelBox"]>): Promise<boolean> {
+        const pad = 6;
+        const x = Math.max(0, Math.floor(box.x) - pad);
+        const y = Math.max(0, Math.floor(box.y) - pad);
+        const clip = { x, y, width: Math.ceil(box.width) + 2 * pad, height: Math.ceil(box.height) + 2 * pad };
+        if (!(await win.evaluate(pixelStep, "begin"))) {
+            throw new Error("checkLayout(): the pixel comparison of a focus ring could not start: nothing has focus.");
+        }
+        let differs = false;
+        let failure: Error | undefined;
+        try {
+            const focused = await win.screenshot({ clip, animations: "disabled" });
+            await win.evaluate(pixelStep, "blur");
+            const plain = await win.screenshot({ clip, animations: "disabled" });
+            differs = !focused.equals(plain);
+        } catch (error) {
+            failure = error instanceof Error ? error : new Error(String(error));
+        }
+        // Always give focus back and remove the page's style, also after a failed screenshot.
+        const back = await win.evaluate(pixelStep, "end");
+        if (failure !== undefined) {
+            throw failure;
+        }
+        if (!back) {
+            throw new Error("checkLayout(): the element did not take focus back after the pixel comparison of its focus ring, so the Tab walk cannot go on. Add it to focusRing.ignore.");
+        }
+        return differs;
+    }
+
+    /**
      * Tabs through `root` and reports every stop that shows no focus ring (and, with `stayInside`, the Tab that leaves
      * it). The walk ends when focus leaves `root`, comes back to a stop it already visited (a trap) or after `maxStops`
      * presses. It is an error, never a pass, when it cannot start inside `root` or sees no stop at all.
      */
     async function walkFocus(root: string, focus: ResolvedLayoutOptions["focus"]): Promise<LayoutProblem[]> {
+        // Chromium matches :focus-visible on a script focus only when the last input was the keyboard. After a mouse
+        // click it does not, and the first stop would read as a missing ring. A modifier key switches the heuristic
+        // and does nothing else (Escape or Tab would close a dialog or move focus).
+        await win.keyboard.press("Shift");
         const start = await win.evaluate(focusWalkStart, { root, from: focus.from });
         if (start === "no-root") {
             throw new Error(rootMissingMessage(root));
@@ -535,8 +572,11 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
             if (stop > 0) {
                 await win.keyboard.press("Tab");
             }
-            const current = await win.evaluate(readFocusStop, root);
-            if (current === null || (stop === 0 && (!current.inRoot || current.repeat))) {
+            let current = await win.evaluate(readFocusStop, { root, ignore: focus.ignore });
+            if (current !== null && current.pixelBox !== null) {
+                current = { ...current, hasRing: await ringShowsInPixels(current.pixelBox), pixelBox: null };
+            }
+            if (current === null || (stop === 0 && !current.inRoot)) {
                 throw new Error(`checkLayout(): the Tab walk found no stop inside ${JSON.stringify(root)}: focus is not on an element of the root after it was set. Check that the root stays on the page.`);
             }
             if (!current.inRoot) {

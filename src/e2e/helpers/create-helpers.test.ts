@@ -44,7 +44,7 @@ import {
     unsettledReasons,
     watchPageChanges,
 } from "./page-scripts.js";
-import { findOverflow, findSmallTargets, focusWalkStart, readFocusStop, rootExists, type FocusStop, type LayoutResult } from "./layout-page-scripts.js";
+import { findOverflow, findSmallTargets, focusWalkStart, pixelStep, readFocusStop, rootExists, type FocusStop, type LayoutResult } from "./layout-page-scripts.js";
 
 /** Distinct values, so a test can tell which budget a wait took. */
 const TIMEOUTS = { settings: 111, metadataCache: 222, compose: 333, theme: 444, ui: 555 } as const;
@@ -1121,7 +1121,7 @@ describe("settle", () => {
 
 describe("checkLayout and layoutProblems", () => {
     const found = (...findings: { where: string; detail: string }[]): LayoutResult => ({ rootFound: true, findings, total: findings.length });
-    const stop = (where: string, hasRing: boolean, extra: Partial<FocusStop> = {}): FocusStop => ({ inRoot: true, repeat: false, where, hasRing, detail: "focus changes neither the outline nor the box-shadow", ...extra });
+    const stop = (where: string, hasRing: boolean, extra: Partial<FocusStop> = {}): FocusStop => ({ inRoot: true, repeat: false, where, hasRing, detail: "focus changes neither the outline nor the box-shadow", pixelBox: null, ...extra });
     /** A window where the root exists and nothing is mobile. */
     function setUpLayout(): ReturnType<typeof setUp> {
         const context = setUp();
@@ -1236,7 +1236,7 @@ describe("checkLayout and layoutProblems", () => {
         fake.onEvaluate(readFocusStop, () => stops[index++] ?? null);
         const problems = await helpers.layoutProblems({ root: ".modal", overflow: false, touchTargets: false, focusRing: { from: ".name" } });
         expect(problems).toEqual([{ check: "focus-ring", where: "button.ok", detail: "focus changes neither the outline nor the box-shadow" }]);
-        expect(fake.log).toEqual(['start:{"root":".modal","from":".name"}', "press:Tab", "press:Tab", "press:Tab"]);
+        expect(fake.log).toEqual(["press:Shift", 'start:{"root":".modal","from":".name"}', "press:Tab", "press:Tab", "press:Tab"]);
     });
 
     it("reports focus leaving the root only when asked to keep it inside", async () => {
@@ -1262,7 +1262,7 @@ describe("checkLayout and layoutProblems", () => {
         fake.onEvaluate(focusWalkStart, () => "ok");
         fake.onEvaluate(readFocusStop, () => stops[index++] ?? null);
         expect(await helpers.layoutProblems({ root: ".modal", overflow: false, touchTargets: false, focusRing: { stayInside: true } })).toEqual([]);
-        expect(fake.log).toEqual(["press:Tab", "press:Tab"]);
+        expect(fake.log).toEqual(["press:Shift", "press:Tab", "press:Tab"]);
     });
 
     it("lists a ring-less look-alike once, and cuts the list at 10 with the total", async () => {
@@ -1284,7 +1284,7 @@ describe("checkLayout and layoutProblems", () => {
         let index = 0;
         fake.onEvaluate(readFocusStop, () => stop(`button.l${String(index++)}`, true));
         await helpers.layoutProblems({ root: ".modal", overflow: false, touchTargets: false, focusRing: { maxStops: 3 } });
-        expect(fake.log).toEqual(["press:Tab", "press:Tab", "press:Tab"]);
+        expect(fake.log).toEqual(["press:Shift", "press:Tab", "press:Tab", "press:Tab"]);
     });
 
     it("fails, never passes, when the walk has no stop inside the root", async () => {
@@ -1294,7 +1294,56 @@ describe("checkLayout and layoutProblems", () => {
         await expect(helpers.layoutProblems({ root: ".modal", ...focusOnly })).rejects.toThrow("found no stop inside \".modal\"");
         fake.onEvaluate(readFocusStop, () => null);
         await expect(helpers.layoutProblems({ root: ".modal", ...focusOnly })).rejects.toThrow("found no stop inside");
-        expect(fake.log).toEqual([]);
+        // A key press before each start, so :focus-visible matches on the script focus after a mouse click.
+        expect(fake.log).toEqual(["press:Shift", "press:Shift"]);
+    });
+
+    it("passes focusRing.ignore to the page and refuses a bad one", async () => {
+        const { fake, helpers } = setUpLayout();
+        fake.onEvaluate(focusWalkStart, () => "ok");
+        const seen: unknown[] = [];
+        fake.onEvaluate(readFocusStop, (args) => {
+            seen.push(args);
+            return stop("button.a", true, { inRoot: seen.length === 1 });
+        });
+        await helpers.layoutProblems({ root: ".modal", overflow: false, touchTargets: false, focusRing: { ignore: ".prompt-input" } });
+        expect(seen[0]).toEqual({ root: ".modal", ignore: ".prompt-input" });
+        await expect(helpers.layoutProblems({ root: ".modal", overflow: false, touchTargets: false, focusRing: { ignore: "" } })).rejects.toThrow("focusRing.ignore");
+    });
+
+    it("compares pixels for a control whose ring cannot be read, and gives it focus back", async () => {
+        const { fake, helpers } = setUpLayout();
+        const box = { x: 10.4, y: 3, width: 100, height: 20 };
+        fake.onEvaluate(focusWalkStart, () => "ok");
+        let reads = 0;
+        fake.onEvaluate(readFocusStop, () => (reads++ % 2 === 0 ? stop("input.slider", false, { pixelBox: box }) : stop("button.ribbon", true, { inRoot: false })));
+        const steps: unknown[] = [];
+        fake.onEvaluate(pixelStep, (step) => {
+            steps.push(step);
+            fake.log.push(`pixel:${String(step)}`);
+            return true;
+        });
+        fake.shots.push("ring", "plain");
+        expect(await helpers.layoutProblems({ root: ".modal", ...focusOnly })).toEqual([]);
+        expect(steps).toEqual(["begin", "blur", "end"]);
+        expect(fake.log.filter((line) => line.startsWith("screenshot"))).toEqual(['screenshot:{"x":4,"y":0,"width":112,"height":32}', 'screenshot:{"x":4,"y":0,"width":112,"height":32}']);
+        // Identical pictures: no ring.
+        fake.log.length = 0;
+        steps.length = 0;
+        fake.shots.push("same", "same");
+        const problems = await helpers.layoutProblems({ root: ".modal", ...focusOnly });
+        expect(problems).toMatchObject([{ check: "focus-ring", where: "input.slider" }]);
+        expect(steps).toEqual(["begin", "blur", "end"]);
+    });
+
+    it("fails when the control does not take focus back after the pixel comparison", async () => {
+        const { fake, helpers } = setUpLayout();
+        fake.onEvaluate(focusWalkStart, () => "ok");
+        fake.onEvaluate(readFocusStop, () => stop("input.slider", false, { pixelBox: { x: 0, y: 0, width: 10, height: 10 } }));
+        fake.onEvaluate(pixelStep, (step) => step !== "end");
+        await expect(helpers.layoutProblems({ root: ".modal", ...focusOnly })).rejects.toThrow(/did not take focus back after the pixel comparison/);
+        fake.onEvaluate(pixelStep, () => false);
+        await expect(helpers.layoutProblems({ root: ".modal", ...focusOnly })).rejects.toThrow(/could not start/);
     });
 
     it("fails with the reason when there is nothing to start the walk from", async () => {

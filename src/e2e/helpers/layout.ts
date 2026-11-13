@@ -27,6 +27,8 @@ export interface FocusRingOptions {
     maxStops?: number;
     /** Report it when Tab moves focus out of `root`, as for a modal that must trap focus. Default false: leaving ends the walk without a problem. */
     stayInside?: boolean;
+    /** CSS selector of elements the ring check skips (matched against the element and its ancestors), for a control that is replaced on blur or draws its focus state some other way. */
+    ignore?: string;
 }
 
 /** What `obsidian.checkLayout()` and `obsidian.layoutProblems()` look at. Every check can be turned off. */
@@ -37,7 +39,7 @@ export interface LayoutCheckOptions {
     overflow?: boolean | OverflowOptions;
     /** Touch targets of at least 44 px. Default: on when the window is in the mobile emulation (`obsidian.mobile()`), off otherwise. */
     touchTargets?: boolean | TouchTargetOptions;
-    /** Every Tab stop inside `root` shows a focus ring (focus changes its outline or its box-shadow). Default false, because it presses Tab and moves focus. */
+    /** Every Tab stop inside `root` shows a focus ring (focus changes an outline or a box-shadow of the element or its ::before/::after). Default false, because it presses Tab and moves focus. */
     focusRing?: boolean | FocusRingOptions;
 }
 
@@ -53,13 +55,13 @@ export interface ResolvedLayoutOptions {
     readonly overflow: { enabled: boolean; ignore: string | null };
     /** Null: not given, decided from the window (mobile or not). */
     readonly touch: { enabled: boolean | null; minSize: number; selector: string; ignore: string | null };
-    readonly focus: { enabled: boolean; from: string | null; maxStops: number; stayInside: boolean };
+    readonly focus: { enabled: boolean; from: string | null; maxStops: number; stayInside: boolean; ignore: string | null };
 }
 
 const KNOWN_KEYS = ["root", "overflow", "touchTargets", "focusRing"];
 const TOUCH_KEYS = ["minSize", "selector", "ignore"];
 const OVERFLOW_KEYS = ["ignore"];
-const FOCUS_KEYS = ["from", "maxStops", "stayInside"];
+const FOCUS_KEYS = ["from", "maxStops", "stayInside", "ignore"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -135,10 +137,10 @@ function resolveTouch(value: unknown): ResolvedLayoutOptions["touch"] {
 
 function resolveFocus(value: unknown): ResolvedLayoutOptions["focus"] {
     if (value === undefined || typeof value === "boolean") {
-        return { enabled: value ?? false, from: null, maxStops: DEFAULT_MAX_FOCUS_STOPS, stayInside: false };
+        return { enabled: value ?? false, from: null, maxStops: DEFAULT_MAX_FOCUS_STOPS, stayInside: false, ignore: null };
     }
     if (!isRecord(value)) {
-        throw new Error(`checkLayout(): focusRing must be true, false or an object { from?, maxStops?, stayInside? }, got ${JSON.stringify(value)}.`);
+        throw new Error(`checkLayout(): focusRing must be true, false or an object { from?, maxStops?, stayInside?, ignore? }, got ${JSON.stringify(value)}.`);
     }
     rejectUnknown(value, FOCUS_KEYS, "focusRing");
     const { maxStops } = value;
@@ -149,7 +151,7 @@ function resolveFocus(value: unknown): ResolvedLayoutOptions["focus"] {
     if (stayInside !== undefined && typeof stayInside !== "boolean") {
         throw new Error(`checkLayout(): focusRing.stayInside must be true or false, got ${JSON.stringify(stayInside)}.`);
     }
-    return { enabled: true, from: optionalSelector(value.from, "focusRing.from"), maxStops: maxStops ?? DEFAULT_MAX_FOCUS_STOPS, stayInside: stayInside ?? false };
+    return { enabled: true, from: optionalSelector(value.from, "focusRing.from"), maxStops: maxStops ?? DEFAULT_MAX_FOCUS_STOPS, stayInside: stayInside ?? false, ignore: optionalSelector(value.ignore, "focusRing.ignore") };
 }
 
 export function rootMissingMessage(root: string): string {
@@ -211,7 +213,7 @@ export function layoutFailureMessage(root: string, problems: readonly LayoutProb
         hints.push(`Touch targets must be at least ${String(minSize)} px; raise the size in CSS for the mobile layout, or pass touchTargets: { ignore } for an element that is not a target.`);
     }
     if (problems.some((problem) => problem.check === "focus-ring")) {
-        hints.push("A focus ring is an outline or a box-shadow that :focus-visible changes (a resting box-shadow does not count); a theme that sets outline: none needs a replacement.");
+        hints.push("A focus ring is an outline or a box-shadow that focus changes, on the element or its ::before/::after (a resting box-shadow does not count); a theme that sets outline: none needs a replacement.");
     }
     if (problems.some((problem) => problem.check === "focus-escape")) {
         hints.push("Keep Tab inside a modal: focus the first control again when Tab leaves the last one.");

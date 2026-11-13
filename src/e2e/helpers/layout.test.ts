@@ -7,7 +7,7 @@ describe("resolveLayoutOptions: defaults", () => {
             root: ".modal",
             overflow: { enabled: true, ignore: null },
             touch: { enabled: null, minSize: DEFAULT_MIN_TOUCH_SIZE, selector: DEFAULT_TOUCH_TARGETS, ignore: null },
-            focus: { enabled: false, from: null, maxStops: DEFAULT_MAX_FOCUS_STOPS, stayInside: false },
+            focus: { enabled: false, from: null, maxStops: DEFAULT_MAX_FOCUS_STOPS, stayInside: false, ignore: null },
         });
         expect(DEFAULT_MIN_TOUCH_SIZE).toBe(44);
     });
@@ -24,7 +24,7 @@ describe("resolveLayoutOptions: defaults", () => {
     it("takes the detailed options, and an object turns the check on", () => {
         const resolved = resolveLayoutOptions({ root: "r", touchTargets: { minSize: 48, selector: ".tap", ignore: ".small-ok" }, focusRing: { from: ".first", maxStops: 5, stayInside: true } });
         expect(resolved.touch).toEqual({ enabled: true, minSize: 48, selector: ".tap", ignore: ".small-ok" });
-        expect(resolved.focus).toEqual({ enabled: true, from: ".first", maxStops: 5, stayInside: true });
+        expect(resolved.focus).toEqual({ enabled: true, from: ".first", maxStops: 5, stayInside: true, ignore: null });
         expect(resolveLayoutOptions({ root: "r", overflow: { ignore: "pre" } }).overflow).toEqual({ enabled: true, ignore: "pre" });
         expect(resolveLayoutOptions({ root: "r", overflow: {} }).overflow).toEqual({ enabled: true, ignore: null });
         expect(resolveLayoutOptions({ root: "r", touchTargets: {}, focusRing: {} }).touch.enabled).toBe(true);
@@ -75,7 +75,7 @@ describe("messages", () => {
         expect(many).toContain("  - touch target too small: button.save (30 x 28 px)");
         expect(many).toContain("  - no focus ring: input.name (outline none 0px, box-shadow none)");
         expect(many).toContain("at least 48 px");
-        expect(many).toContain(":focus-visible");
+        expect(many).toContain("::before/::after");
     });
 
     it("adds a hint only for the checks that failed", () => {
