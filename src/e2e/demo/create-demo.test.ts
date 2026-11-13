@@ -396,6 +396,50 @@ describe("still", () => {
     });
 });
 
+describe("publish and out of a still", () => {
+    const optionsFile = (name: string): string => out(".owners", "still-options", `${name}.json`);
+    const written = (name: string): unknown => JSON.parse(fs.readFileSync(optionsFile(name), "utf8"));
+
+    it("records the default (published, default folder) for a still that says nothing", async () => {
+        await setUp().demo.still("hero");
+        expect(written("hero")).toEqual({ publish: true });
+    });
+
+    it("records publish: false, and out", async () => {
+        const { demo } = setUp();
+        await demo.still("phone-key", { publish: false });
+        await demo.still("listing-1", { out: "listing" });
+        expect(written("phone-key")).toEqual({ publish: false });
+        expect(written("listing-1")).toEqual({ publish: true, out: "listing" });
+    });
+
+    it("a retake replaces what the earlier take asked for", async () => {
+        const { demo } = setUp();
+        await demo.still("hero", { publish: false });
+        await demo.still("hero");
+        expect(written("hero")).toEqual({ publish: true });
+    });
+
+    it("keeps the PNG in the stills folder whatever it asks for", async () => {
+        const { demo } = setUp();
+        await demo.still("a", { publish: false });
+        await demo.still("b", { out: "listing" });
+        expect(fs.existsSync(out("stills", "a.png"))).toBe(true);
+        expect(fs.existsSync(out("stills", "b.png"))).toBe(true);
+    });
+
+    it.each([
+        [{ publish: "no" }, /still "bad": publish must be true .* or false .*, got "no"/],
+        [{ out: 3 }, /still "bad": out must be the name of a folder in demo\.outputs.*got 3/],
+        [{ out: "a/b" }, /still "bad": out name "a\/b" is not usable as a file name/],
+        [{ publish: false, out: "listing" }, /still "bad": out has no effect with publish: false/],
+    ])("rejects %j before anything is written", async (value, message) => {
+        const { demo } = setUp();
+        await expect(demo.still("bad", value as never)).rejects.toThrow(message);
+        expect(fs.existsSync(out("stills"))).toBe(false);
+    });
+});
+
 describe("settle option of shots and stills", () => {
     const shotWith = async (settle?: boolean): Promise<void> => {
         const film = setUp().demo.film({ kind: "desktop" });

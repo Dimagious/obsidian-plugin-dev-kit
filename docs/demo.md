@@ -23,7 +23,7 @@ A film of stills makes timing a property of the script (`hold`) and not of the m
 | Part | What it does |
 |---|---|
 | `demo.film(options)` | Starts a film of stills. Returns a `Film` with `name`, `dir` and `shot({ hold, caption?, clip?, padding?, settle? })` |
-| `demo.still(name, options?)` | One PNG, `<outDir>/stills/<name>.png`, optionally at the exact pixels of a destination (`preset`). `opdk demo` publishes it |
+| `demo.still(name, options?)` | One PNG, `<outDir>/stills/<name>.png`, optionally at the exact pixels of a destination (`preset`). `opdk demo` publishes it, to the default folder, to a folder of its own (`out`) or not at all (`publish: false`) |
 | `demo.moveAndClick(target)`, `demo.tap(target, { whilePressed? })` | A visible cursor that travels to the target and clicks it (desktop), or a tap dot that presses and releases (phone) |
 | `demo.typeSlowly(text)`, `demo.typeSlowly(target, text)` | Types key by key, 40 ms apart by default |
 | `demo.caption(text \| null)` | A caption bar at the bottom of the window, drawn into every frame until changed |
@@ -162,7 +162,7 @@ A film is encoded only when its recording test passed. A test that failed, timed
 
 ### Stills
 
-`demo.still(name, { preset?, clip?, padding?, scale?, settle?, cursor? })` writes `<outDir>/stills/<name>.png`, replacing an earlier one. A preset gives exactly its pixels, puts the window at the CSS size that produces them and puts it back afterwards. A preset cannot be combined with `clip` or `scale`.
+`demo.still(name, { preset?, clip?, padding?, scale?, settle?, cursor?, publish?, out? })` writes `<outDir>/stills/<name>.png`, replacing an earlier one. A preset gives exactly its pixels, puts the window at the CSS size that produces them and puts it back afterwards. A preset cannot be combined with `clip` or `scale`.
 
 | Preset | Pixels | For |
 |---|---|---|
@@ -172,6 +172,27 @@ A film is encoded only when its recording test passed. A test that failed, timed
 | `social` | 1200 x 630 | a link preview card |
 
 `opdk demo` publishes every still: it copies `<outDir>/stills/<name>.png` to the output folder (`docs/screens` by default) as `<name>.png`, next to the films, and only when the bytes there differ, so a retake of an unchanged picture leaves the file and git alone. A still is as sharp as the fixture's density, not the display's, which is the reason to use it for README and listing pictures instead of `win.screenshot()`. `demo.stills: false` turns this off, `demo.stills: { output: "docs/pictures" }` publishes them to another folder. Names on the command line select stills as well as films ([What `opdk demo` does](#what-opdk-demo-does)). Stills are copied as they are: they go through no size budget and no check.
+
+**A still that feeds another tool, or goes to its own folder.** Two options say where `opdk demo` puts a still. Both are recorded next to the PNG, so a retake with other options replaces what the earlier take asked for, and a still recorded without them behaves as before.
+
+- `publish: false` keeps the PNG in `<outDir>/stills` and does not copy it. Use it for a picture that only another tool reads, for example the screens a plugin's own listing composer lays out into store pictures, or the shots of a UI tour that a person looks through next to `obsidian.checkLayout()` ([docs/e2e.md](e2e.md)). The tool or the person reads `<outDir>/stills/<name>.png`.
+- `out: "listing"` copies the still to the folder that `demo.outputs.listing` names in `opdk.config.mjs`, instead of the default one. Use it for pictures that belong in their own place, such as the screenshots a plugin directory lists.
+
+```ts
+await demo.still("settings", { preset: "listing-desktop", out: "listing" }); // docs/listing/settings.png
+await demo.still("phone-key", { preset: "listing-phone", publish: false }); // stays in .opdk/demo/stills for the composer
+await demo.still("hero", { preset: "readme" });                              // docs/screens/hero.png, as before
+```
+
+```js
+export default defineConfig({
+    demo: {
+        outputs: { listing: "docs/listing" }, // folder names are one path segment; folders are relative to the plugin root
+    },
+});
+```
+
+`out` and `publish: false` together fail, because a still that is not copied has no folder. A still that names a folder missing from `demo.outputs` fails the run for that still and says which folders exist; the other stills are still copied. Everything else holds in the named folder as in the default one: copied only when the bytes differ, a film's file is never overwritten, the file is recorded for the stale-media check. A still that used to be published and now has `publish: false` leaves its old copy in place; the stale-media warning names it. `demo.stills: false` turns every still's publishing off, `out` included.
 
 ### Pixels
 
@@ -273,6 +294,7 @@ The `demo` section of `opdk.config.mjs`. Every key is optional, an unknown key f
 | `outDir` | string | `.opdk/demo` | Where the fixture wrote films. The same default as the fixture's `demo.outDir`; set both when you change it |
 | `output` | string | `docs/screens` | Where finished media go, relative to the plugin root |
 | `stills` | `{ output? }` or boolean | `true`, copied to `output` | Publishes `<outDir>/stills/<name>.png` as `<output>/<name>.png`, when the bytes differ. `false` turns it off, `output` is a separate folder. Top level only: a still belongs to no film |
+| `outputs` | `Record<string, string>` | none | Named folders for stills, relative to the plugin root: `{ listing: "docs/listing" }`. A still recorded with `{ out: "listing" }` is copied there. Names are one path segment. Top level only |
 | `gif` | `{ width?, colors?, fps? }` or `false` | 128 colours, 10 fps at most, width of the frames up to 1000 | `width` 16 to 8000 (not upscaled; a wider value warns), `colors` 2 to 256, `fps` 1 to 50 (used as given). `false` skips the GIF |
 | `mp4` | boolean | `true` | `false` skips the MP4 |
 | `poster` | `{ width? }`, boolean | `true`, the frame's resolution | `false` skips the poster |

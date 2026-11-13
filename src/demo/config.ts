@@ -10,6 +10,7 @@ import type {
     DemoPosterConfig,
     DemoStillsConfig,
 } from "../config/types.js";
+import { assertName } from "../e2e/demo/names.js";
 import { DEFAULT_DEMO_OUT_DIR } from "../e2e/demo/options.js";
 
 export const DEFAULT_OUTPUT_DIR = "docs/screens";
@@ -24,7 +25,7 @@ export const DEFAULT_FAIL_BYTES = 10 * 1024 * 1024;
 const LAYOUTS: readonly DemoLayout[] = ["plain", "phone-captions"];
 const LOOP_MODES: readonly DemoLoopMode[] = ["warn", "fail", "off"];
 const FILM_KEYS = ["gif", "mp4", "poster", "layout", "budget", "loop", "phone"];
-const DEMO_KEYS = [...FILM_KEYS, "outDir", "output", "stills", "films"];
+const DEMO_KEYS = [...FILM_KEYS, "outDir", "output", "stills", "outputs", "films"];
 const GIF_KEYS = ["width", "colors", "fps"];
 const POSTER_KEYS = ["width"];
 const STILLS_KEYS = ["output"];
@@ -41,12 +42,14 @@ export function validateDemoConfig(value: unknown, source: string): DemoConfig {
     const outDir = optionalString(value, "outDir", "demo.outDir", source);
     const output = optionalString(value, "output", "demo.output", source);
     const stills = optionalStills(value, source);
+    const outputs = optionalOutputs(value, source);
     const films = optionalFilms(value, source);
     return {
         ...validateFilmConfig(value, "demo", source),
         ...(outDir !== undefined && { outDir }),
         ...(output !== undefined && { output }),
         ...(stills !== undefined && { stills }),
+        ...(outputs !== undefined && { outputs }),
         ...(films !== undefined && { films }),
     };
 }
@@ -94,6 +97,29 @@ function optionalStills(parent: Record<string, unknown>, source: string): DemoSt
     rejectUnknownKeys(value, STILLS_KEYS, "demo.stills", source);
     const output = optionalString(value, "output", "demo.stills.output", source);
     return output === undefined ? {} : { output };
+}
+
+function optionalOutputs(parent: Record<string, unknown>, source: string): Record<string, string> | undefined {
+    const value = own(parent, "outputs");
+    if (value === undefined) {
+        return undefined;
+    }
+    if (!isRecord(value)) {
+        throw new Error(`${source}: "demo.outputs" must be an object from a folder name to a folder, for example { listing: "docs/listing" }.`);
+    }
+    const outputs: Record<string, string> = {};
+    for (const name of Object.keys(value)) {
+        try {
+            assertName(name, "demo.outputs key");
+        } catch (error) {
+            throw new Error(`${source}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+        }
+        const folder = optionalString(value, name, `demo.outputs[${JSON.stringify(name)}]`, source);
+        if (folder !== undefined) {
+            outputs[name] = folder;
+        }
+    }
+    return outputs;
 }
 
 function optionalGif(parent: Record<string, unknown>, label: string, source: string): DemoGifConfig | false | undefined {
@@ -294,14 +320,17 @@ export function demoFolders(config: DemoConfig): { outDir: string; output: strin
     return { outDir: config.outDir ?? DEFAULT_DEMO_OUT_DIR, output: config.output ?? DEFAULT_OUTPUT_DIR };
 }
 
-/** Whether stills are published and where to, still relative to the plugin root; null when `demo.stills` is `false`. */
-export function stillsSettings(config: DemoConfig): { output: string } | null {
+/**
+ * Whether stills are published and where to, still relative to the plugin root; null when `demo.stills` is `false`.
+ * `outputs` are the named folders of `demo.outputs`, for a still that asks for one.
+ */
+export function stillsSettings(config: DemoConfig): { output: string; outputs: Readonly<Record<string, string>> } | null {
     const { stills } = config;
     if (stills === false) {
         return null;
     }
     const folder = typeof stills === "object" ? stills.output : undefined;
-    return { output: folder ?? config.output ?? DEFAULT_OUTPUT_DIR };
+    return { output: folder ?? config.output ?? DEFAULT_OUTPUT_DIR, outputs: config.outputs ?? {} };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

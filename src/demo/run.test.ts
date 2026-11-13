@@ -648,6 +648,95 @@ describe("stills", () => {
         expect(recorded()).toEqual({ "docs/screens/card.png": "still:card" });
     });
 
+    describe("publish and out", () => {
+        const options = (value: object): void => {
+            const dir = path.join(outDir, ".owners", "still-options");
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(path.join(dir, `${(value as { name: string }).name}.json`), JSON.stringify({ ...value, name: undefined }));
+        };
+        const listing = (...segments: string[]): string => path.join(cwd, "docs", "listing", ...segments);
+
+        it("leaves a publish: false still in the stills folder, copies the others, and says which it kept", async () => {
+            writeStill("hero");
+            writeStill("phone-key");
+            options({ name: "phone-key", publish: false });
+            expect(await run({ deps: noFfmpeg })).toBe(0);
+            expect(media()).toEqual(["hero.png"]);
+            expect(fs.existsSync(path.join(outDir, "stills", "phone-key.png"))).toBe(true);
+            expect(out()).toMatch(/· demo +1 still not published \(publish: false\), left in .*stills: phone-key/);
+            expect(recorded()).toEqual({ "docs/screens/hero.png": "still:hero" });
+        });
+
+        it("copies a still with out to the folder demo.outputs names, and the others to the default one", async () => {
+            writeStill("hero");
+            writeStill("listing-1");
+            options({ name: "listing-1", publish: true, out: "listing" });
+            expect(await run({ config: { outputs: { listing: "docs/listing" } }, deps: noFfmpeg })).toBe(0);
+            expect(media()).toEqual(["hero.png"]);
+            expect(fs.readFileSync(listing("listing-1.png")).equals(fakePng(300, 200))).toBe(true);
+            expect(recorded()).toEqual({ "docs/listing/listing-1.png": "still:listing-1", "docs/screens/hero.png": "still:hero" });
+        });
+
+        it("fails a still whose out is not in demo.outputs, naming the folders there are, and still copies the rest", async () => {
+            writeStill("hero");
+            writeStill("listing-1");
+            options({ name: "listing-1", publish: true, out: "listing" });
+            expect(await run({ config: { outputs: { store: "docs/store" } }, deps: noFfmpeg })).toBe(1);
+            expect(err()).toContain('still "listing-1" asks for the output folder "listing", which demo.outputs does not define');
+            expect(err()).toContain("demo.outputs has: store.");
+            expect(media()).toEqual(["hero.png"]);
+            expect(await run({ deps: noFfmpeg })).toBe(1);
+            expect(err()).toContain("demo.outputs is not set.");
+        });
+
+        it("does not mistake an inherited property for an output folder", async () => {
+            writeStill("odd");
+            options({ name: "odd", publish: true, out: "constructor" });
+            expect(await run({ deps: noFfmpeg })).toBe(1);
+            expect(err()).toContain('asks for the output folder "constructor"');
+        });
+
+        it("reports a copy that an earlier run published as no longer written once the still turns publish: false", async () => {
+            writeStill("hero");
+            expect(await run({ deps: noFfmpeg })).toBe(0);
+            options({ name: "hero", publish: false });
+            ctx.out.length = 0;
+            expect(await run({ deps: noFfmpeg })).toBe(0);
+            expect(out()).toMatch(/no longer written by its film or still.*: docs\/screens\/hero\.png/);
+            expect(fs.existsSync(screens("hero.png"))).toBe(true);
+        });
+
+        it("fails a still whose options file is damaged, and copies the rest", async () => {
+            writeStill("hero");
+            writeStill("broken");
+            const dir = path.join(outDir, ".owners", "still-options");
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(path.join(dir, "broken.json"), "{ nope");
+            expect(await run({ deps: noFfmpeg })).toBe(1);
+            expect(err()).toMatch(/still broken: .*broken\.json is not valid JSON/);
+            expect(media()).toEqual(["hero.png"]);
+        });
+
+        it("ignores outputs when demo.stills is false", async () => {
+            writeStill("listing-1");
+            options({ name: "listing-1", publish: true, out: "listing" });
+            expect(await run({ config: { stills: false, outputs: { listing: "docs/listing" } }, deps: noFfmpeg })).toBe(1);
+            expect(fs.existsSync(listing())).toBe(false);
+        });
+
+        it("refuses a still that would overwrite a film's file in an output folder", async () => {
+            writeFilm(outDir, film({ name: "tour" }));
+            writeStill("tour-poster");
+            options({ name: "tour-poster", publish: true, out: "listing" });
+            // Different folder: no clash.
+            expect(await run({ config: { outputs: { listing: "docs/listing" } }, deps: depsWith(fakeFfmpeg().tool) })).toBe(0);
+            expect(fs.existsSync(listing("tour-poster.png"))).toBe(true);
+            // The same folder: the film's poster is protected.
+            expect(await run({ config: { outputs: { listing: "docs/screens" } }, deps: depsWith(fakeFfmpeg().tool) })).toBe(1);
+            expect(err()).toContain('still "tour-poster" would overwrite the poster of film "tour"');
+        });
+    });
+
     it("uses demo.output, and demo.stills.output when it is set", async () => {
         writeStill("hero");
         expect(await run({ config: { output: "media" }, deps: noFfmpeg })).toBe(0);

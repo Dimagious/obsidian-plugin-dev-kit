@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Reporter } from "../cli/reporter.js";
 import type { DemoConfig } from "../config/types.js";
+import { readStillPublishing, type StillPublishing } from "../e2e/demo/still-options.js";
 import { budgetVerdict, compareFrames, densityWarnings, describeLoopDifference, findStaleOutputs, formatBytes, shortHoldWarning } from "./checks.js";
 import {
     baseFilmName,
@@ -162,7 +163,7 @@ export async function runDemo(options: DemoRunOptions): Promise<number> {
         }
     }
 
-    if (stillsConfig !== null && publishStills({ names: selectedStills, outDir, folder: path.resolve(options.cwd, stillsConfig.output), cwd: options.cwd, written, encoded, reporter, filmFiles: filmOwnedFiles(outDir) })) {
+    if (stillsConfig !== null && publishStills({ names: selectedStills, outDir, folder: path.resolve(options.cwd, stillsConfig.output), outputs: stillsConfig.outputs, cwd: options.cwd, written, encoded, reporter, filmFiles: filmOwnedFiles(outDir) })) {
         failed = true;
     }
 
@@ -190,7 +191,10 @@ function filmOwnedFiles(outDir: string): PublishedRecord {
 function publishStills(params: {
     names: readonly string[];
     outDir: string;
+    /** The folder of a still that names no output. */
     folder: string;
+    /** `demo.outputs`: folder name to folder, relative to the project. */
+    outputs: Readonly<Record<string, string>>;
     cwd: string;
     written: Record<string, string>;
     encoded: Set<string>;
@@ -199,11 +203,35 @@ function publishStills(params: {
     filmFiles: PublishedRecord;
 }): boolean {
     const unchanged: string[] = [];
+    const kept: string[] = [];
     let failed = false;
     for (const name of params.names) {
+        let publishing: StillPublishing;
+        try {
+            publishing = readStillPublishing(params.outDir, name);
+        } catch (error) {
+            failed = true;
+            params.reporter.failure(STEP, `still ${name}: ${error instanceof Error ? error.message : String(error)}`);
+            continue;
+        }
+        if (!publishing.publish) {
+            // Handled without a failure, so a copy an earlier run published is reported as no longer written.
+            kept.push(name);
+            params.encoded.add(stillKey(name));
+            continue;
+        }
+        const folder = publishing.out === undefined ? params.folder : outputFolder(params.outputs, publishing.out, params.cwd);
+        if (folder === undefined) {
+            failed = true;
+            const known = Object.keys(params.outputs);
+            params.reporter.failure(STEP, `still "${name}" asks for the output folder "${String(publishing.out)}", which demo.outputs does not define`, {
+                hint: `${known.length > 0 ? `demo.outputs has: ${known.join(", ")}. ` : "demo.outputs is not set. "}Add ${String(publishing.out)}: "<folder>" to the demo section of opdk.config.mjs, or change out in demo.still("${name}", ...).`,
+            });
+            continue;
+        }
         // A still must not replace a film's file, written in this run or recorded by an earlier one (a still named
         // `<film>-poster` would take the poster).
-        const destination = projectPath(params.cwd, path.join(params.folder, `${name}.png`));
+        const destination = projectPath(params.cwd, path.join(folder, `${name}.png`));
         const owner = params.written[destination] ?? params.filmFiles[destination];
         if (owner !== undefined) {
             failed = true;
@@ -214,7 +242,7 @@ function publishStills(params: {
             continue;
         }
         try {
-            const still = publishStill(params.outDir, name, params.folder);
+            const still = publishStill(params.outDir, name, folder);
             params.written[projectPath(params.cwd, still.file)] = stillKey(name);
             params.encoded.add(stillKey(name));
             if (still.copied) {
@@ -225,14 +253,22 @@ function publishStills(params: {
         } catch (error) {
             failed = true;
             params.reporter.failure(STEP, `still ${name}: ${error instanceof Error ? error.message : String(error)}`, {
-                hint: `Check that ${path.join(params.outDir, "stills", `${name}.png`)} can be read and ${params.folder} can be written, or run the spec again.`,
+                hint: `Check that ${path.join(params.outDir, "stills", `${name}.png`)} can be read and ${folder} can be written, or run the spec again.`,
             });
         }
     }
     if (unchanged.length > 0) {
         params.reporter.info(STEP, `${String(unchanged.length)} ${unchanged.length === 1 ? "still" : "stills"} unchanged: ${unchanged.join(", ")}`);
     }
+    if (kept.length > 0) {
+        params.reporter.info(STEP, `${String(kept.length)} ${kept.length === 1 ? "still" : "stills"} not published (publish: false), left in ${path.join(params.outDir, "stills")}: ${kept.join(", ")}`);
+    }
     return failed;
+}
+
+/** The absolute folder of a named output, or undefined when `demo.outputs` has no such name. */
+function outputFolder(outputs: Readonly<Record<string, string>>, name: string, cwd: string): string | undefined {
+    return Object.hasOwn(outputs, name) ? path.resolve(cwd, outputs[name] ?? "") : undefined;
 }
 
 /** The record's key for a file: relative to the project, with `/` on every platform. */

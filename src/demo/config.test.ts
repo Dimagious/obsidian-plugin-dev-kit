@@ -44,7 +44,7 @@ describe("validateDemoConfig", () => {
     });
 
     it.each([
-        [{ nope: 1 }, /unknown key\(s\) in "demo": nope\. Allowed keys: gif, mp4, poster, layout, budget, loop, phone, outDir, output, stills, films\./],
+        [{ nope: 1 }, /unknown key\(s\) in "demo": nope\. Allowed keys: gif, mp4, poster, layout, budget, loop, phone, outDir, output, stills, outputs, films\./],
         [[], /"demo" must be an object/],
         [{ outDir: "" }, /"demo.outDir" must be a non-empty string/],
         [{ output: 3 }, /"demo.output" must be a non-empty string/],
@@ -115,17 +115,40 @@ describe("demo.stills", () => {
     });
 });
 
+describe("demo.outputs", () => {
+    it("accepts named folders", () => {
+        expect(validateDemoConfig({ outputs: { listing: "docs/listing", "store_1.x": "store" } }, SRC).outputs).toEqual({ listing: "docs/listing", "store_1.x": "store" });
+        expect(validateDemoConfig({ outputs: {} }, SRC).outputs).toEqual({});
+    });
+
+    it("rejects what is not an object, an unusable name and an empty or non-string folder, naming the key", () => {
+        expect(() => validateDemoConfig({ outputs: "docs" }, SRC)).toThrow('"demo.outputs" must be an object from a folder name to a folder');
+        expect(() => validateDemoConfig({ outputs: ["docs"] }, SRC)).toThrow('"demo.outputs" must be an object');
+        expect(() => validateDemoConfig({ outputs: { "../x": "docs" } }, SRC)).toThrow(/demo\.outputs key name "\.\.\/x" is not usable/);
+        expect(() => validateDemoConfig({ outputs: { listing: "" } }, SRC)).toThrow('"demo.outputs["listing"]" must be a non-empty string.');
+        expect(() => validateDemoConfig({ outputs: { listing: 3 } }, SRC)).toThrow('"demo.outputs["listing"]" must be a non-empty string.');
+    });
+
+    it("is not a film key", () => {
+        expect(() => validateDemoConfig({ films: { tour: { outputs: {} } } }, SRC)).toThrow(/unknown key\(s\).*outputs/);
+    });
+});
+
 describe("stillsSettings", () => {
     it("is on by default and publishes next to the films", () => {
-        expect(stillsSettings({})).toEqual({ output: "docs/screens" });
-        expect(stillsSettings({ stills: true })).toEqual({ output: "docs/screens" });
-        expect(stillsSettings({ output: "media" })).toEqual({ output: "media" });
-        expect(stillsSettings({ output: "media", stills: {} })).toEqual({ output: "media" });
+        expect(stillsSettings({})).toEqual({ output: "docs/screens", outputs: {} });
+        expect(stillsSettings({ stills: true })).toEqual({ output: "docs/screens", outputs: {} });
+        expect(stillsSettings({ output: "media" })).toEqual({ output: "media", outputs: {} });
+        expect(stillsSettings({ output: "media", stills: {} })).toEqual({ output: "media", outputs: {} });
     });
 
     it("takes its own folder when given, and is off for false", () => {
-        expect(stillsSettings({ output: "media", stills: { output: "docs/pictures" } })).toEqual({ output: "docs/pictures" });
+        expect(stillsSettings({ output: "media", stills: { output: "docs/pictures" } })).toEqual({ output: "docs/pictures", outputs: {} });
         expect(stillsSettings({ stills: false })).toBeNull();
+    });
+
+    it("passes the named output folders on", () => {
+        expect(stillsSettings({ outputs: { listing: "docs/listing" } })).toEqual({ output: "docs/screens", outputs: { listing: "docs/listing" } });
     });
 });
 

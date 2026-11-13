@@ -93,6 +93,16 @@ export interface StillOptions extends CaptureOptions {
      * film or still decides for itself.
      */
     readonly cursor?: boolean;
+    /**
+     * Whether `opdk demo` copies this still to the output folder. Default true. `false` keeps the PNG in
+     * `<outDir>/stills` only, for a still that feeds another tool (a listing composer) and is not a picture to publish.
+     */
+    readonly publish?: boolean;
+    /**
+     * The name of an output folder in `demo.outputs` of `opdk.config.mjs` (`{ listing: "docs/listing" }`): `opdk demo`
+     * copies this still there instead of the default folder. Cannot be combined with `publish: false`.
+     */
+    readonly out?: string;
 }
 
 export interface StillResult {

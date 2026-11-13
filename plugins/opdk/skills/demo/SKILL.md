@@ -28,7 +28,7 @@ Safety: specs run in a temp copy of the seed vault. When you run anything that w
 ## Destinations and sizes
 
 - README GIF: GitHub shows a README at about 1000 px, and 900 is the kit's own choice, under 2 MB (`gif: { width: 900 }`; the default is the frame width up to 1000 px, 128 colours, 10 fps at most). The size check warns above 2 MB and fails above 10 MB.
-- Stills for other places (`demo.still(name, { preset })`): `readme` 1000 x 640, `listing-desktop` 1200 x 800, `listing-phone` 900 x 1600, `social` 1200 x 630. `opdk demo` copies every `<outDir>/stills/<name>.png` to the output folder as `<name>.png`, only when the bytes changed (`demo.stills: false` turns it off, `demo.stills: { output }` picks a folder); `opdk demo hero` selects the still `hero` as well as a film of that name.
+- Stills for other places (`demo.still(name, { preset })`): `readme` 1000 x 640, `listing-desktop` 1200 x 800, `listing-phone` 900 x 1600, `social` 1200 x 630. `opdk demo` copies every `<outDir>/stills/<name>.png` to the output folder as `<name>.png`, only when the bytes changed (`demo.stills: false` turns it off, `demo.stills: { output }` picks a folder); `opdk demo hero` selects the still `hero` as well as a film of that name. A still that only feeds another tool (a listing composer) is `demo.still(name, { publish: false })`: it stays in `<outDir>/stills` and is not copied. A still for its own folder (directory listing pictures) is `demo.still(name, { out: "listing" })` with `demo.outputs: { listing: "docs/listing" }` in `opdk.config.mjs`; do not copy them with a plugin script. `out` with `publish: false` fails, and an `out` missing from `demo.outputs` fails that still and lists the folders there are.
 - Frames are shot at scale 2 (a 1200 x 800 window gives 2400 x 1600, a phone gives 780 x 1688). The MP4 and poster keep the frame size, the GIF is smaller.
 
 ## The recording API
@@ -64,7 +64,7 @@ test("tour: open a note, type, run a command", async ({ obsidian, demo, win }) =
 
 ## Encode
 
-`opdk.config.mjs`, `demo` section (all optional): `outDir` (`.opdk/demo`), `output` (`docs/screens`), `gif`, `mp4`, `poster`, `stills` (`true`, `false` or `{ output }`), `layout` (`"plain"` or `"phone-captions"`), `budget`, `loop`, `phone`, and `films.<name>` with the same film keys. Then:
+`opdk.config.mjs`, `demo` section (all optional): `outDir` (`.opdk/demo`), `output` (`docs/screens`), `gif`, `mp4`, `poster`, `stills` (`true`, `false` or `{ output }`), `outputs` (`{ listing: "docs/listing" }`, named folders for stills with `out`), `layout` (`"plain"` or `"phone-captions"`), `budget`, `loop`, `phone`, and `films.<name>` with the same film keys. Then:
 
 ```bash
 OPDK_E2E_FILM=1 npx playwright test film   # records

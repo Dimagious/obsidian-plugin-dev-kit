@@ -149,6 +149,12 @@ export interface DemoConfig extends DemoFilmConfig {
     readonly output?: string;
     /** `false` leaves the stills in `outDir`, an object publishes them to its own folder. Default on: every `<outDir>/stills/<name>.png` is copied to `output` as `<name>.png`, when its bytes changed. */
     readonly stills?: DemoStillsConfig | boolean;
+    /**
+     * Named output folders for stills, relative to the plugin root: `{ listing: "docs/listing" }`. A still recorded
+     * with `demo.still(name, { out: "listing" })` is copied there instead of the default folder. A still that names a
+     * folder missing here fails the run. Not used with `stills: false`.
+     */
+    readonly outputs?: Readonly<Record<string, string>>;
     /** Overrides by film name. A theme pair (`x-light`, `x-dark`) also reads the entry `x`; the exact name wins. */
     readonly films?: Readonly<Record<string, DemoFilmConfig>>;
 }
