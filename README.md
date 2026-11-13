@@ -2,7 +2,7 @@
 
 Build, lint, release, test and film [Obsidian](https://obsidian.md/) plugins from one dev dependency.
 
-> **Status: 0.1.0 is released and installs by git tag (see [Install](#install)).** The code was moved here from three plugins that each kept their own copy: [Snipsy](https://github.com/Dimagious/snipsidian), [Dashy](https://github.com/Dimagious/dashsidian) and [Garmy](https://github.com/Dimagious/garmidian). The roadmap below shows what is done and what is planned.
+> **Status: released. It installs by git tag (see [Install](#install)); the newest `vX.Y.Z` tag is the current release.** The code was moved here from three plugins that each kept their own copy: [Snipsy](https://github.com/Dimagious/snipsidian), [Dashy](https://github.com/Dimagious/dashsidian) and [Garmy](https://github.com/Dimagious/garmidian). The roadmap below shows what is done and what is planned.
 
 ## Why
 
