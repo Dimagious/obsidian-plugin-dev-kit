@@ -11,6 +11,17 @@ describe("parseKitSpec", () => {
         expect(parseKitSpec("git+https://github.com/me/obsidian-plugin-dev-kit.git#main")).toEqual({ owner: "me", ref: "main" });
     });
 
+    it("rejects an owner GitHub would not allow: a path, a leading hyphen, a dot, more than 39 characters", () => {
+        for (const owner of ["..", "../x", "-x", "a.b", "a/b", "x".repeat(40)]) {
+            expect(parseKitSpec(`github:${owner}/obsidian-plugin-dev-kit#v0.1.0`), owner).toBeUndefined();
+            expect(parseKitSpec(`git+https://github.com/${owner}/obsidian-plugin-dev-kit.git#v0.1.0`), owner).toBeUndefined();
+            const uses = `jobs:\n  kit:\n    uses: ${owner}/obsidian-plugin-dev-kit/.github/workflows/ci.yml@${OLD_SHA}\n`;
+            expect(readUsesPins([{ file: "w.yml", text: uses }]), owner).toEqual([]);
+        }
+        expect(parseKitSpec(`github:${"x".repeat(39)}/obsidian-plugin-dev-kit#v0.1.0`)?.owner).toBe("x".repeat(39));
+        expect(parseKitSpec("github:a-b9/obsidian-plugin-dev-kit#v0.1.0")?.owner).toBe("a-b9");
+    });
+
     it("rejects other packages, folders and a spec without a ref", () => {
         for (const spec of ["file:../kit", "^0.1.0", "github:Dimagious/other-repo#v1.0.0", "github:Dimagious/obsidian-plugin-dev-kit", "https://example.com/Dimagious/obsidian-plugin-dev-kit#v1"]) {
             expect(parseKitSpec(spec), spec).toBeUndefined();
@@ -141,7 +152,7 @@ describe("rewritePackageJson", () => {
 describe("rewriteWorkflow", () => {
     it("sets the commit and the tag comment, and leaves other actions alone", () => {
         const before = workflowText("plugin-ci.yml", OLD_SHA, "v0.1.0");
-        const { text, changes } = rewriteWorkflow(before, NEW_SHA, "v0.2.0");
+        const { text, changes } = rewriteWorkflow(before, NEW_SHA, "v0.2.0", "Dimagious");
         expect(text).toBe(before.replace(OLD_SHA, NEW_SHA).replace("# v0.1.0\n  other", "# v0.2.0\n  other"));
         expect(changes).toHaveLength(1);
         expect(changes[0]).toMatchObject({ line: 6 });
@@ -149,23 +160,39 @@ describe("rewriteWorkflow", () => {
     });
 
     it("adds a comment where there is none, keeps the rest of a version comment, and leaves another comment alone", () => {
-        expect(rewriteWorkflow(workflowText("release.yml", OLD_SHA, undefined), NEW_SHA, "v0.2.0").text).toContain(`release.yml@${NEW_SHA} # v0.2.0\n`);
-        expect(rewriteWorkflow(workflowText("release.yml", OLD_SHA, "0.1.0 (pinned)"), NEW_SHA, "v0.2.0").text).toContain(`@${NEW_SHA} # v0.2.0 (pinned)\n`);
-        expect(rewriteWorkflow(workflowText("release.yml", OLD_SHA, "keep me"), NEW_SHA, "v0.2.0").text).toContain(`@${NEW_SHA} # keep me\n`);
+        expect(rewriteWorkflow(workflowText("release.yml", OLD_SHA, undefined), NEW_SHA, "v0.2.0", "Dimagious").text).toContain(`release.yml@${NEW_SHA} # v0.2.0\n`);
+        expect(rewriteWorkflow(workflowText("release.yml", OLD_SHA, "0.1.0 (pinned)"), NEW_SHA, "v0.2.0", "Dimagious").text).toContain(`@${NEW_SHA} # v0.2.0 (pinned)\n`);
+        expect(rewriteWorkflow(workflowText("release.yml", OLD_SHA, "keep me"), NEW_SHA, "v0.2.0", "Dimagious").text).toContain(`@${NEW_SHA} # keep me\n`);
     });
 
     it("leaves a line at the commit alone when it has no comment", () => {
         const bare = workflowText("plugin-ci.yml", NEW_SHA, undefined);
-        expect(rewriteWorkflow(bare, NEW_SHA, "v0.2.0")).toEqual({ text: bare, changes: [] });
+        expect(rewriteWorkflow(bare, NEW_SHA, "v0.2.0", "Dimagious")).toEqual({ text: bare, changes: [] });
         const stale = workflowText("plugin-ci.yml", NEW_SHA, "v0.1.0");
-        expect(rewriteWorkflow(stale, NEW_SHA, "v0.2.0").changes).toHaveLength(1);
+        expect(rewriteWorkflow(stale, NEW_SHA, "v0.2.0", "Dimagious").changes).toHaveLength(1);
     });
 
     it("reports nothing for a line that is already right, and keeps CRLF", () => {
         const right = workflowText("plugin-ci.yml", NEW_SHA, "v0.2.0");
-        expect(rewriteWorkflow(right, NEW_SHA, "v0.2.0")).toEqual({ text: right, changes: [] });
+        expect(rewriteWorkflow(right, NEW_SHA, "v0.2.0", "Dimagious")).toEqual({ text: right, changes: [] });
         const crlf = workflowText("plugin-ci.yml", OLD_SHA, "v0.1.0").replace(/\n/g, "\r\n");
-        const rewritten = rewriteWorkflow(crlf, NEW_SHA, "v0.2.0").text;
+        const rewritten = rewriteWorkflow(crlf, NEW_SHA, "v0.2.0", "Dimagious").text;
         expect(rewritten).toBe(crlf.replace(OLD_SHA, NEW_SHA).replace("# v0.1.0", "# v0.2.0"));
+    });
+
+    it("leaves other owners' lines and other repositories' workflows alone", () => {
+        const text = [
+            "jobs:",
+            `  mine:\n    uses: Dimagious/obsidian-plugin-dev-kit/.github/workflows/plugin-ci.yml@${OLD_SHA} # v0.1.0`,
+            `  fork:\n    uses: someone-else/obsidian-plugin-dev-kit/.github/workflows/plugin-ci.yml@${OLD_SHA} # v0.1.0`,
+            `  shared:\n    uses: some-org/shared-ci/.github/workflows/x.yml@${OLD_SHA} # v1.2.3`,
+            "",
+        ].join("\n");
+        const { text: after, changes } = rewriteWorkflow(text, NEW_SHA, "v0.2.0", "dimagious");
+        expect(changes.map((change) => change.line)).toEqual([3]);
+        expect(after).toContain(`Dimagious/obsidian-plugin-dev-kit/.github/workflows/plugin-ci.yml@${NEW_SHA} # v0.2.0`);
+        expect(after).toContain(`someone-else/obsidian-plugin-dev-kit/.github/workflows/plugin-ci.yml@${OLD_SHA} # v0.1.0`);
+        expect(after).toContain(`some-org/shared-ci/.github/workflows/x.yml@${OLD_SHA} # v1.2.3`);
+        expect(readUsesPins([{ file: "w.yml", text }]).map((pin) => pin.owner)).toEqual(["Dimagious", "someone-else"]);
     });
 });

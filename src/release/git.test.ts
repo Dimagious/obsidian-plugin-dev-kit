@@ -202,6 +202,18 @@ describe("createRunGit ssh", () => {
         expect(readFileSync(fake.log, "utf8")).toContain("-o BatchMode=yes");
     });
 
+    it("stops a git ls-remote that gets no answer, and says how long it waited", async () => {
+        const current = createReleaseRepo();
+        repo = current;
+        const dir = path.dirname(current.dir);
+        const hang = path.join(dir, "hang-ssh");
+        writeFileSync(hang, "#!/bin/sh\nexec sleep 5\n");
+        chmodSync(hang, 0o755);
+        current.git("remote", "set-url", "origin", "ssh://git@example.invalid/plugin.git");
+        const run = createRunGit(current.dir, { ...hermeticGitEnv(), GIT_SSH_COMMAND: hang }, 300);
+        await expect(run(["ls-remote", "--tags", "origin"])).rejects.toThrow("git ls-remote --tags origin did not answer in 0.3 seconds and was stopped.");
+    });
+
     it("keeps the core.sshCommand of the user", async () => {
         const current = createReleaseRepo();
         repo = current;

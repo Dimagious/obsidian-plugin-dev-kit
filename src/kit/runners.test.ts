@@ -44,6 +44,12 @@ describe("createRunNpm", () => {
         await expect(run(["run", "no-such-script"])).rejects.toThrow(/npm run no-such-script failed:.*no-such-script/s);
     });
 
+    it("stops npm that runs past the timeout and says so", async () => {
+        const dir = tempPlugin();
+        writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "fixture", version: "1.0.0", scripts: { slow: "node -e setTimeout(()=>{},3000)" } }));
+        await expect(createRunNpm(dir, "npm", 300)(["run", "slow"])).rejects.toThrow("npm run slow did not finish in 0.3 seconds and was stopped.");
+    });
+
     it("says npm is missing when it cannot start", async () => {
         await expect(createRunNpm(tempPlugin(), "opdk-no-such-npm")(["install"])).rejects.toThrow("opdk-no-such-npm is not installed or not on PATH.");
     });
@@ -53,5 +59,17 @@ describe("fetchText", () => {
     it("returns the body, and rejects on an error status", async () => {
         expect(await fetchText(await serve(200, "# Changelog\n"))).toBe("# Changelog\n");
         await expect(fetchText(await serve(404, "no"))).rejects.toThrow(/answered 404/);
+    });
+
+    it("cuts a body longer than the limit and says so, and leaves one at the limit whole", async () => {
+        const url = await serve(200, `${"a".repeat(100)}${"b".repeat(900)}`);
+        const cut = await fetchText(url, 100);
+        expect(cut.split("\n")[0]).toBe("a".repeat(100));
+        expect(cut).toContain("is longer than 100 bytes; the rest was not read");
+        expect(await fetchText(url, 1000)).toBe(`${"a".repeat(100)}${"b".repeat(900)}`);
+    });
+
+    it("returns an empty body as empty text", async () => {
+        expect(await fetchText(await serve(200, ""))).toBe("");
     });
 });

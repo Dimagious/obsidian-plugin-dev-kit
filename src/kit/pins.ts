@@ -5,11 +5,14 @@ export const KIT_PACKAGE = "obsidian-plugin-dev-kit";
 
 const FULL_SHA = /^[0-9a-f]{40}$/;
 
+/** A GitHub user or organization name: letters, digits and hyphens, no leading hyphen, 39 characters at most. No dots, so `..` is not an owner. */
+const OWNER = "([A-Za-z0-9][A-Za-z0-9-]{0,38})";
+
 /** `github:owner/obsidian-plugin-dev-kit#ref`, and the forms npm writes into a lockfile (`git+ssh://git@github.com/...#sha`). */
-const KIT_SPEC = /^(?:github:|(?:git\+)?(?:ssh:\/\/git@|https:\/\/)github\.com\/)([\w.-]+)\/obsidian-plugin-dev-kit(?:\.git)?#(\S+)$/;
+const KIT_SPEC = new RegExp(`^(?:github:|(?:git\\+)?(?:ssh://git@|https://)github\\.com/)${OWNER}/obsidian-plugin-dev-kit(?:\\.git)?#(\\S+)$`);
 
 /** `uses: owner/obsidian-plugin-dev-kit/.github/workflows/file.yml@ref # comment`, with an optional list dash. */
-const USES_LINE = /^(\s*(?:-\s+)?uses:\s+)([\w.-]+)\/obsidian-plugin-dev-kit\/(\.github\/workflows\/[^\s@#]+)@([^\s#]+)(?:(\s+#\s*)(.*?))?\s*$/;
+const USES_LINE = new RegExp(`^(\\s*(?:-\\s+)?uses:\\s+)${OWNER}/obsidian-plugin-dev-kit/(\\.github/workflows/[^\\s@#]+)@([^\\s#]+)(?:(\\s+#\\s*)(.*?))?\\s*$`);
 
 /** A release tag in a workflow comment: `v0.1.0` or `0.1.0`, followed by nothing or by more text. */
 const COMMENT_TAG = /^(v?\d+\.\d+\.\d+)(?![\w.])/;
@@ -218,11 +221,12 @@ export function rewritePackageJson(text: string, tag: string): Rewritten {
 }
 
 /**
- * Points every `uses: <owner>/obsidian-plugin-dev-kit/.github/workflows/<file>@...` line at `sha`. A comment that
+ * Points every `uses: <owner>/obsidian-plugin-dev-kit/.github/workflows/<file>@...` line of that owner (the one in
+ * package.json; GitHub names are case-insensitive) at `sha`. A comment that
  * starts with a version gets the new tag; no comment gets `# <tag>` (unless the line is at `sha` already); any other
  * comment stays as written.
  */
-export function rewriteWorkflow(text: string, sha: string, tag: string): Rewritten {
+export function rewriteWorkflow(text: string, sha: string, tag: string, wantedOwner: string): Rewritten {
     const changes: TextChange[] = [];
     const lines = text.split("\n").map((raw, index) => {
         const cr = raw.endsWith("\r") ? "\r" : "";
@@ -231,7 +235,7 @@ export function rewriteWorkflow(text: string, sha: string, tag: string): Rewritt
         const prefix = match?.[1];
         const owner = match?.[2];
         const workflow = match?.[3];
-        if (prefix === undefined || owner === undefined || workflow === undefined) {
+        if (prefix === undefined || owner === undefined || workflow === undefined || owner.toLowerCase() !== wantedOwner.toLowerCase()) {
             return raw;
         }
         const comment = match?.[6];
