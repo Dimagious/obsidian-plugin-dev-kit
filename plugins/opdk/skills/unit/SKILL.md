@@ -10,7 +10,7 @@ description: Set up, extend or fix the Vitest unit tests of an Obsidian plugin t
 ## Safety
 
 - Unit tests never start Obsidian. Do not launch the Obsidian app to check a helper; its behaviour is in `docs/unit.md`, and reading it from `app.asar` is the only way to verify more.
-- `obsidian-plugin-dev-kit/vitest/dom` ports the app helpers a plugin meets: the create family (`createEl`, `createDiv`, `createSpan`, `createSvg`, `createFragment`), `setText`, class and attribute helpers, `detach`, `insertAfter`, `indexOf`, `setChildrenInPlace`, `matchParent`, `toggleVisibility`, delegated `on`/`off`, `trigger`, `fish`/`fishAll`, `sleep`, `nextFrame`. Not ported: the `Array`/`String`/`Math` extensions, `ajax`, `onNodeInserted`; `docs/unit.md` has the full list, so check it before writing a hand polyfill.
+- `obsidian-plugin-dev-kit/vitest/dom` ports the app helpers a plugin meets: the create family (`createEl`, `createDiv`, `createSpan`, `createSvg`, `createFragment`), `setText`, class and attribute helpers, `detach`, `insertAfter`, `indexOf`, `setChildrenInPlace`, `matchParent`, `toggleVisibility`, delegated `on`/`off`, `trigger`, `fish`/`fishAll`, `sleep`, `nextFrame`. Check `docs/unit.md` before writing a hand polyfill: it lists what is not ported and how a test stubs the missing browser APIs.
 - Do not lower a threshold to make a run pass. `thresholds` below the default throw unless `allowLowerThresholds: true`; set that only when the owner decided so.
 - Do not move a file to `coverage.exclude` to hide a gap without a comment saying why; the gate is a floor, and an excluded file escapes it.
 

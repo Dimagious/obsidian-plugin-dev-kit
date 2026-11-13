@@ -169,12 +169,21 @@ The behaviour of each helper was read from the shipped Obsidian app (1.14.5, the
 
 An existing `show`, `hide`, `toggle`, `toggleVisibility`, `activeWindow` or `activeDocument` is left alone.
 
-Not installed: the app's `Array`, `String`, `Number`, `Math` and `Object` extensions (`first`, `last`, `contains`, `unique`, `clamp`, ...), `ajax` and `ajaxPromise`, `onNodeInserted` and `onWindowMigrated` (they wait for a CSS animation event, which jsdom never fires). `innerWidth` and `innerHeight` are `scrollWidth` minus padding, and jsdom reports a scroll size of 0, so expect 0 minus the padding. Delegated listeners are kept in a `WeakMap` where the app uses an `_EVENTS` property on the element.
+Not installed:
 
-Two deviations from the app, both forced by jsdom:
+- The app's extensions to `Array`, `String`, `Number`, `Math` and `Object` (`first`, `last`, `contains`, `unique`, `clamp`, ...), and the globals `isBoolean` and `globalEnhance`.
+- `ajax` and `ajaxPromise`.
+- `onNodeInserted` and `onWindowMigrated`: they wait for a CSS animation event, which jsdom never fires.
+- The app's `ResizeObserver` stub (empty `observe`, `unobserve` and `disconnect`) and its `matchMedia` wrapper (adds `addEventListener` to a query object that lacks it). jsdom has neither `ResizeObserver` nor `matchMedia`, so code that calls them fails with a `ReferenceError` or `TypeError`. A test stubs them itself, for example `vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} })` and `window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} })`.
+- The app's stubs for `TouchEvent`, `prepend` and `Object.hasOwn`: jsdom already has all three, so there is nothing to add.
+
+`innerWidth` and `innerHeight` are installed with the app's formula, `scrollWidth` (`scrollHeight`) minus padding. jsdom has no layout and reports a scroll size of 0, so they are 0 minus the padding unless a test defines `scrollWidth` or `scrollHeight` on the element.
+
+Three deviations from the app, two forced by jsdom and one a design choice:
 
 - **`isShown`** is true for an element that is in the document with no inline `display: none` on itself or an ancestor. The app returns `!!offsetParent`, which jsdom, having no layout, always reports as `null`.
 - **`scrollIntoView`** is added as a no-op when jsdom lacks it. The app has no such helper; browsers do, and code that scrolls an element into view fails without it.
+- **Delegated `on` and `off`** keep their listeners in a `WeakMap` keyed by the element, where the app uses an `_EVENTS` property on the element. The behaviour is the same; the kit does not add a property to the element.
 
 The helpers call each other through the public methods, as the app does: `createDiv` and `createSpan` go through `this.createEl`, the global `createDiv` through the global `createEl`, `addClass` through `addClasses`, `removeClass` through `removeClasses` and `toggle` through `show` and `hide`. A test that spies on `createEl` therefore sees the calls of `createDiv`. Like the app, `createEl` on a node writes `parent` into the info object it was given; the global `createEl` does not mutate it.
 
