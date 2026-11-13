@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createContext } from "../test-support/plugin-fixture.js";
 import { createReleaseRepo, type ReleaseRepo } from "../test-support/release-fixture.js";
@@ -60,6 +62,38 @@ describe("opdk release", () => {
         expect(await releaseCommand.run(["patch", "--dry-run", "--no-build", "--no-api"], ctx)).toBe(0);
         expect(ctx.out.join("")).toContain('+  "version": "1.0.1"');
         expect(repo.git("status", "--porcelain")).toBe("");
+    });
+
+    it("runs the plugin's npm test before the bump, and --no-test turns it off", async () => {
+        const current = createReleaseRepo();
+        repo = current;
+        const marker = path.join(path.dirname(current.dir), "npm-test-ran");
+        const writePackage = (test: string): void => {
+            current.write("package.json", `${JSON.stringify({ name: "fixture-release", version: "1.0.0", private: true, scripts: { build: "opdk build", test } }, null, 2)}\n`);
+            current.commitAll("test script");
+        };
+        writePackage(`node -e "require('fs').writeFileSync(process.argv[1], 'x')" ${JSON.stringify(marker)}`);
+
+        const skipped = createContext(current.dir);
+        expect(await releaseCommand.run(["patch", "--dry-run", "--no-test", "--no-build", "--no-api"], skipped)).toBe(0);
+        expect(existsSync(marker)).toBe(false);
+        expect(skipped.out.join("")).not.toContain("npm test");
+
+        const ran = createContext(current.dir);
+        expect(await releaseCommand.run(["patch", "--dry-run", "--no-build", "--no-api"], ran)).toBe(0);
+        expect(existsSync(marker)).toBe(true);
+        expect(ran.out.join("")).toContain("✓ test    npm test passed");
+    });
+
+    it("stops the release with nothing changed when npm test fails", async () => {
+        const current = createReleaseRepo();
+        repo = current;
+        current.write("package.json", `${JSON.stringify({ name: "fixture-release", version: "1.0.0", private: true, scripts: { build: "opdk build", test: 'node -e "process.exit(1)"' } }, null, 2)}\n`);
+        current.commitAll("failing test script");
+        const ctx = createContext(current.dir);
+        expect(await releaseCommand.run(["patch", "--dry-run", "--no-build", "--no-api"], ctx)).toBe(1);
+        expect(ctx.err.join("")).toContain("npm test failed (exit 1). Nothing was changed.");
+        expect(current.git("status", "--porcelain")).toBe("");
     });
 
     it("hands the CLI's Ctrl+C hook to the check and to the bump, and removes the listener afterwards", async () => {
