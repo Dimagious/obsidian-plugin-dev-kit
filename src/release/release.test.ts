@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { registerTempDir } from "../test-support/temp-registry.js";
 import { testTmpRoot } from "../test-support/test-tmp.js";
 import type { RunGit } from "./git.js";
 import { createContext } from "../test-support/plugin-fixture.js";
@@ -431,6 +432,7 @@ describe("Ctrl+C during the release check", () => {
     /** Presses Ctrl+C when the check asks git to archive the committed tree: the first build is done, its folders exist. */
     function interruptAtArchive(current: ReleaseRepo): Interrupted {
         const tmp = mkdtempSync(path.join(testTmpRoot(), "opdk-release-sigint-"));
+        registerTempDir(tmp);
         mkdirSync(path.join(tmp, "unused"));
         vi.stubEnv("TMPDIR", tmp);
         const listeners: (() => void)[] = [];

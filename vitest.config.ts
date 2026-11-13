@@ -4,8 +4,10 @@ export default defineConfig({
     test: {
         environment: "node",
         include: ["src/**/*.test.ts"],
-        // Fails the run when a test leaves an opdk-e2e-* folder in the temp directory.
+        // Gives the run its own temp folder (TMPDIR too) and fails the run when a test leaves anything in it.
         globalSetup: ["src/test-support/leftovers-global-setup.ts"],
+        // Removes the temp folders a test's helpers made and the test did not remove.
+        setupFiles: ["src/test-support/temp-registry-setup.ts"],
         coverage: {
             provider: "v8",
             include: ["src/**/*.ts"],

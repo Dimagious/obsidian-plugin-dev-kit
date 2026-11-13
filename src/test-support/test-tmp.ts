@@ -1,8 +1,8 @@
 import { TEST_TMP_ENV } from "./leftovers-global-setup.js";
 
 /**
- * The temp root of this vitest run (created by the global setup). Tests that create `opdk-e2e-*` folders put them
- * here, so the global setup can tell this run's leftovers from anyone else's.
+ * The temp root of this vitest run (created by the global setup). It is also `os.tmpdir()` in the workers, so every
+ * temp file or folder of the run lands here and the global setup can tell this run's leftovers from anyone else's.
  */
 export function testTmpRoot(env: Readonly<Record<string, string | undefined>> = process.env): string {
     const root = env[TEST_TMP_ENV];
