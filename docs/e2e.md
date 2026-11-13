@@ -31,12 +31,16 @@ The kit fixes each of these once: the trust flag is set before the vault loads, 
 `vault.write` is plain file system access. Obsidian's index (`app.vault.getFileByPath`, the metadata cache, the file explorer) learns of the new file only when its file watcher fires, a moment later. A spec that writes a file and then acts through the index, for example by opening it from the palette or clicking a link to it, races the watcher. Poll for the file first:
 
 ```ts
+import type { App } from "obsidian";
+
 vault.write("notes/new.md", "# New\n");
-// The callback runs in the page, where `app` is Obsidian's (not the Electron fixture).
-await win.waitForFunction((p) => app.vault.getFileByPath(p) !== null, "notes/new.md");
+// obsidian.evaluate runs in the page and passes Obsidian's `app`; the `app` fixture is the Electron app.
+await expect
+    .poll(() => obsidian.evaluate((app: App, p: string) => app.vault.getFileByPath(p) !== null, "notes/new.md"))
+    .toBe(true);
 ```
 
-Where the spec needs the links or tags of the file, `obsidian.waitForMetadataCache()` waits for the cache of every markdown file instead (see the helpers table).
+`obsidian.waitForMetadataCache()` is not a substitute for that poll: it only loops over the files already in `getMarkdownFiles()`, so it returns at once for a file the index has not seen yet. Poll for the file first, then call `waitForMetadataCache()` when the spec reads links, tags or frontmatter of it (or poll `app.metadataCache.getCache(p) !== null` the same way).
 
 Obsidian's own `app` object (`app.workspace`, `app.plugins`) lives in the page, so you reach it with `win.evaluate`. The kit's helpers do that for the common cases.
 

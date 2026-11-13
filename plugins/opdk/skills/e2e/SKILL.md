@@ -5,7 +5,7 @@ description: Set up, write or fix Playwright end-to-end tests for an Obsidian pl
 
 # opdk e2e module
 
-Specs run in the real Obsidian through Electron (`_electron.launch` on Obsidian's `app.asar`). Run commands from the plugin root. The plugin id always comes from `manifest.json`. Full docs: https://github.com/Dimagious/obsidian-plugin-dev-kit/blob/main/docs/e2e.md
+Specs run in the real Obsidian through Electron (`_electron.launch` on Obsidian's `app.asar`). Run commands from the plugin root. The plugin id always comes from `manifest.json`. Full docs: `node_modules/obsidian-plugin-dev-kit/docs/e2e.md`
 
 Safety: `VAULT_PLUGIN` (the dev vault of `opdk build --vault`) is removed from Obsidian's environment by the kit. Every test uses a temp vault copy and a temp user-data folder, never the real vault. When you run anything else that writes into a vault, use `env -u VAULT_PLUGIN`.
 
@@ -48,7 +48,7 @@ test("the command writes into the note", async ({ obsidian }) => {
 
 ## Fixtures
 
-`win` (Playwright `Page` of the Obsidian window), `app` (`ElectronApplication`, `app.evaluate` runs in the main process), `vault` (`path`, `resolve`, `exists`, `read`, `write` on the per-test copy), `obsidian` (the helpers). `vault.write` is plain fs: Obsidian's index (`app.vault.getFileByPath`, the metadata cache) learns of the file only when its watcher fires, so after a write poll `win.waitForFunction((p) => app.vault.getFileByPath(p) !== null, path)` (or `obsidian.waitForMetadataCache()` where the links or tags matter) before acting through the index. Each test gets a fresh Obsidian, vault copy and user-data folder. It starts when the workspace is laid out and every plugin's `onload()` has finished, so a command or tab added after an `await` in `onload()` exists. It does not wait for what the plugin renders after `onload()`: wait for that in the spec (`expect(locator).toBeVisible()`, `expect.poll`, `waitForFunction`), never with a sleep.
+`win` (Playwright `Page` of the Obsidian window), `app` (`ElectronApplication`, `app.evaluate` runs in the main process), `vault` (`path`, `resolve`, `exists`, `read`, `write` on the per-test copy), `obsidian` (the helpers). `vault.write` is plain fs: Obsidian's index (`app.vault.getFileByPath`, the metadata cache) learns of the file only when its watcher fires, so after a write poll for the file first: `await expect.poll(() => obsidian.evaluate((app: App, p: string) => app.vault.getFileByPath(p) !== null, path)).toBe(true)` (`import type { App } from "obsidian"`). Then call `obsidian.waitForMetadataCache()` where the links, tags or frontmatter matter (it only loops over files already indexed, so it does not replace the poll), before acting through the index. Each test gets a fresh Obsidian, vault copy and user-data folder. It starts when the workspace is laid out and every plugin's `onload()` has finished, so a command or tab added after an `await` in `onload()` exists. It does not wait for what the plugin renders after `onload()`: wait for that in the spec (`expect(locator).toBeVisible()`, `expect.poll`, `waitForFunction`), never with a sleep.
 
 ## Options of `createObsidianTest` (unknown keys fail naming them)
 
@@ -103,7 +103,7 @@ Teardown runs on pass, failure, timeout and setup errors: trace stopped (bounded
 
 - `Stale build: main.js of "<id>" ... is older than <file>`: run `opdk build` in that plugin's folder. To skip the check for one plugin, set `staleBuildCheck: false` on its `plugins` entry; `OPDK_E2E_ALLOW_STALE_BUILD=1` skips it for all plugins in one run.
 - `npm ci` fails with `Permission denied (publickey)` in CI: the lockfile records the kit as `git+ssh://`. Rewrite the URL for one command with `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf GIT_CONFIG_VALUE_0=ssh://git@github.com/ npm ci`; on a CI runner `git config --global url."https://github.com/".insteadOf ssh://git@github.com/` before `npm ci` does the same. Or write the dependency as `git+https://...`. (A public repository installs without it.)
-- `Electron is installed ... but its binary is not downloaded yet`: `node node_modules/electron/install.js` once.
+- `Electron is installed ... but its binary is not downloaded yet`: `node node_modules/electron/install.js` once (the message prints the real path when Electron is hoisted).
 - `Stopping the Obsidian trace took longer than N ms (timeouts.trace)`: a long traced test; raise `timeouts.trace`.
 - `plugin still loading: <id>`: its `onload()` is slow or stuck (a view that is merely not drawn yet is not this: the spec has to wait for it). `plugin not loaded: <id>`: it never started; check `manifest.json` and `main.js`. Raise `timeouts.ready` only for a slow `onload()`.
 - `The "Trust author and enable plugins" dialog is open`: the kit's trust flag did not apply on this Obsidian version. Report it with the version. Never click the dialog in a spec.

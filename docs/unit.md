@@ -153,7 +153,7 @@ By default Vitest gives every test file a fresh module registry and global scope
 export default mergeConfig(defineUnitConfig({ /* ... */ }), { test: { isolate: false } });
 ```
 
-Two plugins tried it. One jsdom-heavy suite went from 20.6 s to 6.7 s (3x) after four leaks were fixed first. The other ran 1.8x faster and was green on two and three workers, but six tests failed on one worker in default order, and between six and 37 failed in every shuffled seed. The same switch is a gain for one suite and a source of failures for the next.
+Three plugins tried it. One jsdom-heavy suite went from 20.6 s to 6.7 s (3x) after four leaks were fixed first. One gained nothing. One ran 1.8x faster and was green on two and three workers, but six tests failed on one worker in default order, and between six and 37 failed in every shuffled seed. The same switch is a gain for one suite and a source of failures for the next.
 
 A leak is state one file leaves behind and a later file in the same worker reads. Typical ones:
 
@@ -165,7 +165,8 @@ A leak is state one file leaves behind and a later file in the same worker reads
 Prove the suite before relying on it, on one worker, in shuffled order, for several seeds, because with many workers each worker gets few files and the leaks stay hidden:
 
 ```bash
-for seed in 1 2 3 4 5; do npx vitest run --maxWorkers=1 --sequence.shuffle --sequence.seed=$seed --coverage.enabled=false || break; done
+set -e # as a script: the first failing run stops it with a non-zero exit code
+for seed in 1 2 3 4 5; do npx vitest run --maxWorkers=1 --sequence.shuffle --sequence.seed=$seed --coverage.enabled=false; done
 npx vitest run --maxWorkers=1 --coverage.enabled=false
 npx vitest run --maxWorkers=2 --coverage.enabled=false
 npx vitest run --maxWorkers=3 --coverage.enabled=false
@@ -233,7 +234,7 @@ Recommended, not required: let `tsc --noEmit` cover the test files. Many plugins
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "lib": ["ES2022", "DOM", "DOM.Iterable"], "noEmit": true },
-  "include": ["src/**/*.ts", "src/**/*.test.ts", "src/test/**/*.ts"],
+  "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
 ```
@@ -242,11 +243,11 @@ Recommended, not required: let `tsc --noEmit` cover the test files. Many plugins
 "typecheck:tests": "tsc -p tsconfig.test.json"
 ```
 
-The plugin keeps its target `lib`, so `tsc` on the build config still rejects an API the plugin must not call. (TypeScript 6 includes `DOM.Iterable` in `DOM`; listing it is harmless.) Take the `include` globs from where your tests and their helpers live.
+The plugin keeps its target `lib`, so `tsc` on the build config still rejects an API the plugin must not call. (TypeScript 6 includes `DOM.Iterable` in `DOM`; listing it is harmless.) `src/**/*.ts` already covers the tests and `src/test`; take the `include` globs from where your tests and their helpers live if they sit elsewhere.
 
 Two things show up when a plugin first type-checks its tests:
 
-- **A test that imports the plugin class from `../main` resolves the built `main.js`**, next to `main.ts`, not the source. The bundle has no types, so the import is `any` and the test checks nothing. Import from the source file that exports the class (for example `../plugin`), not from `main`.
+- **A test that reaches the bundled `main.js` gets `any`.** Where `main.ts` and `main.js` sit in one folder, TypeScript prefers `main.ts`, so that is not the trap. The trap is a relative path that climbs one level too far, to the plugin root, where only the bundle lives: `../main` from `src/test/` is `src/main`, but from `src/` it is the root `main.js`. With `strict`, `tsc -p tsconfig.test.json` reports TS7016 (no declaration file) there, while Vitest runs the import as `any` and the test checks nothing. Import from the source file through the right relative path (for example `src/main.ts`), never from the root bundle.
 - **The preset's lint does not read `*.test.ts`.** `obsidianPlugin()` ignores `src/**/*.test.ts` (it is in `DEFAULT_IGNORES`), so a test is never linted by `eslint .`. Helpers are different: a file such as `src/test/helpers.ts` is linted like any source file unless the plugin lists it in `ignores`. Keep helpers out of `ignores` so they are linted, and name them without `.test.ts`. The type check above is what covers the test files themselves.
 
 ## Migrating a plugin
