@@ -1,4 +1,5 @@
 import type { Reporter } from "../cli/reporter.js";
+import { loadWorkflows } from "../kit/files.js";
 import { resolveBuild } from "../build/options.js";
 import type { OpdkConfig } from "../config/types.js";
 import { checkChangelog } from "./changelog.js";
@@ -12,6 +13,7 @@ import { CHECK_GROUPS, errorProblem, hasErrors, type CheckGroup, type GroupResul
 import { loadProjectFiles, valueOf, type ProjectFiles } from "./project-files.js";
 import { checkVersionSync } from "./version-rules.js";
 import { checkVersionsJson } from "./versions-json.js";
+import { checkKit } from "./kit-check.js";
 
 /** Which of the checks that cost time (a build, a type-aware lint) run. The cheap ones always do. */
 export interface CheckFlags {
@@ -151,7 +153,7 @@ async function checkWith({ cwd, config, tag, flags, reporter, run, overlay }: Ch
     const minAppVersion = typeof manifest.minAppVersion === "string" ? manifest.minAppVersion : undefined;
     reporter.info("check", `${id} ${version}${tag === undefined ? "" : ` (tag ${tag})`}`);
 
-    const results = staticResults(files, changelogFile, tag);
+    const results = [...staticResults(files, changelogFile, tag), checkKit(files, loadWorkflows(cwd))];
     if (flags.build) {
         // Loaded here, not at the top, like the scan: the build pulls in esbuild.
         const { checkBuild } = await import("./build-check.js");

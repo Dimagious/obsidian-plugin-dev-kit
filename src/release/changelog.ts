@@ -1,4 +1,5 @@
 import { errorProblem, type Problem } from "./problems.js";
+import { compareVersions } from "./semver.js";
 
 const GROUP = "changelog";
 
@@ -85,6 +86,21 @@ export function releaseNotes(text: string, version: string): string | undefined 
         return undefined;
     }
     return lines.slice(section.heading + 1, section.end).join("\n").trim();
+}
+
+/**
+ * The `## [x.y.z]` sections above `from` (exclusive; every version when undefined) up to `to` (inclusive), newest
+ * first, each as its heading line plus body. For showing someone else's changelog; nothing is rewritten.
+ */
+export function sectionsBetween(text: string, from: string | undefined, to: string): string[] {
+    const lines = splitLines(text);
+    return findSections(lines)
+        .filter((section) => {
+            const aboveFrom = from === undefined ? 1 : compareVersions(section.title, from);
+            const belowTo = compareVersions(section.title, to);
+            return aboveFrom !== undefined && aboveFrom > 0 && belowTo !== undefined && belowTo <= 0;
+        })
+        .map((section) => lines.slice(section.heading, section.end).join("\n").trim());
 }
 
 /** Why `[Unreleased]` cannot be released, or undefined when it has entries. */
