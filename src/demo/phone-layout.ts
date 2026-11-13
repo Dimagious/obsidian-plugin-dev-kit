@@ -22,7 +22,7 @@ export interface PhoneLayout {
     readonly title: string | null;
 }
 
-/** Neutral colours close to the purple the Dashy film uses; a plugin sets its own in `demo.phone`. */
+/** Neutral colours close to the purple one plugin's film uses; a plugin sets its own in `demo.phone`. */
 const DEFAULT_COLORS: Readonly<Record<ThemeMode, Required<DemoPhoneColors>>> = {
     light: { background: "#f4f1fd", text: "#222222", muted: "#8b8b94", accent: "#6f4fe0" },
     dark: { background: "#191722", text: "#e4e4e8", muted: "#8a8794", accent: "#a48cff" },

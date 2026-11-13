@@ -46,9 +46,9 @@ export interface TimeoutOptions {
  * or the test is killed before the helper can explain what it waited for.
  */
 export interface HelperTimeouts {
-    /** A plugin's settings tab to register (`openSettings(tab)`). Default 15000: Garmy's cold start needed a few seconds. */
+    /** A plugin's settings tab to register (`openSettings(tab)`). Default 15000: one plugin's cold start needed a few seconds. */
     readonly settings?: number;
-    /** Every markdown file to have its metadata cached (`waitForMetadataCache()`). Default 45000: Dashy's big vault took up to a minute. */
+    /** Every markdown file to have its metadata cached (`waitForMetadataCache()`). Default 45000: one big vault took up to a minute. */
     readonly metadataCache?: number;
     /** CodeMirror to leave a composition and to show the composed text (`editor().compose()`). Default 5000. */
     readonly compose?: number;

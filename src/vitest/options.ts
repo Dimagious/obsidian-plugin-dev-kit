@@ -6,7 +6,7 @@ export interface CoverageThresholds {
     readonly branches: number;
 }
 
-/** What Snipsy, Dashy and Garmy gate on today. A floor, not a goal. */
+/** What three plugins gate on today. A floor, not a goal. */
 export const DEFAULT_THRESHOLDS: CoverageThresholds = { lines: 90, functions: 90, statements: 90, branches: 80 };
 
 /** Always left out of coverage: the tests themselves, the test helpers and type declarations. */

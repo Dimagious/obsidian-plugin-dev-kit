@@ -463,7 +463,7 @@ export function createDemo(deps: DemoDeps): DemoController {
         }
         if (seconds > MAX_BEAT_SECONDS) {
             throw new Error(
-                `beat(): ${String(seconds)} seconds is more than ${String(MAX_BEAT_SECONDS)}. beat() takes seconds, not milliseconds (Snipsy's beat took milliseconds); ` +
+                `beat(): ${String(seconds)} seconds is more than ${String(MAX_BEAT_SECONDS)}. beat() takes seconds, not milliseconds (an earlier harness's beat took milliseconds); ` +
                     `did you mean beat(${String(seconds / 1000)})?`,
             );
         }
