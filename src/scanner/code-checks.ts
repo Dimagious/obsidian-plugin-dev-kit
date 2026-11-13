@@ -8,7 +8,7 @@ export interface SourceFile {
 
 const SOURCE_EXTENSION = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 // Tests, mocks and fakes never reach the bundle. A `preview/` folder is not on this list on purpose: the scanner
-// reads it (eslint-plugin-obsidianmd 0.5.1 found seven warnings on Dashy's preview stand that the old gate skipped).
+// reads it (eslint-plugin-obsidianmd 0.5.1 found seven warnings on one plugin's preview stand that the old gate skipped).
 const UNSHIPPED_PATH = /(?:^|\/)(?:test|tests|__tests__|__mocks__|node_modules)\/|\.(?:test|spec)\.[^/]+$/;
 
 /** Whether a tracked file is plugin source for the `code` check: script files under `src/`, tests aside. */

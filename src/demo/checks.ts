@@ -106,7 +106,7 @@ export interface FrameDifference {
 
 /**
  * Largest difference per colour channel (of 255) that still counts as the same pixel. Video-grade antialiasing and
- * compositing noise (a caret fade, a subpixel shift of text) stays within a few shades; Dashy's loop differed by 0.9%
+ * compositing noise (a caret fade, a subpixel shift of text) stays within a few shades; one plugin's loop differed by 0.9%
  * of the pixels at one shade and looked identical. 8 is invisible to the eye and far below a real change (a changed
  * label, a toggled control, a moved highlight differ by dozens of shades).
  */

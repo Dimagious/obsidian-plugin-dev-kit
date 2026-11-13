@@ -155,7 +155,7 @@ export interface DemoHelpers {
     typeSlowly(target: Locator, text: string, options?: TypeSlowlyOptions): Promise<void>;
     /**
      * Waits `seconds` for the viewer's sake, a deliberate pause in the pacing of a recorded take. Seconds, not
-     * milliseconds (Snipsy's `beat` took milliseconds): more than 60 fails. It is not a wait for the app: use an
+     * milliseconds (an earlier harness's `beat` took milliseconds): more than 60 fails. It is not a wait for the app: use an
      * assertion for that. Films of stills take their timing from `hold`, not from this.
      */
     beat(seconds: number): Promise<void>;

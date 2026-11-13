@@ -28,9 +28,9 @@ export class CssImportError extends Error {
  * Inlines `@import "x.css"` directives, recursively, each path relative to the file that imports it.
  * Pure: file contents come from `read`, which returns undefined for a missing file.
  *
- * Two deliberate differences from the Dashy script this was ported from: a missing import is an error
- * that names the importing file (Dashy printed a warning and left the `@import` in), and an import
- * cycle is an error (Dashy overflowed the stack). Imports of URLs are left in place for the browser.
+ * Two deliberate differences from the plugin script this was ported from: a missing import is an error
+ * that names the importing file (that script printed a warning and left the `@import` in), and an import
+ * cycle is an error (that script overflowed the stack). Imports of URLs are left in place for the browser.
  */
 export function inlineImports(entryFile: string, read: (file: string) => string | undefined): InlineResult {
     const files: string[] = [];

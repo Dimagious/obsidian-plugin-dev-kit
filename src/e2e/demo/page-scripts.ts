@@ -94,7 +94,7 @@ export const OVERLAY_CSS = [
     "html.opdk-shooting .cm-cursorLayer{visibility:hidden !important}",
 ].join("\n");
 
-/** The arrow of Snipsy's demo cursor. */
+/** The arrow of the demo cursor. */
 export const CURSOR_SVG =
     '<svg width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
     '<path d="M5 3L19 12L12 13L9 20L5 3Z" fill="#ffffff" stroke="#1a1a1a" stroke-width="1.4" stroke-linejoin="round"/></svg>';

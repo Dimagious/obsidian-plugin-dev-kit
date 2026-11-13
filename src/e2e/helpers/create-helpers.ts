@@ -79,7 +79,7 @@ const VIEW_MODE_ATTEMPTS = 5;
 const POLL_MS = 50;
 /**
  * The one fixed delay between key presses: the typing speed of `editor().type()`, not a wait for a condition. A
- * listener that reacts to a key can only be tested if keys do not arrive faster than it runs; Snipsy's hotstring
+ * listener that reacts to a key can only be tested if keys do not arrive faster than it runs; a plugin's hotstring
  * expander needed this, and 15 ms was enough there. (`scrollThrough` has a 100 ms fallback per step, in the page,
  * for a window that draws no frames.)
  */
@@ -92,7 +92,7 @@ const TYPING_SLACK_MS = 50;
  * Obsidian renames one, the helper that uses it fails with its own message, and the selector is the first suspect.
  *
  * The editor is not scoped to `.mod-active`: Obsidian briefly drops that class from the leaf while a modal is open
- * (Snipsy found this with the command palette), and a selector that needs it matches nothing right after the modal
+ * (found with the command palette), and a selector that needs it matches nothing right after the modal
  * closes. The first markdown editor in the workspace is the active one unless the layout is split.
  */
 const EDITOR_SELECTOR = '.workspace-leaf-content[data-type="markdown"] .cm-content[contenteditable=true]';
