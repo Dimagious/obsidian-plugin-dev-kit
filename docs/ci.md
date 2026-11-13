@@ -107,13 +107,13 @@ A plugin pins the kit in three places that have to name one release: the tag in 
 
   ```bash
   npx opdk kit upgrade --dry-run   # the lines that would change, and what the kit changed
-  npx opdk kit upgrade             # latest release; or: npx opdk kit upgrade v0.2.0
+  npx opdk kit upgrade             # latest release; or: npx opdk kit upgrade v0.3.0
   ```
 
   A plugin on v0.1.0 has no `kit` command yet, so `npx opdk kit upgrade` stops with `unknown command "kit"`. Run the new release's `opdk` once through npx instead; npx builds the kit in its own cache, which took about a minute on each of three plugins:
 
   ```bash
-  npx -y -p github:Dimagious/obsidian-plugin-dev-kit#v0.2.0 opdk kit upgrade v0.2.0
+  npx -y -p github:Dimagious/obsidian-plugin-dev-kit#v0.3.0 opdk kit upgrade v0.3.0
   ```
 
   From v0.2.0 on, the installed `opdk` has the command.

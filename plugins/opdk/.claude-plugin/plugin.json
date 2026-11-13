@@ -1,6 +1,6 @@
 {
   "name": "opdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Agent skills for obsidian-plugin-dev-kit (opdk): build, scan, release, unit-test, test end to end, film demos and audit Obsidian plugins.",
   "author": { "name": "Dimagious" },
   "homepage": "https://github.com/Dimagious/obsidian-plugin-dev-kit",
