@@ -92,9 +92,9 @@ describe("obsidianPlugin", () => {
         expect(block?.languageOptions?.parserOptions).toMatchObject({ tsconfigRootDir: process.cwd() });
     });
 
-    it("sets the require and bare window rules in the TypeScript block", () => {
+    it("sets the bare window rule in the TypeScript block and leaves require() to the preset", () => {
         const rules = obsidianPlugin({ rootDir: "/plugin" }).find((entry) => entry.files?.includes("**/*.ts") === true)?.rules;
-        expect(rules?.["@typescript-eslint/no-require-imports"]).toBe("error");
+        expect(rules).not.toHaveProperty("@typescript-eslint/no-require-imports");
         const [severity, restriction] = rules?.["no-restricted-syntax"] as [string, { selector: string; message: string }];
         expect(severity).toBe("error");
         expect(restriction.selector).toBe(BARE_WINDOW_SELECTOR);
@@ -187,6 +187,16 @@ describe("obsidianPlugin on a real project", () => {
         expect(messages.filter((message) => message.includes("no-restricted-syntax"))).toEqual([]);
     });
 
+    it("reports a handler parameter named window (window-open) and accepts it renamed", async () => {
+        const handler = (name: string): string =>
+            `export const on = (cb: (win: unknown, ${name}: Window) => void): void => cb(null, activeWindow);\n` +
+            `on((_win, ${name}) => ${name}.addEventListener("resize", () => undefined));\n`;
+        plugin.write("src/main.ts", handler("window"));
+        expect(await lint(["src/main.ts"])).toContain("src/main.ts:2 no-restricted-syntax error");
+        plugin.write("src/main.ts", handler("popoutWindow"));
+        expect((await lint(["src/main.ts"])).filter((message) => message.includes("no-restricted-syntax"))).toEqual([]);
+    });
+
     it("lets a plugin turn the bare window rule off with a later block", async () => {
         plugin.write("src/main.ts", "export const w = (): number => window.innerWidth;\n");
         const eslint = new ESLint({
@@ -199,10 +209,10 @@ describe("obsidianPlugin on a real project", () => {
         expect(result?.messages.filter((message) => message.ruleId === "no-restricted-syntax")).toEqual([]);
     });
 
-    it("reports require() as an error, since phones have no require", async () => {
+    it("does not report require(): the preset leaves it off and a Node module goes through Platform.isDesktop", async () => {
         plugin.write("src/main.ts", 'export const fs: unknown = require("fs");\n');
         const messages = await lint(["src/main.ts"]);
-        expect(messages).toContain("src/main.ts:1 @typescript-eslint/no-require-imports error");
+        expect(messages.filter((message) => message.includes("no-require-imports"))).toEqual([]);
     });
 
     it("reports an unused argument unless it starts with an underscore", async () => {
