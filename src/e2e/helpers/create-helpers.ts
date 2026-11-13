@@ -3,6 +3,8 @@ import type { HelperTimeouts } from "../options.js";
 import { waitForReady } from "../readiness.js";
 import { commandDeclinedMessage, commandNotFoundMessage, toPlaywrightKeys } from "./commands.js";
 import { planComposition } from "./ime.js";
+import { findOverflow, findSmallTargets, focusWalkStart, MAX_FINDINGS_PER_CHECK, readFocusStop } from "./layout-page-scripts.js";
+import { layoutFailureMessage, noFocusStartMessage, resolveLayoutOptions, rootMissingMessage, type LayoutCheckOptions, type LayoutProblem } from "./layout.js";
 import { createDeviceMetricsTracker, type DeviceMetricsTracker } from "./device-metrics.js";
 import { deviceMetrics, isReloadRejection, type MobileOptions } from "./mobile.js";
 import {
@@ -460,6 +462,68 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
         }, `The window did not reload within ${String(options.readyTimeoutMs)} ms after reload(). Raise timeouts.ready, or check that the app:reload command works in this Obsidian.`);
     }
 
+    async function layoutProblems(layoutOptions: LayoutCheckOptions): Promise<LayoutProblem[]> {
+        const resolved = resolveLayoutOptions(layoutOptions);
+        const problems: LayoutProblem[] = [];
+        if (resolved.overflow) {
+            const found = await win.evaluate(findOverflow, { root: resolved.root, limit: MAX_FINDINGS_PER_CHECK });
+            if (!found.rootFound) {
+                throw new Error(rootMissingMessage(resolved.root));
+            }
+            problems.push(...found.findings.map((finding) => ({ check: "overflow" as const, ...finding })));
+        }
+        const touch = resolved.touch.enabled ?? (await win.evaluate(isMobileApplied, true));
+        if (touch) {
+            const found = await win.evaluate(findSmallTargets, {
+                root: resolved.root,
+                targets: resolved.touch.selector,
+                ignore: resolved.touch.ignore,
+                minSize: resolved.touch.minSize,
+                limit: MAX_FINDINGS_PER_CHECK,
+            });
+            if (!found.rootFound) {
+                throw new Error(rootMissingMessage(resolved.root));
+            }
+            problems.push(...found.findings.map((finding) => ({ check: "touch-target" as const, ...finding })));
+        }
+        if (resolved.focus.enabled) {
+            problems.push(...(await walkFocusRing(resolved.root, resolved.focus.from, resolved.focus.maxStops)));
+        }
+        return problems;
+    }
+
+    /** Tabs through `root` and reports every stop that shows no focus ring. The walk ends when focus leaves `root`. */
+    async function walkFocusRing(root: string, from: string | null, maxStops: number): Promise<LayoutProblem[]> {
+        const start = await win.evaluate(focusWalkStart, { root, from });
+        if (start === "no-root") {
+            throw new Error(rootMissingMessage(root));
+        }
+        if (start === "no-start") {
+            throw new Error(noFocusStartMessage(root, from));
+        }
+        const problems: LayoutProblem[] = [];
+        for (let stop = 0; stop <= maxStops; stop++) {
+            if (stop > 0) {
+                await win.keyboard.press("Tab");
+            }
+            const current = await win.evaluate(readFocusStop, root);
+            if (current?.inRoot !== true) {
+                break;
+            }
+            if (!current.hasRing) {
+                problems.push({ check: "focus-ring", where: current.where, detail: current.detail });
+            }
+        }
+        return problems;
+    }
+
+    async function checkLayout(layoutOptions: LayoutCheckOptions): Promise<void> {
+        const problems = await layoutProblems(layoutOptions);
+        if (problems.length > 0) {
+            throw new Error(layoutFailureMessage(layoutOptions.root, problems, resolveLayoutOptions(layoutOptions).touch.minSize));
+        }
+    }
+
     /** The window width the last `mobile()` call applied; the layout (phone or tablet) was decided from it. */
     let mobileWidth: number | undefined;
 
@@ -560,6 +624,8 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
             setTheme,
             waitForMetadataCache,
             clearNotices: () => win.evaluate(removeNotices),
+            checkLayout,
+            layoutProblems,
             hideProperties: async () => {
                 if (!(await win.evaluate(hideNoteProperties))) {
                     throw new Error("hideProperties(): this Obsidian has no app.vault.setConfig / saveConfig. The helper was verified on Obsidian 1.14.5.");

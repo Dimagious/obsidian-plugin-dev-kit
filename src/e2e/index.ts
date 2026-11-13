@@ -18,13 +18,18 @@ export type {
     EditorHelpers,
     EditorPosition,
     EditorSelection,
+    FocusRingOptions,
     FakeHandle,
+    LayoutCheckName,
+    LayoutCheckOptions,
+    LayoutProblem,
     MobileOptions,
     ObsidianHelpers,
     PageFactory,
     PageFunction,
     SettleOptions,
     ThemeOptions,
+    TouchTargetOptions,
     ViewMode,
 } from "./helpers/types.js";
 export type {

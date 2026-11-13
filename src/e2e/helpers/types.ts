@@ -1,10 +1,11 @@
 import type { Locator } from "@playwright/test";
 import type { CompositionChunking } from "./ime.js";
+import type { FocusRingOptions, LayoutCheckName, LayoutCheckOptions, LayoutProblem, TouchTargetOptions } from "./layout.js";
 import type { MobileOptions } from "./mobile.js";
 import type { SettleOptions } from "./settle.js";
 import type { ViewMode } from "./view-mode.js";
 
-export type { CompositionChunking, MobileOptions, SettleOptions, ViewMode };
+export type { CompositionChunking, FocusRingOptions, LayoutCheckName, LayoutCheckOptions, LayoutProblem, MobileOptions, SettleOptions, TouchTargetOptions, ViewMode };
 
 /** A position in a note; both numbers start at 0. */
 export interface EditorPosition {
@@ -110,6 +111,14 @@ export interface ObsidianHelpers {
     waitForMetadataCache(): Promise<void>;
     /** Removes the notices on screen (such as "Indexing complete.") and returns how many there were. */
     clearNotices(): Promise<number>;
+    /**
+     * Fails with the list of everything wrong in the layout of `options.root`: horizontal overflow, touch targets under
+     * 44 px (by default only in the mobile emulation) and, when asked, a Tab stop without a focus ring. The checks read
+     * the page as it is, so open and settle it first. Each can be turned off; see `LayoutCheckOptions`.
+     */
+    checkLayout(options: LayoutCheckOptions): Promise<void>;
+    /** The same checks as `checkLayout()`, returned as a list (empty when all is well) instead of thrown, for `expect.soft` or a report. */
+    layoutProblems(options: LayoutCheckOptions): Promise<LayoutProblem[]>;
     /** Hides the properties block of notes, a display setting; the notes are unchanged. */
     hideProperties(): Promise<void>;
     /**

@@ -328,6 +328,34 @@ await obsidian.editor().type("::date");
 expect(await obsidian.editor().text()).toContain("2026");
 ```
 
+### Layout checks
+
+`checkLayout({ root, overflow?, touchTargets?, focusRing? })` looks at the part of the window under the CSS selector `root` (a modal, a view, a settings tab) and fails with the list of everything wrong, so one run shows all the problems and not the first. `layoutProblems(options)` runs the same checks and returns the list (empty when all is well), for `expect.soft` or a report. `root` is required and must match something: a check never passes by looking at nothing.
+
+| Check | Option | Default | What it reports |
+|---|---|---|---|
+| Horizontal overflow | `overflow` | on | `root` and every element under it with `scrollWidth > clientWidth + 1`. An element that scrolls on purpose (`overflow-x: auto` or `scroll`: a code block, a table) is left out, `root` itself is not |
+| Touch targets | `touchTargets` | on in the mobile emulation (`mobile()`), off otherwise | Visible buttons, links, selects, inputs, textareas, summaries and elements with role `button`, `tab` or `menuitem` under `root` that are under 44 px wide or high (0.5 px less for rounding). `{ minSize, selector, ignore }` changes the size, what counts as a target, and what to leave out (matched against the element and its ancestors) |
+| Focus ring | `focusRing` | off, because it presses Tab and moves focus | Focuses the first focusable element of `root` (`{ from }` picks another), presses Tab until focus leaves `root` or `maxStops` (20, at most 100) presses are done, and reports each stop that shows no ring: a computed `outline` that is not `none` with a width above 0, or a `box-shadow` |
+
+```ts
+await obsidian.mobile();
+await obsidian.runCommand("my-plugin:open-wizard");
+await obsidian.settle({ root: ".my-plugin-wizard" });
+await obsidian.checkLayout({ root: ".my-plugin-wizard", focusRing: { from: ".my-plugin-key" } });
+```
+
+```text
+checkLayout(): 3 problems inside ".my-plugin-wizard":
+  - horizontal overflow: div.my-plugin-wizard (scrollWidth 420 > clientWidth 390)
+  - touch target too small: button.my-plugin-close (30 x 28 px)
+  - no focus ring: input.my-plugin-key (outline none 0px, box-shadow none)
+Touch targets must be at least 44 px; raise the size in CSS for the mobile layout, or pass touchTargets: { ignore } for an element that is not a target.
+A focus ring is an outline or a box-shadow on :focus-visible; a theme that sets outline: none needs a replacement.
+```
+
+Each kind of problem lists at most 10 elements. The checks read the page as it is: open the part you check and `settle()` it first. They measure; they do not judge a design. A person should still look at the pictures of a tour: take them with `demo.still(name, { publish: false })` (they stay in `.opdk/demo/stills` and are not published by `opdk demo`, see [docs/demo.md](demo.md)). The kit has no review-shot helper or contact sheet of its own; `/opdk:audit` makes a contact sheet of GIFs.
+
 ### IME
 
 `editor().compose(text, { chunking })` enters text through real composition events (`Input.imeSetComposition`, then `Input.insertText`, over a CDP session), the way an input method does. `chunking` is `"word"` (default: each word composed and committed with its trailing space) or `"character"`. It inserts at the cursor, waits for CodeMirror to leave the composition between chunks, and fails when CodeMirror is still composing after a commit or the document did not change.

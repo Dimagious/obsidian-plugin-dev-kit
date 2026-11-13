@@ -44,6 +44,7 @@ import {
     unsettledReasons,
     watchPageChanges,
 } from "./page-scripts.js";
+import { findOverflow, findSmallTargets, focusWalkStart, readFocusStop, type FocusStop, type LayoutResult } from "./layout-page-scripts.js";
 
 /** Distinct values, so a test can tell which budget a wait took. */
 const TIMEOUTS = { settings: 111, metadataCache: 222, compose: 333, theme: 444, ui: 555 } as const;
@@ -1115,5 +1116,105 @@ describe("settle", () => {
         await expect(helpers.settle({ quietMs: 555 })).rejects.toThrow(/quietMs \(555 ms\) is not below the wait budget timeouts\.helpers\.ui \(555 ms\)/);
         await expect(helpers.settle({ quietMs: -1 })).rejects.toThrow(/quietMs must be a number of milliseconds from 0/);
         expect(fake.log).toEqual([]);
+    });
+});
+
+describe("checkLayout and layoutProblems", () => {
+    const found = (...findings: { where: string; detail: string }[]): LayoutResult => ({ rootFound: true, findings });
+    const stop = (where: string, hasRing: boolean, inRoot = true): FocusStop => ({ inRoot, where, hasRing, detail: hasRing ? "outline solid 2px" : "outline none 0px, box-shadow none" });
+
+    it("passes when nothing is wrong, and asks the page only about the checks that are on", async () => {
+        const { fake, helpers } = setUp();
+        const asked: unknown[] = [];
+        fake.onEvaluate(findOverflow, (args) => {
+            asked.push(args);
+            return found();
+        });
+        fake.onEvaluate(isMobileApplied, () => false);
+        await helpers.checkLayout({ root: ".modal" });
+        expect(asked).toEqual([{ root: ".modal", limit: 10 }]);
+        expect(await helpers.layoutProblems({ root: ".modal", overflow: false })).toEqual([]);
+    });
+
+    it("checks touch targets by default only in the mobile emulation", async () => {
+        const { fake, helpers } = setUp();
+        const asked: unknown[] = [];
+        let mobile = false;
+        fake.onEvaluate(findOverflow, () => found());
+        fake.onEvaluate(isMobileApplied, () => mobile);
+        fake.onEvaluate(findSmallTargets, (args) => {
+            asked.push(args);
+            return found({ where: "button.save", detail: "30 x 28 px" });
+        });
+        expect(await helpers.layoutProblems({ root: ".modal" })).toEqual([]);
+        expect(asked).toEqual([]);
+        mobile = true;
+        expect(await helpers.layoutProblems({ root: ".modal" })).toEqual([{ check: "touch-target", where: "button.save", detail: "30 x 28 px" }]);
+        expect(asked).toHaveLength(1);
+        expect(asked[0]).toMatchObject({ root: ".modal", minSize: 44, ignore: null });
+        // An explicit setting wins over the window.
+        expect(await helpers.layoutProblems({ root: ".modal", touchTargets: false })).toEqual([]);
+        mobile = false;
+        expect(await helpers.layoutProblems({ root: ".modal", touchTargets: { minSize: 48, ignore: ".x" } })).toHaveLength(1);
+        expect(asked[1]).toMatchObject({ minSize: 48, ignore: ".x" });
+    });
+
+    it("fails with every problem of every check in one list", async () => {
+        const { fake, helpers } = setUp();
+        fake.onEvaluate(findOverflow, () => found({ where: "div.modal", detail: "scrollWidth 420 > clientWidth 390" }));
+        fake.onEvaluate(isMobileApplied, () => true);
+        fake.onEvaluate(findSmallTargets, () => found({ where: "button.a", detail: "10 x 10 px" }, { where: "button.b", detail: "20 x 20 px" }));
+        const error = await helpers.checkLayout({ root: ".modal" }).catch((e: unknown) => e as Error);
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toContain('3 problems inside ".modal"');
+        expect((error as Error).message).toContain("horizontal overflow: div.modal");
+        expect((error as Error).message).toContain("touch target too small: button.a (10 x 10 px)");
+        expect((error as Error).message).toContain("touch target too small: button.b");
+    });
+
+    it("fails with a message of its own when the root is not on the page", async () => {
+        const { fake, helpers } = setUp();
+        fake.onEvaluate(findOverflow, () => ({ rootFound: false }));
+        await expect(helpers.checkLayout({ root: ".gone" })).rejects.toThrow('nothing matches the root ".gone"');
+        fake.onEvaluate(isMobileApplied, () => true);
+        fake.onEvaluate(findSmallTargets, () => ({ rootFound: false }));
+        await expect(helpers.layoutProblems({ root: ".gone", overflow: false })).rejects.toThrow('nothing matches the root ".gone"');
+    });
+
+    it("refuses bad options before touching the page", async () => {
+        const { fake, helpers } = setUp();
+        await expect(helpers.checkLayout({ root: "" })).rejects.toThrow("root must be a non-empty CSS selector");
+        await expect(helpers.layoutProblems({} as never)).rejects.toThrow("root is required");
+        expect(fake.log).toEqual([]);
+    });
+
+    it("walks the focus with Tab and reports each stop without a ring, ending when focus leaves the root", async () => {
+        const { fake, helpers } = setUp();
+        const stops = [stop("input.name", true), stop("button.ok", false), stop("button.cancel", true), stop("button.ribbon", false, false)];
+        let index = 0;
+        fake.onEvaluate(focusWalkStart, (args) => {
+            fake.log.push(`start:${JSON.stringify(args)}`);
+            return "ok";
+        });
+        fake.onEvaluate(readFocusStop, () => stops[index++] ?? null);
+        const problems = await helpers.layoutProblems({ root: ".modal", overflow: false, touchTargets: false, focusRing: { from: ".name" } });
+        expect(problems).toEqual([{ check: "focus-ring", where: "button.ok", detail: "outline none 0px, box-shadow none" }]);
+        expect(fake.log).toEqual(['start:{"root":".modal","from":".name"}', "press:Tab", "press:Tab", "press:Tab"]);
+    });
+
+    it("stops a focus walk that never leaves the root after maxStops Tab presses", async () => {
+        const { fake, helpers } = setUp();
+        fake.onEvaluate(focusWalkStart, () => "ok");
+        fake.onEvaluate(readFocusStop, () => stop("button.loop", true));
+        await helpers.layoutProblems({ root: ".modal", overflow: false, touchTargets: false, focusRing: { maxStops: 3 } });
+        expect(fake.log).toEqual(["press:Tab", "press:Tab", "press:Tab"]);
+    });
+
+    it("fails when there is nothing to start the walk from", async () => {
+        const { fake, helpers } = setUp();
+        fake.onEvaluate(focusWalkStart, () => "no-start");
+        await expect(helpers.layoutProblems({ root: ".modal", overflow: false, touchTargets: false, focusRing: true })).rejects.toThrow("nothing inside \".modal\" can take focus");
+        fake.onEvaluate(focusWalkStart, () => "no-root");
+        await expect(helpers.layoutProblems({ root: ".modal", overflow: false, touchTargets: false, focusRing: true })).rejects.toThrow("nothing matches the root");
     });
 });
