@@ -49,7 +49,7 @@ In `package.json`:
     "dev:vault": "opdk build --vault --watch"
   },
   "devDependencies": {
-    "obsidian-plugin-dev-kit": "github:Dimagious/obsidian-plugin-dev-kit#v0.2.0"
+    "obsidian-plugin-dev-kit": "github:Dimagious/obsidian-plugin-dev-kit#v0.3.0"
   }
 }
 ```

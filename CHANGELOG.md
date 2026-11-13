@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-13
+
 ### Changed
 
 - **Breaking:** `scan.ignore` is removed from the `scan` section of `opdk.config.mjs`, which now has no keys. A skipped file was still on the public scorecard: a plugin that listed `site/**` saw `opdk scan` pass while its scorecard showed 20 CSS warnings from `site/assets`. A config that still has the key fails with `"scan.ignore" was removed` and what to do instead, before any check runs. The scan no longer prints "N skipped by scan.ignore" or stops with "scan.ignore skips all N". To clear a finding, fix it or stop tracking the file.
