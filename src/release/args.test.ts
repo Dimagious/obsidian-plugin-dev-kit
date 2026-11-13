@@ -3,6 +3,7 @@ import { parseReleaseArgs, resolveVersion } from "./args.js";
 
 const ALL = { build: true, reproducible: true, api: true };
 const PUSH = { push: true, timeoutMinutes: undefined, zip: false };
+const TEST = true;
 
 describe("parseReleaseArgs", () => {
     it("parses check with every check on by default", () => {
@@ -15,8 +16,14 @@ describe("parseReleaseArgs", () => {
     });
 
     it("parses a bump kind or an exact version, with --dry-run", () => {
-        expect(parseReleaseArgs(["minor"])).toEqual({ mode: "bump", spec: { kind: "bump", bump: "minor" }, dryRun: false, flags: ALL, pushing: PUSH });
-        expect(parseReleaseArgs(["2.0.0", "--dry-run", "--no-build"])).toEqual({ mode: "bump", spec: { kind: "exact", version: "2.0.0" }, dryRun: true, flags: { ...ALL, build: false }, pushing: PUSH });
+        expect(parseReleaseArgs(["minor"])).toEqual({ mode: "bump", spec: { kind: "bump", bump: "minor" }, dryRun: false, flags: ALL, pushing: PUSH, test: TEST });
+        expect(parseReleaseArgs(["2.0.0", "--dry-run", "--no-build"])).toEqual({ mode: "bump", spec: { kind: "exact", version: "2.0.0" }, dryRun: true, flags: { ...ALL, build: false }, pushing: PUSH, test: TEST });
+    });
+
+    it("runs the tests unless --no-test, which only a release takes", () => {
+        expect(parseReleaseArgs(["patch", "--no-test"])).toMatchObject({ mode: "bump", test: false });
+        expect(() => parseReleaseArgs(["check", "--no-test"])).toThrow(/"--no-test" does not belong to "opdk release check"/);
+        expect(() => parseReleaseArgs(["publish", "--no-test"])).toThrow(/does not belong/);
     });
 
     it("parses the push options of a release", () => {

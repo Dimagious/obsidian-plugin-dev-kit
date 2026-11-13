@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CHANGELOG } from "../test-support/release-fixture.js";
-import { checkChangelog, promoteUnreleased, releaseNotes, unreleasedProblem } from "./changelog.js";
+import { checkChangelog, promoteUnreleased, releaseNotes, sectionsBetween, unreleasedProblem } from "./changelog.js";
 
 describe("checkChangelog", () => {
     it("passes when the version has a section with an entry", () => {
@@ -111,5 +111,26 @@ describe("releaseNotes", () => {
     it("returns undefined for a version without a section, and an empty string for an empty one", () => {
         expect(releaseNotes(text, "2.0.0")).toBeUndefined();
         expect(releaseNotes("## [1.0.0] - 2026-01-01\n\n## [0.9.0] - 2025-12-01\n- x\n", "1.0.0")).toBe("");
+    });
+});
+
+describe("sectionsBetween", () => {
+    const text = ["# Changelog", "", "## [Unreleased]", "", "- Later.", "", "## [0.3.0] - 2026-03-01", "", "- C.", "", "## [0.2.0] - 2026-02-01", "", "### Added", "", "- B.", "", "## [0.1.0] - 2026-01-01", "", "- A.", "", "[Unreleased]: https://example.com/compare/0.3.0...HEAD", ""].join("\n");
+
+    it("returns the sections above `from` up to `to`, newest first, with their headings", () => {
+        expect(sectionsBetween(text, "0.1.0", "0.3.0")).toEqual(["## [0.3.0] - 2026-03-01\n\n- C.", "## [0.2.0] - 2026-02-01\n\n### Added\n\n- B."]);
+        expect(sectionsBetween(text, "0.1.0", "0.2.0")).toEqual(["## [0.2.0] - 2026-02-01\n\n### Added\n\n- B."]);
+    });
+
+    it("returns every released section without a lower bound, and skips [Unreleased] and the link footer", () => {
+        const all = sectionsBetween(text, undefined, "0.3.0");
+        expect(all).toHaveLength(3);
+        expect(all.join("\n")).not.toContain("Later.");
+        expect(all.join("\n")).not.toContain("compare");
+    });
+
+    it("returns nothing when no section is in range", () => {
+        expect(sectionsBetween(text, "0.3.0", "0.3.0")).toEqual([]);
+        expect(sectionsBetween("no headings", undefined, "1.0.0")).toEqual([]);
     });
 });

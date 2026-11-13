@@ -56,15 +56,14 @@ function branchProblems(facts: RepoFacts): PreflightProblem[] {
     } else if (facts.behind > 0) {
         problems.push({ message: `${facts.defaultBranch} is ${String(facts.behind)} commit(s) behind origin/${facts.defaultBranch}.`, hint: "Run `git pull --ff-only` first." });
     }
-    return problems;
-}
-
-/** Local commits that origin does not have yet. Not an error: the tag and the branch are pushed later. */
-export function unpushedWarning(facts: RepoFacts): string | undefined {
-    if (facts.ahead !== undefined && facts.ahead > 0 && facts.defaultBranch !== undefined) {
-        return `${facts.defaultBranch} is ${String(facts.ahead)} commit(s) ahead of origin/${facts.defaultBranch}; they will be part of the release.`;
+    // The tag is pushed before the branch, so the commits behind it would reach the release workflow without ever having run in branch CI.
+    if (facts.fetchError === undefined && facts.branch === facts.defaultBranch && facts.ahead !== undefined && facts.ahead > 0) {
+        problems.push({
+            message: `${facts.defaultBranch} is ${String(facts.ahead)} commit(s) ahead of origin/${facts.defaultBranch}: CI has not seen them, and the release would tag them.`,
+            hint: "Push them through a pull request first, wait for CI, pull, and rerun.",
+        });
     }
-    return undefined;
+    return problems;
 }
 
 /** The changelog part of preflight, kept next to the repository part so the bump reports both together. */

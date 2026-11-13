@@ -14,7 +14,7 @@ Every Obsidian plugin needs the same tooling around its code: a bundle that also
 |---|---|
 | Build | esbuild for the browser platform, so the bundle works on mobile, plus a check that fails if Node-only code gets into `main.js`; CSS build; copy into a dev vault in watch mode |
 | Scanner and lint | `opdk scan` runs the community plugin scanner's ESLint configuration and its CSS, source and manifest checks before you release, with `eslint-plugin-obsidianmd` pinned in one place; `obsidianPlugin()` gives your own `eslint.config.js` the same base |
-| Release | `opdk release check` for CI and before a tag: versions in `package.json`, `manifest.json`, `package-lock.json` and `versions.json`, the manifest rules of the official Obsidian action, a CHANGELOG section, a production build built twice (working tree and committed tree) and compared, and the `minAppVersion` against the API the code calls. `opdk release patch` (or `minor`, `major`, `X.Y.Z`) bumps the files, moves the `[Unreleased]` notes under the new version, commits and tags, pushes only the tag, waits for the kit's reusable GitHub workflow, verifies its draft release (files, bytes against a local build of the tag, notes, build provenance), publishes it and only then pushes the branch. Release notes come from the CHANGELOG, and no zip is made unless asked |
+| Release | `opdk release check` for CI and before a tag: versions in `package.json`, `manifest.json`, `package-lock.json` and `versions.json`, the manifest rules of the official Obsidian action, a CHANGELOG section, one kit release in `package.json`, the lockfile and the workflow pins, a production build built twice (working tree and committed tree) and compared, and the `minAppVersion` against the API the code calls. `opdk release patch` (or `minor`, `major`, `X.Y.Z`) refuses commits that `origin` has not seen, runs the plugin's `npm test`, bumps the files, moves the `[Unreleased]` notes under the new version, commits and tags, pushes only the tag, waits for the kit's reusable GitHub workflow, verifies its draft release (files, bytes against a local build of the tag, notes, build provenance), publishes it and only then pushes the branch. Release notes come from the CHANGELOG, and no zip is made unless asked |
 | Reusable CI | `plugin-ci.yml`, a reusable GitHub workflow: lint, typecheck, tests, `opdk scan`, `opdk release check`, build and bundle upload, with a read-only token, actions pinned to commit SHAs and a pinned runner |
 | Unit tests | `defineUnitConfig()`, a Vitest config with v8 coverage and a 90/80 gate, an `obsidian` alias, and a split that runs only the files that need a DOM in jsdom; plus the DOM helpers Obsidian adds (`createEl`, `createDiv`, `setText`, `addClass`, `activeDocument` and more) for jsdom |
 | End-to-end tests | Playwright in a real Obsidian through Electron: an isolated vault per test, the trust dialog never shown, readiness by plugin state instead of sleeps, a check of which Obsidian version ran, a trace and a video of the Obsidian window for failures, and helpers for settings, commands, the editor, IME composition, the mobile layout and fakes. Launch over CDP and a mode for recording tests by hand with the Playwright Inspector are planned |
@@ -115,6 +115,17 @@ jobs:
 ```
 
 If your default branch is not `main`, use its name in `branches`. Inputs (all optional): `node-version`, `runs-on`, and a boolean per step (`lint`, `typecheck`, `test`, `scan`, `release-check`, `build`, `upload-bundle`, `coverage-artifact`). Inputs, what each step runs, how to add plugin-specific steps and how to move an existing `ci.yml`: [docs/ci.md](docs/ci.md).
+
+## Updating the kit
+
+A plugin pins the kit in three places: the tag in `package.json`, the commit in the lockfile, and the commit in each `uses:` line of the kit's workflows. They have to name one release, and `opdk release check` (so CI) fails when they do not. `opdk kit upgrade` moves them together:
+
+```bash
+npx opdk kit upgrade --dry-run   # what would change, and the kit's CHANGELOG since your version
+npx opdk kit upgrade             # latest release; or: npx opdk kit upgrade v0.2.0
+```
+
+It needs a clean git tree, never commits or pushes, and puts `package.json` and the lockfile back if `npm install` fails (run `npm ci` if `node_modules` looks off). Review the diff and open a pull request. Configure Dependabot to ignore the kit (a lone bump of one pin breaks the check; the `ignore` entries are in the docs) and watch the kit's releases on GitHub. Details: [docs/ci.md](docs/ci.md#updating-the-kit).
 
 ## Unit tests
 
