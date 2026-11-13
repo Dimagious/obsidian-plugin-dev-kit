@@ -126,6 +126,40 @@ describe("terminateTree", () => {
         expect(calls.map((call) => call.signal)).toEqual([0, "SIGTERM", 0, 0, "SIGKILL", 0]);
     });
 
+    /** A group that exits right after the first probe; the signal then fails with `signalCode` (macOS answers EPERM). */
+    function exitsBeforeSignal(signalCode: string): { io: ProcessIo; calls: (NodeJS.Signals | 0)[] } {
+        const calls: (NodeJS.Signals | 0)[] = [];
+        let alive = true;
+        const io: ProcessIo = {
+            platform: "darwin",
+            sleep: () => Promise.resolve(),
+            spawnSync: () => ({ status: 0, stderr: "" }),
+            kill: (_pid, signal) => {
+                calls.push(signal);
+                if (signal === 0) {
+                    if (!alive) {
+                        throw Object.assign(new Error("kill ESRCH"), { code: "ESRCH" });
+                    }
+                    return;
+                }
+                alive = false;
+                throw Object.assign(new Error(`kill ${signalCode}`), { code: signalCode });
+            },
+        };
+        return { io, calls };
+    }
+
+    it("treats EPERM on the signal as success when a signal-0 probe then finds the group gone", async () => {
+        const { io, calls } = exitsBeforeSignal("EPERM");
+        await expect(terminateTree(100, io, { polls: 1, pollMs: 1 })).resolves.toBe("terminated");
+        expect(calls).toEqual([0, "SIGTERM", 0, 0]);
+    });
+
+    it("still fails on EPERM when the probe shows the group is alive", async () => {
+        const { io } = fakeIo("immortal", "darwin", { SIGTERM: "EPERM" });
+        await expect(terminateTree(100, io)).rejects.toThrow("EPERM");
+    });
+
     it("surfaces a signal error other than ESRCH", async () => {
         const { io } = fakeIo("dies-on-term", "darwin", { SIGTERM: "EPERM" });
         await expect(terminateTree(100, io)).rejects.toThrow("EPERM");

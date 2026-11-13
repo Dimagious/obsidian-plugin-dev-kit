@@ -57,14 +57,20 @@ export function isTreeAlive(pid: number, io: ProcessIo): boolean {
     }
 }
 
-/** Sends a signal to the group and treats "already gone" (ESRCH) as success; any other error is real. */
+/**
+ * Sends a signal to the group and treats "already gone" as success; any other error is real.
+ * Gone is ESRCH, or EPERM with a signal-0 probe that then finds nothing: macOS answers EPERM for a group whose
+ * last process exited between the liveness check and the signal. EPERM on a group that is still there stays an error.
+ */
 function signalTree(pid: number, signal: NodeJS.Signals, io: ProcessIo): void {
     try {
         io.kill(targetFor(pid, io.platform), signal);
     } catch (error) {
-        if (errorCode(error) !== "ESRCH") {
-            throw error;
+        const code = errorCode(error);
+        if (code === "ESRCH" || (code === "EPERM" && !isTreeAlive(pid, io))) {
+            return;
         }
+        throw error;
     }
 }
 
