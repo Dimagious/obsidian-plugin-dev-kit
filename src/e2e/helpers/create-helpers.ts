@@ -3,8 +3,8 @@ import type { HelperTimeouts } from "../options.js";
 import { waitForReady } from "../readiness.js";
 import { commandDeclinedMessage, commandNotFoundMessage, toPlaywrightKeys } from "./commands.js";
 import { planComposition } from "./ime.js";
-import { findOverflow, findSmallTargets, focusWalkStart, MAX_FINDINGS_PER_CHECK, readFocusStop } from "./layout-page-scripts.js";
-import { layoutFailureMessage, noFocusStartMessage, resolveLayoutOptions, rootMissingMessage, type LayoutCheckOptions, type LayoutProblem } from "./layout.js";
+import { findOverflow, findSmallTargets, focusWalkStart, MAX_FINDINGS_PER_CHECK, readFocusStop, rootExists, type LayoutResult } from "./layout-page-scripts.js";
+import { capProblems, focusStartMessage, layoutFailureMessage, noChecksMessage, resolveLayoutOptions, rootMissingMessage, type LayoutCheckName, type LayoutCheckOptions, type LayoutCut, type LayoutProblem, type ResolvedLayoutOptions } from "./layout.js";
 import { createDeviceMetricsTracker, type DeviceMetricsTracker } from "./device-metrics.js";
 import { deviceMetrics, isReloadRejection, type MobileOptions } from "./mobile.js";
 import {
@@ -462,55 +462,95 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
         }, `The window did not reload within ${String(options.readyTimeoutMs)} ms after reload(). Raise timeouts.ready, or check that the app:reload command works in this Obsidian.`);
     }
 
-    async function layoutProblems(layoutOptions: LayoutCheckOptions): Promise<LayoutProblem[]> {
-        const resolved = resolveLayoutOptions(layoutOptions);
-        const problems: LayoutProblem[] = [];
-        if (resolved.overflow) {
-            const found = await win.evaluate(findOverflow, { root: resolved.root, limit: MAX_FINDINGS_PER_CHECK });
-            if (!found.rootFound) {
-                throw new Error(rootMissingMessage(resolved.root));
-            }
-            problems.push(...found.findings.map((finding) => ({ check: "overflow" as const, ...finding })));
-        }
-        const touch = resolved.touch.enabled ?? (await win.evaluate(isMobileApplied, true));
-        if (touch) {
-            const found = await win.evaluate(findSmallTargets, {
-                root: resolved.root,
-                targets: resolved.touch.selector,
-                ignore: resolved.touch.ignore,
-                minSize: resolved.touch.minSize,
-                limit: MAX_FINDINGS_PER_CHECK,
-            });
-            if (!found.rootFound) {
-                throw new Error(rootMissingMessage(resolved.root));
-            }
-            problems.push(...found.findings.map((finding) => ({ check: "touch-target" as const, ...finding })));
-        }
-        if (resolved.focus.enabled) {
-            problems.push(...(await walkFocusRing(resolved.root, resolved.focus.from, resolved.focus.maxStops)));
-        }
-        return problems;
+    interface LayoutRun {
+        problems: LayoutProblem[];
+        cuts: LayoutCut[];
+        minSize: number;
     }
 
-    /** Tabs through `root` and reports every stop that shows no focus ring. The walk ends when focus leaves `root`. */
-    async function walkFocusRing(root: string, from: string | null, maxStops: number): Promise<LayoutProblem[]> {
-        const start = await win.evaluate(focusWalkStart, { root, from });
+    async function runLayoutChecks(layoutOptions: LayoutCheckOptions): Promise<LayoutRun> {
+        const resolved = resolveLayoutOptions(layoutOptions);
+        // The root is looked up once, before any check: a missing root fails even when every check is off.
+        if (!(await win.evaluate(rootExists, resolved.root))) {
+            throw new Error(rootMissingMessage(resolved.root));
+        }
+        const touch = resolved.touch.enabled ?? (await win.evaluate(isMobileApplied, true));
+        if (!resolved.overflow.enabled && !touch && !resolved.focus.enabled) {
+            throw new Error(noChecksMessage());
+        }
+        const found: LayoutProblem[] = [];
+        const totals: LayoutCut[] = [];
+        const collect = (check: LayoutCheckName, result: LayoutResult): void => {
+            if (!result.rootFound) {
+                throw new Error(rootMissingMessage(resolved.root));
+            }
+            found.push(...result.findings.map((finding) => ({ check, ...finding })));
+            if (result.total > result.findings.length) {
+                totals.push({ check, total: result.total });
+            }
+        };
+        if (resolved.overflow.enabled) {
+            collect("overflow", await win.evaluate(findOverflow, { root: resolved.root, ignore: resolved.overflow.ignore, limit: MAX_FINDINGS_PER_CHECK }));
+        }
+        if (touch) {
+            collect(
+                "touch-target",
+                await win.evaluate(findSmallTargets, {
+                    root: resolved.root,
+                    targets: resolved.touch.selector,
+                    ignore: resolved.touch.ignore,
+                    minSize: resolved.touch.minSize,
+                    limit: MAX_FINDINGS_PER_CHECK,
+                }),
+            );
+        }
+        if (resolved.focus.enabled) {
+            const capped = capProblems(await walkFocus(resolved.root, resolved.focus), MAX_FINDINGS_PER_CHECK);
+            found.push(...capped.problems);
+            totals.push(...capped.cuts);
+        }
+        return { problems: found, cuts: totals, minSize: resolved.touch.minSize };
+    }
+
+    async function layoutProblems(layoutOptions: LayoutCheckOptions): Promise<LayoutProblem[]> {
+        return (await runLayoutChecks(layoutOptions)).problems;
+    }
+
+    /**
+     * Tabs through `root` and reports every stop that shows no focus ring (and, with `stayInside`, the Tab that leaves
+     * it). The walk ends when focus leaves `root`, comes back to a stop it already visited (a trap) or after `maxStops`
+     * presses. It is an error, never a pass, when it cannot start inside `root` or sees no stop at all.
+     */
+    async function walkFocus(root: string, focus: ResolvedLayoutOptions["focus"]): Promise<LayoutProblem[]> {
+        const start = await win.evaluate(focusWalkStart, { root, from: focus.from });
         if (start === "no-root") {
             throw new Error(rootMissingMessage(root));
         }
-        if (start === "no-start") {
-            throw new Error(noFocusStartMessage(root, from));
+        if (start !== "ok") {
+            throw new Error(focusStartMessage(start, root, focus.from));
         }
         const problems: LayoutProblem[] = [];
-        for (let stop = 0; stop <= maxStops; stop++) {
+        const reported = new Set<string>();
+        for (let stop = 0; stop <= focus.maxStops; stop++) {
             if (stop > 0) {
                 await win.keyboard.press("Tab");
             }
             const current = await win.evaluate(readFocusStop, root);
-            if (current?.inRoot !== true) {
+            if (current === null || (stop === 0 && (!current.inRoot || current.repeat))) {
+                throw new Error(`checkLayout(): the Tab walk found no stop inside ${JSON.stringify(root)}: focus is not on an element of the root after it was set. Check that the root stays on the page.`);
+            }
+            if (!current.inRoot) {
+                if (focus.stayInside) {
+                    problems.push({ check: "focus-escape", where: current.where, detail: `Tab ${String(stop)} moved focus out of ${JSON.stringify(root)}` });
+                }
                 break;
             }
-            if (!current.hasRing) {
+            if (current.repeat) {
+                break;
+            }
+            const key = `${current.where}|${current.detail}`;
+            if (!current.hasRing && !reported.has(key)) {
+                reported.add(key);
                 problems.push({ check: "focus-ring", where: current.where, detail: current.detail });
             }
         }
@@ -518,9 +558,9 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
     }
 
     async function checkLayout(layoutOptions: LayoutCheckOptions): Promise<void> {
-        const problems = await layoutProblems(layoutOptions);
-        if (problems.length > 0) {
-            throw new Error(layoutFailureMessage(layoutOptions.root, problems, resolveLayoutOptions(layoutOptions).touch.minSize));
+        const run = await runLayoutChecks(layoutOptions);
+        if (run.problems.length > 0) {
+            throw new Error(layoutFailureMessage(layoutOptions.root, run.problems, run.minSize, run.cuts));
         }
     }
 

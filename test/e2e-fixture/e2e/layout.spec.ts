@@ -35,15 +35,46 @@ test.describe("overflow", () => {
         await expect(obsidian.checkLayout({ root: ROOT, touchTargets: false })).rejects.toThrow(/1 problem inside "#opdk-layout-box":\n {2}- horizontal overflow: div \(scrollWidth 400 > clientWidth 100\)/);
     });
 
-    test("leaves out a box that scrolls on purpose, and a check that is turned off", async ({ win, obsidian }) => {
-        await addBox(win, '<div style="width:100px;overflow-x:auto"><div style="width:400px;height:10px"></div></div>');
-        expect(await obsidian.layoutProblems({ root: ROOT, touchTargets: false })).toEqual([]);
-        await addBox(win, '<div style="width:100px;overflow:hidden"><div style="width:400px;height:10px"></div></div>');
-        expect(await obsidian.layoutProblems({ root: ROOT, overflow: false, touchTargets: false })).toEqual([]);
+    test("reports a vertical scroll pane whose content spills sideways: its computed overflow-x is auto too", async ({ win, obsidian }) => {
+        await addBox(win, '<div class="pane" style="width:200px;height:50px;overflow-y:auto"><div style="width:900px;height:10px"></div></div>');
+        expect(await win.evaluate(`getComputedStyle(document.querySelector(".pane")).overflowX`)).toBe("auto");
+        const problems = await obsidian.layoutProblems({ root: ROOT, touchTargets: false });
+        expect(problems).toHaveLength(1);
+        expect(problems[0]).toMatchObject({ check: "overflow", where: "div.pane" });
     });
 
-    test("fails when the root is not there", async ({ obsidian }) => {
+    test("leaves out what overflow.ignore names, and a check that is turned off", async ({ win, obsidian }) => {
+        await addBox(win, '<pre style="width:100px;overflow-x:auto;white-space:pre">0123456789012345678901234567890123456789012345678901234567890123456789</pre>');
+        expect(await obsidian.layoutProblems({ root: ROOT, touchTargets: false })).toHaveLength(1);
+        expect(await obsidian.layoutProblems({ root: ROOT, touchTargets: false, overflow: { ignore: "pre" } })).toEqual([]);
+        await addBox(win, '<div style="width:100px;overflow:hidden"><div style="width:400px;height:10px"></div></div>');
+        expect(await obsidian.layoutProblems({ root: ROOT, overflow: false, touchTargets: true })).toEqual([]);
+    });
+
+    test("passes an ellipsis name and a screen-reader-only span, and still fails the real overflow next to them", async ({ win, obsidian }) => {
+        const names = '<div class="setting-item-name" style="width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">A setting with a rather long name</div>';
+        const srOnly = '<span class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap">Only for screen readers</span>';
+        await addBox(win, names + srOnly);
+        await obsidian.checkLayout({ root: ROOT, touchTargets: false });
+        await addBox(win, `${names}${srOnly}<div class="real" style="width:100px;overflow:hidden"><div style="width:400px;height:10px"></div></div>`);
+        const problems = await obsidian.layoutProblems({ root: ROOT, touchTargets: false });
+        expect(problems.map((problem) => problem.where)).toEqual(["div.real"]);
+    });
+
+    test("fails when the root is not there, even with every check off", async ({ obsidian }) => {
         await expect(obsidian.checkLayout({ root: "#nothing-here" })).rejects.toThrow('nothing matches the root "#nothing-here"');
+        await expect(obsidian.checkLayout({ root: "#nothing-here", overflow: false, touchTargets: false })).rejects.toThrow('nothing matches the root "#nothing-here"');
+    });
+
+    test("refuses to pass with every check off", async ({ win, obsidian }) => {
+        await addBox(win, "<p>text</p>");
+        await expect(obsidian.checkLayout({ root: ROOT, overflow: false, touchTargets: false })).rejects.toThrow("nothing to check");
+    });
+
+    test("passes on the ordinary settings modal of Obsidian", async ({ obsidian }) => {
+        await obsidian.openSettings();
+        await obsidian.checkLayout({ root: ".modal.mod-settings", touchTargets: false });
+        await obsidian.closeSettings();
     });
 });
 
@@ -60,7 +91,7 @@ test.describe("touch targets", () => {
 
     test("is off by default on the desktop and on by default in the mobile emulation", async ({ win, obsidian }) => {
         await addBox(win, small);
-        expect(await obsidian.layoutProblems({ root: ROOT, overflow: false })).toEqual([]);
+        await expect(obsidian.layoutProblems({ root: ROOT, overflow: false })).rejects.toThrow("nothing to check");
         await obsidian.mobile();
         await addBox(win, small);
         const problems = await obsidian.layoutProblems({ root: ROOT, overflow: false });
@@ -71,23 +102,55 @@ test.describe("touch targets", () => {
 });
 
 test.describe("focus ring", () => {
-    const style = "<style>#opdk-layout-box button{all:unset;display:block;width:80px;height:30px}#opdk-layout-box .ring:focus{outline:2px solid blue}#opdk-layout-box .shadow:focus{box-shadow:0 0 0 2px blue}</style>";
+    // Obsidian styles a plain <button> in a modal or a settings tab and gives it a resting box-shadow (--input-shadow),
+    // so "has a box-shadow" is true before anything is focused. The fixture's Obsidian sets that variable to none, so
+    // the box restores the value its themes use. The resting rule is :where() to stay below Obsidian's :focus-visible rule.
+    const obsidianButtons =
+        "<style>#opdk-layout-box{--input-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 1px 1px rgba(0,0,0,.3)}:where(#opdk-layout-box) button,:where(#opdk-layout-box) select{box-shadow:var(--input-shadow)}" +
+        "#opdk-layout-box .stripped:focus,#opdk-layout-box .stripped:focus-visible{outline:none !important;box-shadow:var(--input-shadow) !important}" +
+        "#opdk-layout-box .ring:focus-visible{outline:2px solid blue}</style>";
+    const wrap = (inner: string): string => `${obsidianButtons}<div class="modal"><div class="vertical-tab-content">${inner}</div></div>`;
 
-    test("passes when every stop shows an outline or a box-shadow, and the walk ends where focus leaves the root", async ({ win, obsidian }) => {
-        await addBox(win, `${style}<button class="ring" tabindex="0">a</button><button class="shadow" tabindex="0">b</button>`);
+    test("passes an Obsidian button whose focus ring is the theme's, and a custom outline", async ({ win, obsidian }) => {
+        await addBox(win, wrap('<button class="mod-cta">Save</button><select><option>a</option></select><button class="ring">Custom</button>'));
+        expect(await win.evaluate(`getComputedStyle(document.querySelector("#opdk-layout-box button")).boxShadow`)).not.toBe("none");
         expect(await obsidian.layoutProblems({ root: ROOT, overflow: false, touchTargets: false, focusRing: true })).toEqual([]);
     });
 
-    test("names the stop that has none", async ({ win, obsidian }) => {
-        await addBox(win, `${style}<button class="ring" tabindex="0">a</button><button class="bare" tabindex="0">b</button>`);
+    test("names a button whose ring was removed even though it keeps its resting box-shadow", async ({ win, obsidian }) => {
+        await addBox(win, wrap('<button class="mod-cta">Save</button><button class="stripped">Cancel</button>'));
         const problems = await obsidian.layoutProblems({ root: ROOT, overflow: false, touchTargets: false, focusRing: true });
         expect(problems).toHaveLength(1);
-        expect(problems[0]).toMatchObject({ check: "focus-ring", where: "button.bare" });
-        await expect(obsidian.checkLayout({ root: ROOT, overflow: false, touchTargets: false, focusRing: { from: ".ring" } })).rejects.toThrow(/no focus ring: button\.bare/);
+        expect(problems[0]).toMatchObject({ check: "focus-ring", where: "button.stripped" });
+        await expect(obsidian.checkLayout({ root: ROOT, overflow: false, touchTargets: false, focusRing: { from: "button.mod-cta" } })).rejects.toThrow(/no focus ring: button\.stripped/);
     });
 
-    test("fails when nothing in the root can take focus", async ({ win, obsidian }) => {
-        await addBox(win, "<p>text</p>");
+    test("starts at the first focusable that is shown, so a hidden or disabled first button is not the walk", async ({ win, obsidian }) => {
+        await addBox(win, wrap('<button style="display:none">hidden</button><button disabled>off</button><button class="stripped">Bare</button>'));
+        const problems = await obsidian.layoutProblems({ root: ROOT, overflow: false, touchTargets: false, focusRing: true });
+        expect(problems.map((problem) => problem.where)).toEqual(["button.stripped"]);
+    });
+
+    test("fails, never passes, when nothing in the root can take focus", async ({ win, obsidian }) => {
+        await addBox(win, '<p>text</p><button style="display:none">hidden</button>');
         await expect(obsidian.checkLayout({ root: ROOT, overflow: false, touchTargets: false, focusRing: true })).rejects.toThrow("nothing inside");
+    });
+
+    test("refuses a start that is outside the root", async ({ win, obsidian }) => {
+        await addBox(win, wrap("<button>In</button>"));
+        await expect(obsidian.checkLayout({ root: ROOT, overflow: false, touchTargets: false, focusRing: { from: "body" } })).rejects.toThrow(/is not inside/);
+    });
+
+    test("ends a trap without a problem, and reports focus leaving the root when stayInside is on", async ({ win, obsidian }) => {
+        await addBox(win, wrap('<button class="ring" id="first">a</button><button class="ring" id="last">b</button>'));
+        await win.evaluate(
+            `document.getElementById("last").addEventListener("keydown", (event) => { if (event.key === "Tab" && !event.shiftKey) { event.preventDefault(); document.getElementById("first").focus(); } })`,
+        );
+        expect(await obsidian.layoutProblems({ root: ROOT, overflow: false, touchTargets: false, focusRing: { stayInside: true } })).toEqual([]);
+        await addBox(win, wrap('<button class="ring">a</button>'));
+        const problems = await obsidian.layoutProblems({ root: ROOT, overflow: false, touchTargets: false, focusRing: { stayInside: true } });
+        expect(problems).toHaveLength(1);
+        expect(problems[0]).toMatchObject({ check: "focus-escape" });
+        expect(await obsidian.layoutProblems({ root: ROOT, overflow: false, touchTargets: false, focusRing: true })).toEqual([]);
     });
 });

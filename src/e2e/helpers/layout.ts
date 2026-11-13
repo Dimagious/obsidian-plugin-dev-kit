@@ -15,26 +15,33 @@ export interface TouchTargetOptions {
     ignore?: string;
 }
 
+export interface OverflowOptions {
+    /** CSS selector of elements to leave out, matched against the element and its ancestors (a code block or a table that scrolls on purpose). */
+    ignore?: string;
+}
+
 export interface FocusRingOptions {
     /** CSS selector of the element where the Tab walk starts. Default: the first element of `root` that can take focus. */
     from?: string;
     /** The walk ends after this many Tab presses if focus has not left `root` by then. Default 20, at most 100. */
     maxStops?: number;
+    /** Report it when Tab moves focus out of `root`, as for a modal that must trap focus. Default false: leaving ends the walk without a problem. */
+    stayInside?: boolean;
 }
 
 /** What `obsidian.checkLayout()` and `obsidian.layoutProblems()` look at. Every check can be turned off. */
 export interface LayoutCheckOptions {
     /** CSS selector of the part of the window to check: a modal, a view, a settings tab. Required, so a check never passes by looking at nothing. */
     root: string;
-    /** No horizontal overflow inside `root` (`scrollWidth > clientWidth + 1`). Default true. */
-    overflow?: boolean;
+    /** No horizontal overflow inside `root` (`scrollWidth > clientWidth + 1`), scroll panes included. Default true. */
+    overflow?: boolean | OverflowOptions;
     /** Touch targets of at least 44 px. Default: on when the window is in the mobile emulation (`obsidian.mobile()`), off otherwise. */
     touchTargets?: boolean | TouchTargetOptions;
-    /** Every Tab stop inside `root` shows a focus ring (an outline or a box-shadow). Default false, because it presses Tab and moves focus. */
+    /** Every Tab stop inside `root` shows a focus ring (focus changes its outline or its box-shadow). Default false, because it presses Tab and moves focus. */
     focusRing?: boolean | FocusRingOptions;
 }
 
-export type LayoutCheckName = "overflow" | "touch-target" | "focus-ring";
+export type LayoutCheckName = "overflow" | "touch-target" | "focus-ring" | "focus-escape";
 
 /** One thing that is wrong, with the check that found it. */
 export interface LayoutProblem extends LayoutFinding {
@@ -43,15 +50,16 @@ export interface LayoutProblem extends LayoutFinding {
 
 export interface ResolvedLayoutOptions {
     readonly root: string;
-    readonly overflow: boolean;
+    readonly overflow: { enabled: boolean; ignore: string | null };
     /** Null: not given, decided from the window (mobile or not). */
     readonly touch: { enabled: boolean | null; minSize: number; selector: string; ignore: string | null };
-    readonly focus: { enabled: boolean; from: string | null; maxStops: number };
+    readonly focus: { enabled: boolean; from: string | null; maxStops: number; stayInside: boolean };
 }
 
 const KNOWN_KEYS = ["root", "overflow", "touchTargets", "focusRing"];
 const TOUCH_KEYS = ["minSize", "selector", "ignore"];
-const FOCUS_KEYS = ["from", "maxStops"];
+const OVERFLOW_KEYS = ["ignore"];
+const FOCUS_KEYS = ["from", "maxStops", "stayInside"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -85,12 +93,20 @@ export function resolveLayoutOptions(options: unknown): ResolvedLayoutOptions {
         throw new Error('checkLayout(): root is required, the CSS selector of the part of the window to check, for example checkLayout({ root: ".modal" }).');
     }
     const { overflow, touchTargets, focusRing } = options;
-    if (overflow !== undefined && typeof overflow !== "boolean") {
-        throw new Error(`checkLayout(): overflow must be true or false, got ${JSON.stringify(overflow)}.`);
-    }
     const touch = resolveTouch(touchTargets);
     const focus = resolveFocus(focusRing);
-    return { root, overflow: overflow ?? true, touch, focus };
+    return { root, overflow: resolveOverflow(overflow), touch, focus };
+}
+
+function resolveOverflow(value: unknown): ResolvedLayoutOptions["overflow"] {
+    if (value === undefined || typeof value === "boolean") {
+        return { enabled: value ?? true, ignore: null };
+    }
+    if (!isRecord(value)) {
+        throw new Error(`checkLayout(): overflow must be true, false or an object { ignore? }, got ${JSON.stringify(value)}.`);
+    }
+    rejectUnknown(value, OVERFLOW_KEYS, "overflow");
+    return { enabled: true, ignore: optionalSelector(value.ignore, "overflow.ignore") };
 }
 
 function resolveTouch(value: unknown): ResolvedLayoutOptions["touch"] {
@@ -119,44 +135,86 @@ function resolveTouch(value: unknown): ResolvedLayoutOptions["touch"] {
 
 function resolveFocus(value: unknown): ResolvedLayoutOptions["focus"] {
     if (value === undefined || typeof value === "boolean") {
-        return { enabled: value ?? false, from: null, maxStops: DEFAULT_MAX_FOCUS_STOPS };
+        return { enabled: value ?? false, from: null, maxStops: DEFAULT_MAX_FOCUS_STOPS, stayInside: false };
     }
     if (!isRecord(value)) {
-        throw new Error(`checkLayout(): focusRing must be true, false or an object { from?, maxStops? }, got ${JSON.stringify(value)}.`);
+        throw new Error(`checkLayout(): focusRing must be true, false or an object { from?, maxStops?, stayInside? }, got ${JSON.stringify(value)}.`);
     }
     rejectUnknown(value, FOCUS_KEYS, "focusRing");
     const { maxStops } = value;
     if (maxStops !== undefined && (typeof maxStops !== "number" || !Number.isInteger(maxStops) || maxStops < 1 || maxStops > 100)) {
         throw new Error(`checkLayout(): focusRing.maxStops must be a whole number from 1 to 100, got ${JSON.stringify(maxStops)}.`);
     }
-    return { enabled: true, from: optionalSelector(value.from, "focusRing.from"), maxStops: maxStops ?? DEFAULT_MAX_FOCUS_STOPS };
+    const { stayInside } = value;
+    if (stayInside !== undefined && typeof stayInside !== "boolean") {
+        throw new Error(`checkLayout(): focusRing.stayInside must be true or false, got ${JSON.stringify(stayInside)}.`);
+    }
+    return { enabled: true, from: optionalSelector(value.from, "focusRing.from"), maxStops: maxStops ?? DEFAULT_MAX_FOCUS_STOPS, stayInside: stayInside ?? false };
 }
 
 export function rootMissingMessage(root: string): string {
     return `checkLayout(): nothing matches the root ${JSON.stringify(root)}. Open the part of the window you want to check before the call, and check the selector.`;
 }
 
-export function noFocusStartMessage(root: string, from: string | null): string {
+export function noChecksMessage(): string {
+    return "checkLayout(): nothing to check. Every check is off (touch targets are only on by default in the mobile emulation). Turn one on: overflow, touchTargets or focusRing.";
+}
+
+/** Why a Tab walk could not start, as a sentence that says what to do. */
+export function focusStartMessage(outcome: "no-start" | "outside-root" | "not-focused", root: string, from: string | null): string {
+    if (outcome === "outside-root") {
+        return `checkLayout(): focusRing.from ${JSON.stringify(from)} is not inside ${JSON.stringify(root)}, so the walk would check nothing of it. Pick an element inside the root.`;
+    }
+    if (outcome === "not-focused") {
+        return `checkLayout(): the element where the Tab walk starts${from === null ? "" : ` (${JSON.stringify(from)})`} did not take focus. Pick a focusable element inside ${JSON.stringify(root)} (a button, a link, an input, or tabindex="0").`;
+    }
     return from === null
-        ? `checkLayout(): nothing inside ${JSON.stringify(root)} can take focus, so there are no Tab stops to check. Turn focusRing off, or check the selector.`
+        ? `checkLayout(): nothing inside ${JSON.stringify(root)} can take focus (no visible, enabled button, link, input, select or tabindex="0"), so there are no Tab stops to check. Turn focusRing off, or check the selector.`
         : `checkLayout(): focusRing.from ${JSON.stringify(from)} matches nothing. Check the selector.`;
+}
+
+/** Cut a problem list to `limit` per kind. The totals of the kinds that were cut go back, so the failure can say "first 10 of N". */
+export function capProblems(problems: readonly LayoutProblem[], limit: number): { problems: LayoutProblem[]; cuts: LayoutCut[] } {
+    const kept: LayoutProblem[] = [];
+    const totals = new Map<LayoutCheckName, number>();
+    for (const problem of problems) {
+        const total = (totals.get(problem.check) ?? 0) + 1;
+        totals.set(problem.check, total);
+        if (total <= limit) {
+            kept.push(problem);
+        }
+    }
+    return { problems: kept, cuts: [...totals].filter(([, total]) => total > limit).map(([check, total]) => ({ check, total })) };
+}
+
+/** A kind of problem that has more findings than the list shows. */
+export interface LayoutCut {
+    check: LayoutCheckName;
+    total: number;
 }
 
 const LABELS: Record<LayoutCheckName, string> = {
     overflow: "horizontal overflow",
     "touch-target": "touch target too small",
     "focus-ring": "no focus ring",
+    "focus-escape": "focus left the root",
 };
 
 /** The failure text: one line per problem, so a run lists everything that is wrong at once. */
-export function layoutFailureMessage(root: string, problems: readonly LayoutProblem[], minSize: number): string {
+export function layoutFailureMessage(root: string, problems: readonly LayoutProblem[], minSize: number, cuts: readonly LayoutCut[] = []): string {
     const lines = problems.map((problem) => `  - ${LABELS[problem.check]}: ${problem.where} (${problem.detail})`);
+    for (const cut of cuts) {
+        lines.push(`  - ${LABELS[cut.check]}: (first ${String(problems.filter((problem) => problem.check === cut.check).length)} of ${String(cut.total)})`);
+    }
     const hints: string[] = [];
     if (problems.some((problem) => problem.check === "touch-target")) {
         hints.push(`Touch targets must be at least ${String(minSize)} px; raise the size in CSS for the mobile layout, or pass touchTargets: { ignore } for an element that is not a target.`);
     }
     if (problems.some((problem) => problem.check === "focus-ring")) {
-        hints.push("A focus ring is an outline or a box-shadow on :focus-visible; a theme that sets outline: none needs a replacement.");
+        hints.push("A focus ring is an outline or a box-shadow that :focus-visible changes (a resting box-shadow does not count); a theme that sets outline: none needs a replacement.");
+    }
+    if (problems.some((problem) => problem.check === "focus-escape")) {
+        hints.push("Keep Tab inside a modal: focus the first control again when Tab leaves the last one.");
     }
     return [`checkLayout(): ${String(problems.length)} ${problems.length === 1 ? "problem" : "problems"} inside ${JSON.stringify(root)}:`, ...lines, ...hints].join("\n");
 }

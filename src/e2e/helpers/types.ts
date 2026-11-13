@@ -1,11 +1,11 @@
 import type { Locator } from "@playwright/test";
 import type { CompositionChunking } from "./ime.js";
-import type { FocusRingOptions, LayoutCheckName, LayoutCheckOptions, LayoutProblem, TouchTargetOptions } from "./layout.js";
+import type { FocusRingOptions, LayoutCheckName, LayoutCheckOptions, LayoutProblem, OverflowOptions, TouchTargetOptions } from "./layout.js";
 import type { MobileOptions } from "./mobile.js";
 import type { SettleOptions } from "./settle.js";
 import type { ViewMode } from "./view-mode.js";
 
-export type { CompositionChunking, FocusRingOptions, LayoutCheckName, LayoutCheckOptions, LayoutProblem, MobileOptions, SettleOptions, TouchTargetOptions, ViewMode };
+export type { CompositionChunking, FocusRingOptions, LayoutCheckName, LayoutCheckOptions, LayoutProblem, MobileOptions, OverflowOptions, SettleOptions, TouchTargetOptions, ViewMode };
 
 /** A position in a note; both numbers start at 0. */
 export interface EditorPosition {
@@ -119,7 +119,11 @@ export interface ObsidianHelpers {
     checkLayout(options: LayoutCheckOptions): Promise<void>;
     /** The same checks as `checkLayout()`, returned as a list (empty when all is well) instead of thrown, for `expect.soft` or a report. */
     layoutProblems(options: LayoutCheckOptions): Promise<LayoutProblem[]>;
-    /** Hides the properties block of notes, a display setting; the notes are unchanged. */
+    /**
+     * Hides the properties block of notes, a display setting; the notes are unchanged. It saves the setting to the
+     * vault's `.obsidian/app.json` at once (`vault.saveConfig()`), so a later settings save does not bring the block
+     * back. It throws on an Obsidian that has no `vault.setConfig` or `vault.saveConfig`, because it would not stick.
+     */
     hideProperties(): Promise<void>;
     /**
      * Scrolls a reading view from top to bottom so blocks that draw when visible are drawn. It stays at the bottom

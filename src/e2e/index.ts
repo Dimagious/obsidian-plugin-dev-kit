@@ -25,6 +25,7 @@ export type {
     LayoutProblem,
     MobileOptions,
     ObsidianHelpers,
+    OverflowOptions,
     PageFactory,
     PageFunction,
     SettleOptions,
