@@ -52,7 +52,7 @@ describe("opdk scan", () => {
         expect(await scanCommand.run([], ctx)).toBe(0);
         const out = ctx.out.join("");
         expect(out).toContain("· scan    fixture-plugin: 4 tracked files");
-        expect(out).toMatch(/✓ lint {4}0 findings \(\d+ files?, eslint-plugin-obsidianmd 0\.5\.1\)/);
+        expect(out).toMatch(/✓ lint {4}0 findings \(\d+ files?, eslint-plugin-obsidianmd 0\.5\.1, typescript 6\.\d+\.\d+\)/);
         expect(out).toContain("✓ css     0 findings (1 file)");
         expect(out).toContain("✓ code    0 findings (1 file)");
         expect(out).toContain("✓ meta    0 findings (manifest.json)");
@@ -71,9 +71,10 @@ describe("opdk scan", () => {
         expect(await scanCommand.run([], ctx)).toBe(1);
 
         const err = ctx.err.join("");
-        expect(err).toMatch(/✗ lint {4}\d+ findings \(\d+ files, eslint-plugin-obsidianmd 0\.5\.1, 1 without type information\):/);
+        expect(err).toMatch(/✗ lint {4}\d+ finding \(\d+ files, eslint-plugin-obsidianmd 0\.5\.1, typescript 6\.\d+\.\d+, 1 outside every tsconfig, advisory\):/);
         expect(err).toContain("src/main.ts:2  obsidianmd/prefer-window-timers  Use 'window.setTimeout()' instead of 'setTimeout()'");
-        expect(err).toContain("site/page.js:1  obsidianmd/prefer-active-doc");
+        // A script no tsconfig covers is not on the scorecard: it prints as a `!` line and does not count.
+        expect(ctx.out.join("")).toContain("! lint    site/page.js:1  outside-tsconfig  1 lint finding in a file no tsconfig covers (first: obsidianmd/prefer-active-doc)");
         expect(err).toContain("✗ css     3 findings (2 files):");
         expect(err).toContain("styles.css:1  css-no-important");
         expect(err).toContain("styles.css:2  css-no-has");
@@ -141,20 +142,7 @@ describe("opdk scan", () => {
         expect(ctx.err).toEqual([]);
     });
 
-    it("skips the paths in scan.ignore in every check and says how many", async () => {
-        const plugin = cleanPlugin();
-        plugin.write("site/page.js", "document.body.append('x');\n");
-        plugin.write("site/site.css", ".a { color: red !important; }\n");
-        plugin.write("opdk.config.mjs", 'export default { scan: { ignore: ["site/**"] } };\n');
-        trackAll(plugin.dir);
-        const ctx = createContext(plugin.dir);
-        expect(await scanCommand.run([], ctx)).toBe(0);
-        expect(ctx.out.join("")).toContain("· scan    fixture-plugin: 5 tracked files, 2 skipped by scan.ignore");
-        expect(ctx.out.join("")).toContain("✓ css     0 findings (1 file)");
-        expect(ctx.err).toEqual([]);
-    });
-
-    it("counts site/ without scan.ignore: ignoring it is a decision", async () => {
+    it("counts the stylesheets under site/: the scanner reads every tracked .css", async () => {
         const plugin = cleanPlugin();
         plugin.write("site/site.css", ".a { color: red !important; }\n");
         trackAll(plugin.dir);
@@ -168,14 +156,6 @@ describe("opdk scan", () => {
         trackAll(plugin.dir);
         plugin.write("src/untracked.ts", "setTimeout(() => undefined, 1);\n");
         plugin.write("extra.css", ".a { color: red !important; }\n");
-        const ctx = createContext(plugin.dir);
-        expect(await scanCommand.run([], ctx)).toBe(0);
-    });
-
-    it("skips the manifest check when scan.ignore covers manifest.json", async () => {
-        const plugin = cleanPlugin({ description: "Fixture plugin does things." });
-        plugin.write("opdk.config.mjs", 'export default { scan: { ignore: ["manifest.json"] } };\n');
-        trackAll(plugin.dir);
         const ctx = createContext(plugin.dir);
         expect(await scanCommand.run([], ctx)).toBe(0);
     });
@@ -197,26 +177,38 @@ describe("opdk scan", () => {
         expect(ctx.out).toEqual([]);
     });
 
-    it("fails when scan.ignore leaves nothing to scan", async () => {
-        const plugin = cleanPlugin();
-        plugin.write("opdk.config.mjs", 'export default { scan: { ignore: ["**"] } };\n');
-        trackAll(plugin.dir);
-        const ctx = createContext(plugin.dir);
-        expect(await scanCommand.run([], ctx)).toBe(1);
-        expect(ctx.err.join("")).toContain("no files to scan (scan.ignore skips all 5)");
-        expect(ctx.err.join("")).toContain("Check scan.ignore in opdk.config.mjs.");
-    });
-
     it("rejects arguments", async () => {
         const plugin = cleanPlugin();
         await expect(scanCommand.run(["--fix"], createContext(plugin.dir))).rejects.toThrow('"opdk scan" takes no arguments, got "--fix"');
     });
 
-    it("fails on an invalid scan section, naming the key", async () => {
+    it("refuses the removed scan.ignore before any check runs, so no finding is hidden by it", async () => {
         const plugin = cleanPlugin();
-        plugin.write("opdk.config.mjs", 'export default { scan: { ignore: "site/**" } };\n');
+        plugin.write("site/site.css", ".a { color: red !important; }\n");
+        plugin.write("opdk.config.mjs", 'export default { scan: { ignore: ["site/**"] } };\n');
         trackAll(plugin.dir);
-        await expect(scanCommand.run([], createContext(plugin.dir))).rejects.toThrow('"scan.ignore" must be an array of glob strings');
+        const ctx = createContext(plugin.dir);
+        await expect(scanCommand.run([], ctx)).rejects.toThrow('"scan.ignore" was removed');
+        expect(ctx.out).toEqual([]);
+    });
+
+    it("reports a Node built-in in global-setup.ts as the scorecard does", async () => {
+        const plugin = cleanPlugin();
+        plugin.write("src/global-setup.ts", 'import "node:fs";\nexport const a = 1;\n');
+        trackAll(plugin.dir);
+        const ctx = createContext(plugin.dir);
+        expect(await scanCommand.run([], ctx)).toBe(1);
+        expect(ctx.err.join("")).toContain('src/global-setup.ts:1  obsidianmd/no-nodejs-modules  Do not import Node.js built-in module "node:fs".');
+    });
+
+    it("prints a script outside every tsconfig as an advisory line and exits 0", async () => {
+        const plugin = cleanPlugin();
+        plugin.write("site/page.js", "document.body.append('x');\n");
+        trackAll(plugin.dir);
+        const ctx = createContext(plugin.dir);
+        expect(await scanCommand.run([], ctx)).toBe(0);
+        expect(ctx.out.join("")).toContain("! lint    site/page.js:1  outside-tsconfig");
+        expect(ctx.err).toEqual([]);
     });
 
     it("needs manifest.json: the plugin name comes from there", async () => {
@@ -224,6 +216,42 @@ describe("opdk scan", () => {
         created = plugin;
         writeFileSync(path.join(plugin.dir, "manifest.json"), "");
         await expect(scanCommand.run([], createContext(plugin.dir))).rejects.toThrow("is not valid JSON");
+    });
+});
+
+describe("the TypeScript the plugin installs", () => {
+    function scanWith(readTypescriptVersion: () => string | undefined): Promise<{ code: number; out: string; err: string }> {
+        const plugin = cleanPlugin();
+        trackAll(plugin.dir);
+        const ctx = createContext(plugin.dir);
+        return runScan({
+            cwd: plugin.dir,
+            manifest: { id: "fixture-plugin", name: "Fixture", version: "1.0.0", isDesktopOnly: false },
+            reporter: ctx.reporter,
+            readTypescriptVersion,
+        }).then((code) => ({ code, out: ctx.out.join(""), err: ctx.err.join("") }));
+    }
+
+    it("fails before linting on TypeScript 5 and says to install 6", async () => {
+        const { code, out, err } = await scanWith(() => "5.9.3");
+        expect(code).toBe(1);
+        expect(err).toContain("✗ scan");
+        expect(err).toContain("TypeScript 5.9.3");
+        expect(err).toContain("npm install -D typescript@6");
+        expect(out).not.toContain("lint");
+    });
+
+    it("fails when TypeScript is missing and names the install command", async () => {
+        const { code, err } = await scanWith(() => undefined);
+        expect(code).toBe(1);
+        expect(err).toContain("no TypeScript installed");
+        expect(err).toContain("npm install -D typescript@6");
+    });
+
+    it("prints the version in the lint line on TypeScript 6", async () => {
+        const { code, out } = await scanWith(() => "6.0.3");
+        expect(code).toBe(0);
+        expect(out).toContain("typescript 6.0.3");
     });
 });
 
@@ -235,7 +263,6 @@ describe("ESLint next to eslint-plugin-obsidianmd", () => {
         const code = await runScan({
             cwd: plugin.dir,
             manifest: { id: "fixture-plugin", name: "Fixture", version: "1.0.0", isDesktopOnly: false },
-            config: {},
             reporter: ctx.reporter,
             readNestedEslintVersion: () => "1.0.0",
         });

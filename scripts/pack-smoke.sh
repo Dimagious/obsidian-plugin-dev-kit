@@ -165,6 +165,18 @@ fi
 rm src/late.ts
 git add -A
 
+echo "--- npx opdk scan on TypeScript 5 (the scan requires 6 and must say so before linting)"
+# --legacy-peer-deps: the kit's peer range is TypeScript 6, which is exactly what this step breaks on purpose.
+npm install --no-audit --no-fund --loglevel=error --no-save --legacy-peer-deps "typescript@5.9.3"
+old_ts_status=0
+old_ts_output="$(env -u FORCE_COLOR -u NO_COLOR -u GITHUB_ACTIONS npx --no -- opdk scan 2>&1)" || old_ts_status=$?
+printf '%s\n' "$old_ts_output"
+if [ "$old_ts_status" -ne 1 ] || ! printf '%s' "$old_ts_output" | grep -q 'TypeScript 5.9.3' || ! printf '%s' "$old_ts_output" | grep -q 'npm install -D typescript@6'; then
+    echo "smoke: opdk scan exited with $old_ts_status on TypeScript 5.9.3, expected 1 with the TypeScript 6 failure and its hint" >&2
+    exit 1
+fi
+npm install --no-audit --no-fund --loglevel=error --no-save --legacy-peer-deps "typescript@$typescript_version"
+
 echo "--- npx opdk release check (the fixture is no releasable plugin: it must fail, and the build step must still run)"
 release_status=0
 release_output="$(env -u FORCE_COLOR -u NO_COLOR -u GITHUB_ACTIONS npx --no -- opdk release check --no-api 2>&1)" || release_status=$?

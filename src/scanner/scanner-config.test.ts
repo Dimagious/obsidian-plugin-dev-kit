@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import type { Linter } from "eslint";
 import obsidianmd from "eslint-plugin-obsidianmd";
 import { describe, expect, it } from "vitest";
-import { createScannerConfig, MIRRORED_OBSIDIANMD_VERSION, SCANNER_IGNORES } from "./scanner-config.js";
+import { createScannerConfig, MIRRORED_OBSIDIANMD_VERSION, SCANNER_IGNORES, SETUP_FILE_PATTERNS, withoutRuntimeExemptions } from "./scanner-config.js";
 
 function kitDependency(name: string): unknown {
     const text = readFileSync(new URL("../../package.json", import.meta.url), "utf8");
@@ -29,9 +29,9 @@ function peerRange(manifest: Record<string, unknown>, name: string): unknown {
     return typeof peers === "object" && peers !== null && name in peers ? Object.entries(peers).find(([key]) => key === name)?.[1] : undefined;
 }
 
-/** What the kit adds after the preset: the first entry (parser options) and the preset itself are skipped. */
+/** What the kit adds after the preset: the first entry (parser options), the preset and its re-applied runtime rules are skipped. */
 function ownBlocks(config: readonly Linter.Config[]): Linter.Config[] {
-    return config.slice(1 + obsidianmd.configs.recommended.length);
+    return config.slice(1 + obsidianmd.configs.recommended.length + withoutRuntimeExemptions(obsidianmd.configs.recommended).length);
 }
 
 function parserOptions(entry: Linter.Config | undefined): Record<string, unknown> {
@@ -53,12 +53,15 @@ describe("the mirrored scanner configuration", () => {
     });
 
     // typescript is a peer of the kit because typescript-eslint needs it; the kit must not promise a wider
-    // range than the typescript-eslint it pins.
-    it("declares the typescript peer range of the typescript-eslint it pins", () => {
+    // range than the typescript-eslint it pins. It requires 6 (the scanner type-checks with it), so the lower bound is
+    // the kit's own and the upper bound must be the one typescript-eslint declares.
+    it("declares the typescript peer range of the typescript-eslint it pins, from 6", () => {
         const kit = readPackageJson(new URL("../../package.json", import.meta.url));
         const tseslint = readPackageJson(new URL("../../node_modules/typescript-eslint/package.json", import.meta.url));
-        expect(peerRange(tseslint, "typescript")).toEqual(expect.any(String));
-        expect(peerRange(kit, "typescript")).toBe(peerRange(tseslint, "typescript"));
+        const upstream = peerRange(tseslint, "typescript");
+        expect(upstream).toEqual(expect.any(String));
+        expect(String(upstream).endsWith(" <6.1.0")).toBe(true);
+        expect(peerRange(kit, "typescript")).toBe(">=6.0.0 <6.1.0");
     });
 
     it("was diffed against the version that is installed", () => {
@@ -167,5 +170,46 @@ describe("createScannerConfig", () => {
         const block = ownBlocks(untyped).find((entry) => entry.files?.flat().includes("**/*.{ts,cts,mts,tsx}") === true && entry.rules?.["no-implied-eval"] === "error");
         expect(block).toBeDefined();
         expect(typed.some((entry) => entry.rules?.["no-implied-eval"] === "error" && entry.files?.flat().includes("**/*.{ts,cts,mts,tsx}") === true)).toBe(false);
+    });
+});
+
+describe("withoutRuntimeExemptions", () => {
+    it("keeps only blocks that carry ignores, as the same rules for the setup files only, without the ignores", () => {
+        const blocks: Linter.Config[] = [
+            { files: ["**/*.js"], rules: { "a/plain": "error" } },
+            { files: ["**/*.js"], ignores: ["**/global-setup.*"], rules: { "a/runtime": "warn" } },
+            { ignores: ["x"] },
+        ];
+        const lifted = withoutRuntimeExemptions(blocks);
+        expect(lifted).toHaveLength(1);
+        expect(lifted[0]?.rules).toEqual({ "a/runtime": "warn" });
+        expect(lifted[0]?.ignores).toBeUndefined();
+        // "all of these" in flat config: the block's own glob and one setup glob.
+        expect(lifted[0]?.files).toEqual(SETUP_FILE_PATTERNS.map((setup) => ["**/*.js", setup]));
+    });
+
+    it("pairs every pattern of a block with every setup pattern", () => {
+        const [block] = withoutRuntimeExemptions([{ files: ["**/*.ts", "**/*.tsx"], ignores: ["x"], rules: { "a/r": "warn" } }]);
+        expect(block?.files).toHaveLength(2 * SETUP_FILE_PATTERNS.length);
+    });
+
+    it("does not name workers, test helper folders or tool configs among the files that lose the exemption", () => {
+        const text = SETUP_FILE_PATTERNS.join(" ");
+        for (const exempt of ["worker", "test-helpers", "test-support", "test-utils", "testing", "testUtils", "esbuild", "version-bump", "eslint"]) {
+            expect(text).not.toContain(exempt);
+        }
+    });
+
+    it("exists in the installed preset: the exemption of test and tooling files is the thing it lifts", () => {
+        const exempting = obsidianmd.configs.recommended.filter((block) => block.ignores !== undefined && block.rules?.["obsidianmd/no-nodejs-modules"] !== undefined);
+        expect(exempting.length, "the preset no longer exempts files from no-nodejs-modules; re-check this module").toBeGreaterThan(0);
+        expect(exempting.some((block) => block.ignores?.some((pattern) => pattern.includes("global-setup")) === true)).toBe(true);
+    });
+
+    it("puts the runtime rules back after the preset, so a global-setup file gets no-nodejs-modules", () => {
+        const config = createScannerConfig({ cwd: "/p", typeAware: true });
+        const lifted = withoutRuntimeExemptions(obsidianmd.configs.recommended);
+        expect(config.slice(1 + obsidianmd.configs.recommended.length, 1 + obsidianmd.configs.recommended.length + lifted.length)).toEqual(lifted);
+        expect(lifted.some((block) => block.rules?.["obsidianmd/no-nodejs-modules"] === "warn")).toBe(true);
     });
 });

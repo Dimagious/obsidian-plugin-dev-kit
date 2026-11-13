@@ -1,24 +1,25 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { Reporter } from "../cli/reporter.js";
-import type { Manifest, ScanConfig } from "../config/types.js";
+import type { Manifest } from "../config/types.js";
 import { checkCode, isShippedSource, type SourceFile } from "./code-checks.js";
 import { checkCss } from "./css-check.js";
 import { eslintMismatchWarning } from "./eslint-nesting.js";
 import { findingsOf, formatFinding, SCAN_CHECKS, type Finding, type ScanCheck } from "./findings.js";
 import { listTrackedFiles } from "./git-files.js";
-import { createIgnoreMatcher } from "./glob.js";
 import { runScannerLint } from "./lint.js";
 import { checkManifestDescription } from "./meta-checks.js";
 import { MIRRORED_OBSIDIANMD_VERSION } from "./scanner-config.js";
+import { describeTypescriptGap, readPluginTypescriptVersion } from "./typescript-gate.js";
 
 export interface ScanInput {
     readonly cwd: string;
     readonly manifest: Manifest;
-    readonly config: ScanConfig;
     readonly reporter: Reporter;
     /** Reads the ESLint version that `eslint-plugin-obsidianmd` resolves. Tests inject it; the default reads the install. */
     readonly readNestedEslintVersion?: () => string;
+    /** Reads the version of the TypeScript the plugin installs, or `undefined` when there is none. Tests inject it; the default reads the install. */
+    readonly readTypescriptVersion?: () => string | undefined;
 }
 
 const plural = (count: number, noun: string): string => `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
@@ -49,21 +50,21 @@ export function reportCheck(check: ScanCheck, findings: readonly Finding[], scop
 }
 
 /** `opdk scan`: the scanner's ESLint pass, the CSS check and the source checks over the tracked files. Returns the exit code. */
-export async function runScan({ cwd, manifest, config, reporter, readNestedEslintVersion }: ScanInput): Promise<number> {
-    const isIgnored = createIgnoreMatcher(config.ignore ?? []);
-    const tracked = await listTrackedFiles(cwd);
-    const files = tracked.filter((file) => !isIgnored(file));
-    const skipped = tracked.length - files.length;
+export async function runScan({ cwd, manifest, reporter, readNestedEslintVersion, readTypescriptVersion = readPluginTypescriptVersion }: ScanInput): Promise<number> {
+    const files = await listTrackedFiles(cwd);
     if (files.length === 0) {
-        reporter.failure("scan", `${manifest.id}: no files to scan${tracked.length === 0 ? " (git tracks none in this folder)" : ` (scan.ignore skips all ${String(tracked.length)})`}.`, {
-            hint: tracked.length === 0 ? "Run `git add` for the plugin's files, or run opdk from the plugin repository." : "Check scan.ignore in opdk.config.mjs.",
+        reporter.failure("scan", `${manifest.id}: no files to scan (git tracks none in this folder).`, {
+            hint: "Run `git add` for the plugin's files, or run opdk from the plugin repository.",
         });
         return 1;
     }
-    reporter.info(
-        "scan",
-        `${manifest.id}: ${plural(files.length, "tracked file")}${skipped > 0 ? `, ${String(skipped)} skipped by scan.ignore` : ""}`,
-    );
+    const typescriptVersion = readTypescriptVersion();
+    const gap = describeTypescriptGap(typescriptVersion);
+    if (gap !== undefined) {
+        reporter.failure("scan", `${manifest.id}: ${gap.message}`, { hint: gap.hint });
+        return 1;
+    }
+    reporter.info("scan", `${manifest.id}: ${plural(files.length, "tracked file")}`);
 
     const cssFiles = readSources(cwd, files.filter((file) => file.endsWith(".css")));
     const codeFiles = readSources(cwd, files.filter(isShippedSource));
@@ -77,10 +78,10 @@ export async function runScan({ cwd, manifest, config, reporter, readNestedEslin
         ...lint.findings,
         ...(await checkCss(cssFiles)),
         ...checkCode(codeFiles),
-        ...(isIgnored("manifest.json") ? [] : checkManifestDescription(manifest)),
+        ...checkManifestDescription(manifest),
     ];
     const scope: Scope = {
-        lint: `${plural(lint.linted, "file")}, eslint-plugin-obsidianmd ${MIRRORED_OBSIDIANMD_VERSION}${lint.untyped > 0 ? `, ${String(lint.untyped)} without type information` : ""}`,
+        lint: `${plural(lint.linted, "file")}, eslint-plugin-obsidianmd ${MIRRORED_OBSIDIANMD_VERSION}, typescript ${String(typescriptVersion)}${lint.untyped > 0 ? `, ${String(lint.untyped)} outside every tsconfig, advisory` : ""}`,
         css: plural(cssFiles.length, "file"),
         code: plural(codeFiles.length, "file"),
         meta: "manifest.json",

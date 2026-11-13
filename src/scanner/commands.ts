@@ -17,7 +17,7 @@ Needs a git repository: build output (main.js, coverage/) is untracked, so the
 scanner never sees it and neither does this. Stage new files with git add first.
 Findings print as file:line  rule  message. Exit 1 on any failing finding.
 
-Settings come from opdk.config.mjs ("scan" section); the plugin name from manifest.json.
+The plugin name comes from manifest.json. There are no settings: every file the scanner reads counts.
 `;
 
 export const scanCommand: Command = {
@@ -29,12 +29,18 @@ export const scanCommand: Command = {
             throw new Error(`"opdk scan" takes no arguments, got "${args.join(" ")}". Run "opdk scan --help".`);
         }
         const manifest = readManifest(ctx.cwd);
-        const config = await loadConfig(ctx.cwd);
+        await loadConfig(ctx.cwd);
         // Loaded here, not at the top: the scan pulls in ESLint, obsidianmd, typescript-eslint and doiuse, and
         // obsidianmd reads manifest.json from the current directory at import. Every other command, and
         // `opdk --help`, must not pay for that or fail on it.
+        // The scan's ESLint plugins load `typescript` at import: a missing one is reported before that import.
+        const { missingTypescriptPreflight } = await import("./typescript-gate.js");
+        const missing = missingTypescriptPreflight(manifest.id, ctx.reporter);
+        if (missing !== undefined) {
+            return missing;
+        }
         const { runScan } = await import("./run.js");
-        return runScan({ cwd: ctx.cwd, manifest, config: config.scan ?? {}, reporter: ctx.reporter });
+        return runScan({ cwd: ctx.cwd, manifest, reporter: ctx.reporter });
     },
 };
 

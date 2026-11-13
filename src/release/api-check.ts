@@ -6,7 +6,7 @@ import obsidianmd from "eslint-plugin-obsidianmd";
 import tseslint from "typescript-eslint";
 import { toEsbuildOptions, type ResolvedBuild } from "../build/options.js";
 import { isBuildFailure } from "../build/report.js";
-import { isOutsideProject } from "../scanner/lint.js";
+import { isOutsideProject } from "../scanner/outside-project.js";
 import { errorProblem, warningProblem, type GroupResult, type Problem } from "./problems.js";
 
 const RULE = "obsidianmd/no-unsupported-api";

@@ -1,7 +1,8 @@
 import { ESLint } from "eslint";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPluginFixture, type PluginFixture } from "../test-support/plugin-fixture.js";
-import { DEFAULT_PROJECT_CLASH_MESSAGE, isDefaultProjectClash, isOutsideProject, NO_INPUTS_MESSAGE, PROJECT_SERVICE_MESSAGE, runScannerLint, toFindings } from "./lint.js";
+import { DEFAULT_PROJECT_CLASH_MESSAGE, hideKitImports, isDefaultProjectClash, KIT_IMPORT_HINT, runScannerLint, summariseOutsideProject, toFindings } from "./lint.js";
+import { isOutsideProject, NO_INPUTS_MESSAGE, PROJECT_SERVICE_MESSAGE } from "./outside-project.js";
 import { createScannerConfig } from "./scanner-config.js";
 
 // Real ESLint, git and esbuild runs: they miss the 5 s default when suites share the machine. Per file, so the global default stays.
@@ -20,6 +21,14 @@ beforeEach(() => {
 afterEach(() => {
     plugin.cleanup();
 });
+
+/** A package that exists and resolves, standing in for the kit as the plugin installed it. */
+function writeKitStub(): void {
+    plugin.write("node_modules/obsidian-plugin-dev-kit/package.json", JSON.stringify({ name: "obsidian-plugin-dev-kit", version: "1.0.0", type: "module", exports: { "./eslint": { types: "./eslint.d.ts", default: "./eslint.js" } } }));
+    plugin.write("node_modules/obsidian-plugin-dev-kit/eslint.d.ts", "export declare function obsidianPlugin(options: { rootDir: string }): object[];\n");
+    plugin.write("node_modules/obsidian-plugin-dev-kit/eslint.js", "export const obsidianPlugin = () => [];\n");
+}
+const KIT_CONFIG = ['import { obsidianPlugin } from "obsidian-plugin-dev-kit/eslint";', "export default [...obsidianPlugin({ rootDir: '.' })];", ""].join("\n");
 
 describe("runScannerLint", () => {
     it("reports nothing for clean code", async () => {
@@ -50,17 +59,23 @@ describe("runScannerLint", () => {
         expect([...byRule.keys()].some((rule) => rule.includes("new-func") || rule.includes("rule-custom-message"))).toBe(true);
     });
 
-    it("lints a file no tsconfig covers without type information instead of failing to parse it", async () => {
+    it("lints a file no tsconfig covers without type information, and reports it only as an advisory line", async () => {
         plugin.write("src/main.ts", "export const a = 1;\n");
         plugin.write("site/page.js", "document.body.append('x');\nsetTimeout(function () {}, 1);\n");
         const outcome = await runScannerLint(plugin.dir, ["src/main.ts", "site/page.js"]);
         expect(outcome.untyped).toBe(1);
         expect(outcome.linted).toBe(2);
-        const rules = outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`);
-        expect(rules).toContain("site/page.js:1 obsidianmd/prefer-active-doc");
-        expect(rules).toContain("site/page.js:2 obsidianmd/prefer-window-timers");
+        expect(outcome.findings).toEqual([
+            {
+                check: "lint",
+                file: "site/page.js",
+                line: 1,
+                rule: "outside-tsconfig",
+                message: expect.stringContaining("2 lint findings in a file no tsconfig covers (first: obsidianmd/prefer-active-doc)") as string,
+                advisory: true,
+            },
+        ]);
         expect(outcome.findings.some((finding) => finding.message.includes(PROJECT_SERVICE_MESSAGE))).toBe(false);
-        expect(outcome.findings.some((finding) => finding.rule === "parse-error")).toBe(false);
     });
 
     it("keeps no-implied-eval on for a TypeScript file linted without type information", async () => {
@@ -68,8 +83,9 @@ describe("runScannerLint", () => {
         plugin.write("site/page.ts", 'setTimeout("alert(1)", 1);\n');
         const outcome = await runScannerLint(plugin.dir, ["site/page.ts"]);
         expect(outcome.untyped, JSON.stringify(outcome)).toBe(1);
-        const rules = outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`);
-        expect(rules).toContain("site/page.ts:1 no-implied-eval");
+        expect(outcome.findings).toHaveLength(1);
+        expect(outcome.findings[0]).toMatchObject({ file: "site/page.ts", rule: "outside-tsconfig", advisory: true });
+        expect(outcome.findings[0]?.message).toContain("(first: no-implied-eval)");
     });
 
     it("lints every file without type information when the plugin has no tsconfig at all", async () => {
@@ -80,9 +96,8 @@ describe("runScannerLint", () => {
         const outcome = await runScannerLint(plugin.dir, ["src/view.js"]);
         expect(outcome.untyped).toBe(1);
         expect(outcome.linted).toBe(1);
-        expect(outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`)).toContain(
-            "src/view.js:1 obsidianmd/prefer-active-doc",
-        );
+        expect(outcome.findings).toMatchObject([{ file: "src/view.js", rule: "outside-tsconfig", advisory: true }]);
+        expect(outcome.findings[0]?.message).toContain("(first: obsidianmd/prefer-active-doc)");
     });
 
     it("leaves out what the scanner ignores (tests, scripts, build output) and files that are not code", async () => {
@@ -102,9 +117,8 @@ describe("runScannerLint", () => {
         const outcome = await runScannerLint(plugin.dir, ["site/page.ts"]);
         expect(outcome.untyped, JSON.stringify(outcome)).toBe(1);
         expect(outcome.findings.some((finding) => finding.rule === "parse-error"), JSON.stringify(outcome)).toBe(false);
-        expect(outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`)).toContain(
-            "site/page.ts:1 obsidianmd/prefer-active-doc",
-        );
+        expect(outcome.findings).toMatchObject([{ file: "site/page.ts", rule: "outside-tsconfig", advisory: true }]);
+        expect(outcome.findings[0]?.message).toContain("(first: obsidianmd/prefer-active-doc)");
     });
 
     it("lints eslint.config.ts with types when the tsconfig has no include and so covers it already", async () => {
@@ -139,6 +153,102 @@ describe("runScannerLint", () => {
         expect(outcome.findings.some((finding) => finding.rule === "parse-error"), JSON.stringify(outcome.findings)).toBe(false);
         expect(outcome.untyped).toBe(0);
         expect(outcome.findings.map((finding) => finding.rule)).toContain("@typescript-eslint/no-unsafe-assignment");
+    });
+
+    it("reports Node built-ins in a setup file: the scanner's ignore list does not name it, the preset's exemption does", async () => {
+        plugin.write("src/main.ts", "export const a = 1;\n");
+        plugin.write("src/global-setup.ts", 'import "node:fs";\nexport const a = 1;\n');
+        plugin.write("src/test-setup.ts", 'import "node:path";\nexport const b = 1;\n');
+        plugin.write("src/db.global-setup.ts", 'import "node:os";\nexport const c = 1;\n');
+        plugin.write("src/setupTests.ts", 'import "node:url";\nexport const d = 1;\n');
+        plugin.write("src/app.setup.ts", 'import "node:util";\nexport const e = 1;\n');
+        const files = ["src/main.ts", "src/global-setup.ts", "src/test-setup.ts", "src/db.global-setup.ts", "src/setupTests.ts", "src/app.setup.ts"];
+        const outcome = await runScannerLint(plugin.dir, files);
+        expect(outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`).sort()).toEqual([
+            "src/app.setup.ts:1 obsidianmd/no-nodejs-modules",
+            "src/db.global-setup.ts:1 obsidianmd/no-nodejs-modules",
+            "src/global-setup.ts:1 obsidianmd/no-nodejs-modules",
+            "src/setupTests.ts:1 obsidianmd/no-nodejs-modules",
+            "src/test-setup.ts:1 obsidianmd/no-nodejs-modules",
+        ]);
+        expect(outcome.findings.find((finding) => finding.file === "src/global-setup.ts")?.message).toContain('Do not import Node.js built-in module "node:fs"');
+    });
+
+    it("keeps the other files the preset exempts exempt: a worker runs in a Worker, where a window timer is wrong advice", async () => {
+        plugin.write("src/main.ts", "export const a = 1;\n");
+        plugin.write("src/parse.worker.ts", 'import "node:fs";\nsetTimeout(() => undefined, 1);\nexport const t = globalThis;\n');
+        plugin.write("src/workers/index.ts", "setTimeout(() => undefined, 1);\nexport const t = globalThis;\n");
+        plugin.write("src/test-utils/helpers.ts", 'import "node:fs";\nexport const a = 1;\n');
+        plugin.write("src/thing.testing.ts", 'import "node:fs";\nexport const a = 1;\n');
+        const outcome = await runScannerLint(plugin.dir, ["src/main.ts", "src/parse.worker.ts", "src/workers/index.ts", "src/test-utils/helpers.ts", "src/thing.testing.ts"]);
+        const runtimeRules = outcome.findings.filter((finding) => /prefer-window-timers|no-global-this|prefer-active-doc|platform$/.test(finding.rule));
+        expect(runtimeRules, JSON.stringify(outcome.findings)).toEqual([]);
+        // A worker is still read by the scanner: the rules the preset applies to it (here the Node-module rule) stay.
+        expect(outcome.findings.some((finding) => finding.file === "src/parse.worker.ts" && finding.rule === "obsidianmd/no-nodejs-modules")).toBe(true);
+    });
+
+    it("still leaves out the files the scanner's own ignore list names", async () => {
+        plugin.write("src/main.ts", "export const a = 1;\n");
+        plugin.write("src/main.test.ts", 'import { readFileSync } from "node:fs";\nexport const read = readFileSync;\n');
+        plugin.write("scripts/build.js", 'import { readFileSync } from "node:fs";\nexport const read = readFileSync;\n');
+        const outcome = await runScannerLint(plugin.dir, ["src/main.ts", "src/main.test.ts", "scripts/build.js"]);
+        expect(outcome.findings).toEqual([]);
+    });
+
+    it("lints a script that imports the kit as the scanner sees it, where the kit has no dist (no-unsafe-call and no-unsafe-assignment)", async () => {
+        writeKitStub();
+        plugin.write("src/main.ts", "export const a = 1;\n");
+        plugin.write("eslint.config.js", KIT_CONFIG);
+        const outcome = await runScannerLint(plugin.dir, ["eslint.config.js"]);
+        expect(outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`).sort()).toEqual([
+            "eslint.config.js:2 @typescript-eslint/no-unsafe-assignment",
+            "eslint.config.js:2 @typescript-eslint/no-unsafe-call",
+        ]);
+    });
+
+    it("tells the plugin to rename a config that imports the kit to .mjs, on the two findings only", async () => {
+        writeKitStub();
+        plugin.write("src/main.ts", "export const a = 1;\n");
+        plugin.write("eslint.config.js", KIT_CONFIG);
+        const { findings } = await runScannerLint(plugin.dir, ["eslint.config.js"]);
+        expect(findings).toHaveLength(2);
+        for (const finding of findings) {
+            expect(finding.message).toContain(KIT_IMPORT_HINT);
+        }
+        expect(KIT_IMPORT_HINT).toContain("eslint.config.mjs");
+    });
+
+    it("does not scan an eslint.config.mjs that imports the kit: the scanner ignores .mjs, so nothing is unresolved there", async () => {
+        writeKitStub();
+        plugin.write("src/main.ts", "export const a = 1;\n");
+        plugin.write("eslint.config.mjs", KIT_CONFIG);
+        const outcome = await runScannerLint(plugin.dir, ["src/main.ts", "eslint.config.mjs"]);
+        expect(outcome.findings).toEqual([]);
+        expect(outcome.linted).toBe(1);
+    });
+
+    it("hides the kit import in an eslint.config.ts a tsconfig covers, which is linted again with types after the default-project clash", async () => {
+        writeKitStub();
+        plugin.write("tsconfig.json", JSON.stringify({ compilerOptions: { target: "ES2020", lib: ["ES2020", "DOM"], module: "ESNext", moduleResolution: "Bundler", strict: true, noEmit: true, types: [] } }));
+        plugin.write("src/main.ts", "export const a = 1;\n");
+        plugin.write("eslint.config.ts", KIT_CONFIG);
+        const outcome = await runScannerLint(plugin.dir, ["eslint.config.ts"]);
+        expect(outcome.findings.some((finding) => finding.rule === "parse-error"), JSON.stringify(outcome.findings)).toBe(false);
+        expect(outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`).sort()).toEqual([
+            "eslint.config.ts:2 @typescript-eslint/no-unsafe-assignment",
+            "eslint.config.ts:2 @typescript-eslint/no-unsafe-call",
+        ]);
+        expect(outcome.untyped).toBe(0);
+    });
+
+    it("lints a script that does not import the kit as it is", async () => {
+        plugin.write("package.json", JSON.stringify({ name: "fixture", version: "1.0.0", devDependencies: { "some-config": "1.0.0" } }));
+        plugin.write("node_modules/some-config/package.json", JSON.stringify({ name: "some-config", version: "1.0.0", type: "module", exports: { ".": { types: "./index.d.ts", default: "./index.js" } } }));
+        plugin.write("node_modules/some-config/index.d.ts", "export declare function preset(): object[];\n");
+        plugin.write("node_modules/some-config/index.js", "export const preset = () => [];\n");
+        plugin.write("eslint.config.js", ['import { preset } from "some-config";', "export default [...preset()];", ""].join("\n"));
+        const outcome = await runScannerLint(plugin.dir, ["eslint.config.js"]);
+        expect(outcome.findings).toEqual([]);
     });
 
     it("pins typescript-eslint's wording for a default project that a tsconfig also covers", async () => {
@@ -214,5 +324,55 @@ describe("toFindings", () => {
             { check: "lint", file: "src/a.ts", line: 4, rule: "no-alert", message: "Unexpected alert." },
             { check: "lint", file: "src/a.ts", line: 1, rule: "parse-error", message: "Parsing error: x" },
         ]);
+    });
+});
+
+describe("hideKitImports", () => {
+    const hidden = (text: string): string => hideKitImports(text);
+
+    it.each([
+        ['import { a } from "obsidian-plugin-dev-kit";', 'import { a } from "obsidian-plugin-dev-kit-not-built";'],
+        ["import { a } from 'obsidian-plugin-dev-kit/eslint';", "import { a } from 'obsidian-plugin-dev-kit-not-built/eslint';"],
+        ['import "obsidian-plugin-dev-kit/e2e";', 'import "obsidian-plugin-dev-kit-not-built/e2e";'],
+        ['const m = await import("obsidian-plugin-dev-kit/vitest");', 'const m = await import("obsidian-plugin-dev-kit-not-built/vitest");'],
+        ['const m = require("obsidian-plugin-dev-kit");', 'const m = require("obsidian-plugin-dev-kit-not-built");'],
+        ['export { x } from "obsidian-plugin-dev-kit/eslint";', 'export { x } from "obsidian-plugin-dev-kit-not-built/eslint";'],
+    ])("points %s at a package that does not exist", (input, expected) => {
+        expect(hidden(input)).toBe(expected);
+    });
+
+    it("keeps the text on its lines, so findings keep their line numbers", () => {
+        const input = 'import {\n  a,\n} from "obsidian-plugin-dev-kit/eslint";\nexport default a();\n';
+        expect(hidden(input).split("\n")).toHaveLength(input.split("\n").length);
+    });
+
+    it.each(['const s = "obsidian-plugin-dev-kit";', 'import { a } from "obsidian-plugin-dev-kit-other";', 'import { a } from "my-obsidian-plugin-dev-kit";', "// from obsidian-plugin-dev-kit/eslint"])(
+        "leaves %s alone",
+        (input) => {
+            expect(hidden(input)).toBe(input);
+        },
+    );
+});
+
+describe("summariseOutsideProject", () => {
+    it("makes one advisory finding per file, with the count and the first rule", () => {
+        const result = {
+            filePath: "/p/site/a.js",
+            messages: [
+                { ruleId: "no-alert", line: 7, message: "x" },
+                { ruleId: "no-eval", line: 9, message: "y" },
+            ],
+        } as ESLint.LintResult;
+        const other = { filePath: "/p/site/b.js", messages: [{ ruleId: null, line: 1, message: "Parsing error: z" }] } as ESLint.LintResult;
+        const clean = { filePath: "/p/site/c.js", messages: [] } as unknown as ESLint.LintResult;
+        const findings = summariseOutsideProject([result, other, clean], "/p");
+        expect(findings).toHaveLength(2);
+        expect(findings[0]).toMatchObject({ check: "lint", file: "site/a.js", line: 7, rule: "outside-tsconfig", advisory: true });
+        expect(findings[0]?.message).toContain("2 lint findings in a file no tsconfig covers (first: no-alert)");
+        expect(findings[1]?.message).toContain("1 lint finding in a file no tsconfig covers (first: parse-error)");
+    });
+
+    it("says nothing about files without findings", () => {
+        expect(summariseOutsideProject([], "/p")).toEqual([]);
     });
 });
