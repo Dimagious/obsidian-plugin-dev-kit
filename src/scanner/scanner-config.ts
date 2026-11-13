@@ -28,12 +28,12 @@
  *   JavaScript should drop `main.js`, as upstream says.
  * - Upstream imports `defineConfig` and `globalIgnores` from "eslint/config"; plain arrays and `{ ignores }`
  *   objects do the same here and work on every ESLint the kit supports.
- * - The preset exempts test and tooling files from the rules about code that runs inside Obsidian
+ * - The preset exempts test, worker and tooling files from the rules about code that runs inside Obsidian
  *   (`no-nodejs-modules`, `prefer-active-doc`, `regex-lookbehind` and the like) with `ignores` lists that include
  *   `global-setup.*`, `*.setup.*` and `test-setup.*`. The scanner's own ignore list does not name those, and the
- *   live scanner reports `obsidianmd/no-nodejs-modules` for a `global-setup.ts` that imports `node:fs`. So the
- *   exemptions are lifted (`withoutRuntimeExemptions`): every file the scanner reads gets those rules, and the
- *   files it does not read are left out by `SCANNER_IGNORES`.
+ *   live scanner reports `obsidianmd/no-nodejs-modules` for a `global-setup.ts` that imports `node:fs` (one
+ *   scorecard, the only evidence). So the exemption is lifted for the setup files only (`withoutRuntimeExemptions`,
+ *   `SETUP_FILE_PATTERNS`); workers and the other exempted files stay exempt.
  * - Every finding counts, whatever its severity. The scanner turns most rules into warnings, and a warning still
  *   lowers the score; `opdk scan` fails on both. Upstream's note says the real scanner downgrades unlisted rules
  *   to `warn`, which does not change what is reported.
@@ -120,16 +120,31 @@ function typeAwareObsidianRules(): string[] {
 }
 
 /**
- * The blocks of the preset that carry `ignores` (its exemption of test and tooling files) as the same blocks without
- * them. Later blocks override earlier ones, so putting these after the preset turns the rules back on for the files
- * that the preset exempted but the scanner reads. Plugins and parsers stay with the original blocks.
+ * The files whose exemption from the preset's runtime rules is lifted: the test-setup files. The scanner's ignore list
+ * names none of them, and the one scorecard that shows it has a `global-setup.ts` with three `no-nodejs-modules`
+ * warnings. The other names are the same family in the preset's own list (`*-global-setup.*`, `test-setup.*`,
+ * `setupTests.*`, `*.setup.*`), run by a test runner in Node like that file, and the scanner's list does not name them
+ * either; they are inferred from that one scorecard, not seen on their own. Everything else the preset exempts stays
+ * exempt: worker files (a Worker has no `activeWindow`, so `prefer-window-timers` and `no-global-this` would be wrong
+ * advice there), `test-helpers`, `test-support` and `test-utils` folders, `*.testing.*`, `testUtils*`, and tool configs
+ * and scripts, none of which has evidence.
+ */
+export const SETUP_FILE_PATTERNS: readonly string[] = ["**/{global-setup,*-global-setup,test-setup,setupTests}.*", "**/*.setup.*"];
+
+/**
+ * The blocks of the preset that carry `ignores` (its exemption of test, worker and tooling files) as the same blocks
+ * that apply only to `SETUP_FILE_PATTERNS`, without `ignores`. Later blocks override earlier ones, so putting these
+ * after the preset turns the rules back on for the setup files and no other exempted file. Plugins and parsers stay
+ * with the original blocks. Flat config reads a nested `files` array as "all of these", so each pattern of the block
+ * is paired with each setup pattern.
  */
 export function withoutRuntimeExemptions(blocks: readonly Linter.Config[]): Linter.Config[] {
     return blocks.flatMap((block): Linter.Config[] => {
         if (block.ignores === undefined || block.rules === undefined) {
             return [];
         }
-        return [{ files: block.files, rules: block.rules }];
+        const own = (block.files ?? ["**/*"]).map((pattern) => [pattern].flat());
+        return [{ files: own.flatMap((pattern) => SETUP_FILE_PATTERNS.map((setup) => [...pattern, setup])), rules: block.rules }];
     });
 }
 

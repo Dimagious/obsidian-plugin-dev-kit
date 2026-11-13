@@ -4,14 +4,8 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { ESLint } from "eslint";
 import type { Finding } from "./findings.js";
+import { isOutsideProject } from "./outside-project.js";
 import { createScannerConfig } from "./scanner-config.js";
-
-/**
- * typescript-eslint's wording for a file no tsconfig covers. The scanner lints such a file without type
- * information instead of failing, so the retry in `runScannerLint` is keyed on this message; a test pins it
- * against the installed typescript-eslint.
- */
-export const PROJECT_SERVICE_MESSAGE = "was not found by the project service";
 
 /**
  * typescript-eslint keeps one project service per process, built from the options of the first file it parses, so
@@ -39,20 +33,6 @@ function newEslint(cwd: string, typeAware: boolean, allowDefaultProject = true):
         warnIgnored: false,
         errorOnUnmatchedPattern: false,
     });
-}
-
-/**
- * TypeScript's TS18003: the tsconfig's `include` matches no file at all. On Linux the project service
- * reports this instead of `PROJECT_SERVICE_MESSAGE` for a file next to such a tsconfig (seen on GitHub
- * Actions, not on macOS), and the file is just as much outside every project.
- */
-export const NO_INPUTS_MESSAGE = "No inputs were found in config file";
-
-/** True when typescript-eslint could not place the file in any tsconfig project, so it must be linted without types. */
-export function isOutsideProject(result: ESLint.LintResult): boolean {
-    return result.messages.some(
-        (message) => message.message.includes(PROJECT_SERVICE_MESSAGE) || message.message.includes(NO_INPUTS_MESSAGE),
-    );
 }
 
 /**
@@ -101,6 +81,26 @@ export function hideKitImports(text: string): string {
 
 const SCRIPT_FILE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 
+/**
+ * What the two `no-unsafe-*` findings of a script that imports the kit come from, and the fix. A block
+ * `eslint-disable` comment in the file is not one: it fails the plugin's own lint (unused directive,
+ * `eslint-comments/disable-enable-pair`) and the scan then reports `disable-enable-pair` instead. Renaming the config
+ * to `eslint.config.mjs` takes the file off the scanner's list (`**\/*.mjs` is ignored), and `obsidianPlugin()` works
+ * from it.
+ */
+export const KIT_IMPORT_HINT =
+    "The scanner installs the kit without building it, so this import is unresolved there. Name the file with the .mjs extension (eslint.config.mjs): the scanner ignores .mjs files.";
+
+/** `results` of a script that imports the kit, with the hint added to the unresolved-import findings. */
+function withKitHint(results: readonly ESLint.LintResult[]): ESLint.LintResult[] {
+    return results.map((result) => ({
+        ...result,
+        messages: result.messages.map((message) =>
+            message.ruleId === "@typescript-eslint/no-unsafe-call" || message.ruleId === "@typescript-eslint/no-unsafe-assignment" ? { ...message, message: `${message.message} ${KIT_IMPORT_HINT}` } : message,
+        ),
+    }));
+}
+
 /** Lints `files` (absolute paths); a script that imports the kit is linted from text where that import cannot resolve. */
 async function lintFilePaths(eslint: ESLint, files: readonly string[]): Promise<ESLint.LintResult[]> {
     const importsKit = new Map<string, string>();
@@ -113,7 +113,7 @@ async function lintFilePaths(eslint: ESLint, files: readonly string[]): Promise<
     const plain = files.filter((file) => !importsKit.has(file));
     const results = plain.length === 0 ? [] : await eslint.lintFiles(plain);
     for (const [filePath, text] of importsKit) {
-        results.push(...(await eslint.lintText(text, { filePath })));
+        results.push(...withKitHint(await eslint.lintText(text, { filePath })));
     }
     return results;
 }
@@ -122,7 +122,7 @@ async function lintFilePaths(eslint: ESLint, files: readonly string[]): Promise<
  * One advisory finding per file the scanner does not report: the lint findings of a file that no tsconfig covers.
  * The live scanner type-checks with the project service and reports nothing for a file outside every project (a
  * plugin's `site/assets/site.js` has 36 findings here and none on its scorecard). They stay visible as a `!` line,
- * and do not fail the scan. Inferred from that one scorecard, not confirmed.
+ * and do not fail the scan. Inferred from that one scorecard, not confirmed by the scanner's authors.
  */
 export function summariseOutsideProject(results: readonly ESLint.LintResult[], cwd: string): Finding[] {
     const byFile = new Map<string, Finding[]>();
@@ -138,7 +138,7 @@ export function summariseOutsideProject(results: readonly ESLint.LintResult[], c
                 file,
                 line: first.line,
                 rule: "outside-tsconfig",
-                message: `${String(own.length)} lint finding${own.length === 1 ? "" : "s"} in a file no tsconfig covers (first: ${first.rule}). The scorecard does not list files outside every tsconfig project, and would if a tsconfig covered this one.`,
+                message: `${String(own.length)} lint finding${own.length === 1 ? "" : "s"} in a file no tsconfig covers (first: ${first.rule}). The scorecard compared did not list files outside every tsconfig project (inferred from one scorecard), and would if a tsconfig covered this one.`,
                 advisory: true,
             });
         }

@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { describeTypescriptGap, readTypescriptNextToTypescriptEslint, redirectTypescript, SCAN_TYPESCRIPT_PACKAGE, useTypescriptSix } from "./typescript-six.js";
+import { describeTypescriptGap, readTypescriptNextToTypescriptEslint, redirectTypescript, SCAN_TYPESCRIPT_PACKAGE, typescriptInUse, useTypescriptSix } from "./typescript-six.js";
 
 const DIR = path.join(path.sep, "kit", "node_modules", "typescript-6");
 
@@ -77,5 +77,17 @@ describe("describeTypescriptGap", () => {
 
     it("does not guess at a version it cannot read", () => {
         expect(describeTypescriptGap(unhooked, "next")).toBeUndefined();
+    });
+});
+
+describe("typescriptInUse", () => {
+    const hooked = { dir: DIR, version: "6.0.3", forced: true };
+
+    it("is the kit's version when the hook is installed, without reading the plugin's", () => {
+        expect(typescriptInUse(hooked, () => "5.9.3")).toBe("6.0.3");
+    });
+
+    it("is the plugin's own version when the hook could not be installed, not the kit's 6", () => {
+        expect(typescriptInUse({ ...hooked, forced: false }, () => "5.9.3")).toBe("5.9.3");
     });
 });

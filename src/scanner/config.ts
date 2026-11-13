@@ -11,7 +11,7 @@ export function validateScanConfig(value: unknown, source: string): ScanConfig {
     }
     if (Object.hasOwn(value, "ignore")) {
         throw new Error(
-            `${source}: "scan.ignore" was removed. The community scanner reads every tracked stylesheet and every script a tsconfig covers, so a path listed there still lowers the scorecard while \`opdk scan\` stayed silent. Delete the key and fix what \`opdk scan\` reports, or untrack the file.`,
+            `${source}: "scan.ignore" was removed. The community scanner reads every tracked stylesheet and, as far as one scorecard shows, every script a tsconfig covers, so a path listed there still lowers the scorecard while \`opdk scan\` stayed silent. Delete the key and fix what \`opdk scan\` reports, or untrack the file.`,
         );
     }
     const unknown = Object.keys(value);

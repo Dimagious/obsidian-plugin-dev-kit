@@ -13,7 +13,7 @@ Every Obsidian plugin needs the same tooling around its code: a bundle that also
 | Module | What it does |
 |---|---|
 | Build | esbuild for the browser platform, so the bundle works on mobile, plus a check that fails if Node-only code gets into `main.js`; CSS build; copy into a dev vault in watch mode |
-| Scanner and lint | `opdk scan` runs the community plugin scanner's ESLint configuration and its CSS, source and manifest checks before you release, with `eslint-plugin-obsidianmd` pinned in one place; `obsidianPlugin()` gives your own `eslint.config.js` the same base |
+| Scanner and lint | `opdk scan` runs the community plugin scanner's ESLint configuration and its CSS, source and manifest checks before you release, with `eslint-plugin-obsidianmd` pinned in one place; `obsidianPlugin()` gives your own `eslint.config.mjs` the same base |
 | Release | `opdk release check` for CI and before a tag: versions in `package.json`, `manifest.json`, `package-lock.json` and `versions.json`, the manifest rules of the official Obsidian action, a CHANGELOG section, one kit release in `package.json`, the lockfile and the workflow pins, a production build built twice (working tree and committed tree) and compared, and the `minAppVersion` against the API the code calls. `opdk release patch` (or `minor`, `major`, `X.Y.Z`) refuses commits that `origin` has not seen, runs the plugin's `npm test`, bumps the files, moves the `[Unreleased]` notes under the new version, commits and tags, pushes only the tag, waits for the kit's reusable GitHub workflow, verifies its draft release (files, bytes against a local build of the tag, notes, build provenance), publishes it and only then pushes the branch. Release notes come from the CHANGELOG, and no zip is made unless asked |
 | Reusable CI | `plugin-ci.yml`, a reusable GitHub workflow: lint, typecheck, tests, `opdk scan`, `opdk release check`, build and bundle upload, with a read-only token, actions pinned to commit SHAs and a pinned runner |
 | Unit tests | `defineUnitConfig()`, a Vitest config with v8 coverage and a 90/80 gate, an `obsidian` alias, and a split that runs only the files that need a DOM in jsdom; plus the DOM helpers Obsidian adds (`createEl`, `createDiv`, `setText`, `addClass`, `activeDocument` and more) for jsdom |
@@ -153,7 +153,7 @@ The repository is also a Claude Code plugin, `opdk`, with one skill per module s
 | Skill | Use it for |
 | --- | --- |
 | `/opdk:build` | `opdk build`, `opdk build-css`, `opdk assert-bundle`, `opdk build --vault`, mobile-only bundle failures |
-| `/opdk:scanner` | `opdk scan`, community plugin scorecard warnings, `obsidianPlugin()` in `eslint.config.js` |
+| `/opdk:scanner` | `opdk scan`, community plugin scorecard warnings, `obsidianPlugin()` in `eslint.config.mjs` |
 | `/opdk:e2e` | Playwright specs in the real Obsidian, readiness and timeout failures, helpers |
 | `/opdk:demo` | demo films, GIFs, MP4s, posters and README screenshots, `opdk demo` messages |
 | `/opdk:unit` | `defineUnitConfig()`, coverage gate failures, `createDiv is not defined`, the DOM helpers for jsdom, moving a plugin's Vitest config |

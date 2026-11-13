@@ -1,7 +1,8 @@
 import { ESLint } from "eslint";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPluginFixture, type PluginFixture } from "../test-support/plugin-fixture.js";
-import { DEFAULT_PROJECT_CLASH_MESSAGE, hideKitImports, isDefaultProjectClash, isOutsideProject, NO_INPUTS_MESSAGE, PROJECT_SERVICE_MESSAGE, runScannerLint, summariseOutsideProject, toFindings } from "./lint.js";
+import { DEFAULT_PROJECT_CLASH_MESSAGE, hideKitImports, isDefaultProjectClash, KIT_IMPORT_HINT, runScannerLint, summariseOutsideProject, toFindings } from "./lint.js";
+import { isOutsideProject, NO_INPUTS_MESSAGE, PROJECT_SERVICE_MESSAGE } from "./outside-project.js";
 import { createScannerConfig } from "./scanner-config.js";
 
 // Real ESLint, git and esbuild runs: they miss the 5 s default when suites share the machine. Per file, so the global default stays.
@@ -20,6 +21,14 @@ beforeEach(() => {
 afterEach(() => {
     plugin.cleanup();
 });
+
+/** A package that exists and resolves, standing in for the kit as the plugin installed it. */
+function writeKitStub(): void {
+    plugin.write("node_modules/obsidian-plugin-dev-kit/package.json", JSON.stringify({ name: "obsidian-plugin-dev-kit", version: "1.0.0", type: "module", exports: { "./eslint": { types: "./eslint.d.ts", default: "./eslint.js" } } }));
+    plugin.write("node_modules/obsidian-plugin-dev-kit/eslint.d.ts", "export declare function obsidianPlugin(options: { rootDir: string }): object[];\n");
+    plugin.write("node_modules/obsidian-plugin-dev-kit/eslint.js", "export const obsidianPlugin = () => [];\n");
+}
+const KIT_CONFIG = ['import { obsidianPlugin } from "obsidian-plugin-dev-kit/eslint";', "export default [...obsidianPlugin({ rootDir: '.' })];", ""].join("\n");
 
 describe("runScannerLint", () => {
     it("reports nothing for clean code", async () => {
@@ -146,16 +155,36 @@ describe("runScannerLint", () => {
         expect(outcome.findings.map((finding) => finding.rule)).toContain("@typescript-eslint/no-unsafe-assignment");
     });
 
-    it("reports Node built-ins in a global-setup file: the scanner's ignore list does not name it, the preset's exemption does", async () => {
+    it("reports Node built-ins in a setup file: the scanner's ignore list does not name it, the preset's exemption does", async () => {
         plugin.write("src/main.ts", "export const a = 1;\n");
         plugin.write("src/global-setup.ts", 'import "node:fs";\nexport const a = 1;\n');
         plugin.write("src/test-setup.ts", 'import "node:path";\nexport const b = 1;\n');
-        const outcome = await runScannerLint(plugin.dir, ["src/main.ts", "src/global-setup.ts", "src/test-setup.ts"]);
-        expect(outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`)).toEqual([
+        plugin.write("src/db.global-setup.ts", 'import "node:os";\nexport const c = 1;\n');
+        plugin.write("src/setupTests.ts", 'import "node:url";\nexport const d = 1;\n');
+        plugin.write("src/app.setup.ts", 'import "node:util";\nexport const e = 1;\n');
+        const files = ["src/main.ts", "src/global-setup.ts", "src/test-setup.ts", "src/db.global-setup.ts", "src/setupTests.ts", "src/app.setup.ts"];
+        const outcome = await runScannerLint(plugin.dir, files);
+        expect(outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`).sort()).toEqual([
+            "src/app.setup.ts:1 obsidianmd/no-nodejs-modules",
+            "src/db.global-setup.ts:1 obsidianmd/no-nodejs-modules",
             "src/global-setup.ts:1 obsidianmd/no-nodejs-modules",
+            "src/setupTests.ts:1 obsidianmd/no-nodejs-modules",
             "src/test-setup.ts:1 obsidianmd/no-nodejs-modules",
         ]);
-        expect(outcome.findings[0]?.message).toContain('Do not import Node.js built-in module "node:fs"');
+        expect(outcome.findings.find((finding) => finding.file === "src/global-setup.ts")?.message).toContain('Do not import Node.js built-in module "node:fs"');
+    });
+
+    it("keeps the other files the preset exempts exempt: a worker runs in a Worker, where a window timer is wrong advice", async () => {
+        plugin.write("src/main.ts", "export const a = 1;\n");
+        plugin.write("src/parse.worker.ts", 'import "node:fs";\nsetTimeout(() => undefined, 1);\nexport const t = globalThis;\n');
+        plugin.write("src/workers/index.ts", "setTimeout(() => undefined, 1);\nexport const t = globalThis;\n");
+        plugin.write("src/test-utils/helpers.ts", 'import "node:fs";\nexport const a = 1;\n');
+        plugin.write("src/thing.testing.ts", 'import "node:fs";\nexport const a = 1;\n');
+        const outcome = await runScannerLint(plugin.dir, ["src/main.ts", "src/parse.worker.ts", "src/workers/index.ts", "src/test-utils/helpers.ts", "src/thing.testing.ts"]);
+        const runtimeRules = outcome.findings.filter((finding) => /prefer-window-timers|no-global-this|prefer-active-doc|platform$/.test(finding.rule));
+        expect(runtimeRules, JSON.stringify(outcome.findings)).toEqual([]);
+        // A worker is still read by the scanner: the rules the preset applies to it (here the Node-module rule) stay.
+        expect(outcome.findings.some((finding) => finding.file === "src/parse.worker.ts" && finding.rule === "obsidianmd/no-nodejs-modules")).toBe(true);
     });
 
     it("still leaves out the files the scanner's own ignore list names", async () => {
@@ -167,17 +196,49 @@ describe("runScannerLint", () => {
     });
 
     it("lints a script that imports the kit as the scanner sees it, where the kit has no dist (no-unsafe-call and no-unsafe-assignment)", async () => {
-        // A package that exists and resolves, standing in for the kit as the plugin installed it.
-        plugin.write("node_modules/obsidian-plugin-dev-kit/package.json", JSON.stringify({ name: "obsidian-plugin-dev-kit", version: "1.0.0", type: "module", exports: { "./eslint": { types: "./eslint.d.ts", default: "./eslint.js" } } }));
-        plugin.write("node_modules/obsidian-plugin-dev-kit/eslint.d.ts", "export declare function obsidianPlugin(options: { rootDir: string }): object[];\n");
-        plugin.write("node_modules/obsidian-plugin-dev-kit/eslint.js", "export const obsidianPlugin = () => [];\n");
+        writeKitStub();
         plugin.write("src/main.ts", "export const a = 1;\n");
-        plugin.write("eslint.config.js", ['import { obsidianPlugin } from "obsidian-plugin-dev-kit/eslint";', "export default [...obsidianPlugin({ rootDir: '.' })];", ""].join("\n"));
+        plugin.write("eslint.config.js", KIT_CONFIG);
         const outcome = await runScannerLint(plugin.dir, ["eslint.config.js"]);
         expect(outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`).sort()).toEqual([
             "eslint.config.js:2 @typescript-eslint/no-unsafe-assignment",
             "eslint.config.js:2 @typescript-eslint/no-unsafe-call",
         ]);
+    });
+
+    it("tells the plugin to rename a config that imports the kit to .mjs, on the two findings only", async () => {
+        writeKitStub();
+        plugin.write("src/main.ts", "export const a = 1;\n");
+        plugin.write("eslint.config.js", KIT_CONFIG);
+        const { findings } = await runScannerLint(plugin.dir, ["eslint.config.js"]);
+        expect(findings).toHaveLength(2);
+        for (const finding of findings) {
+            expect(finding.message).toContain(KIT_IMPORT_HINT);
+        }
+        expect(KIT_IMPORT_HINT).toContain("eslint.config.mjs");
+    });
+
+    it("does not scan an eslint.config.mjs that imports the kit: the scanner ignores .mjs, so nothing is unresolved there", async () => {
+        writeKitStub();
+        plugin.write("src/main.ts", "export const a = 1;\n");
+        plugin.write("eslint.config.mjs", KIT_CONFIG);
+        const outcome = await runScannerLint(plugin.dir, ["src/main.ts", "eslint.config.mjs"]);
+        expect(outcome.findings).toEqual([]);
+        expect(outcome.linted).toBe(1);
+    });
+
+    it("hides the kit import in an eslint.config.ts a tsconfig covers, which is linted again with types after the default-project clash", async () => {
+        writeKitStub();
+        plugin.write("tsconfig.json", JSON.stringify({ compilerOptions: { target: "ES2020", lib: ["ES2020", "DOM"], module: "ESNext", moduleResolution: "Bundler", strict: true, noEmit: true, types: [] } }));
+        plugin.write("src/main.ts", "export const a = 1;\n");
+        plugin.write("eslint.config.ts", KIT_CONFIG);
+        const outcome = await runScannerLint(plugin.dir, ["eslint.config.ts"]);
+        expect(outcome.findings.some((finding) => finding.rule === "parse-error"), JSON.stringify(outcome.findings)).toBe(false);
+        expect(outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`).sort()).toEqual([
+            "eslint.config.ts:2 @typescript-eslint/no-unsafe-assignment",
+            "eslint.config.ts:2 @typescript-eslint/no-unsafe-call",
+        ]);
+        expect(outcome.untyped).toBe(0);
     });
 
     it("lints a script that does not import the kit as it is", async () => {

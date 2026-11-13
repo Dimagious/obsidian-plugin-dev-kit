@@ -100,6 +100,11 @@ export function readTypescriptNextToTypescriptEslint(): string {
     throw new Error("the typescript package next to typescript-eslint has no version in its package.json");
 }
 
+/** The version of the TypeScript the scan type-checks with: the kit's 6 when the hook is installed, otherwise the one `readOwn` finds. */
+export function typescriptInUse(source: TypescriptSource, readOwn: () => string): string {
+    return source.forced ? source.version : readOwn();
+}
+
 /**
  * The warning for a scan that could not switch to TypeScript 6, or `undefined` when it did (or the compiler in use is
  * already 6). `inUse` is the version of the `typescript` that typescript-eslint resolves.

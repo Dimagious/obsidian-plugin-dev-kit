@@ -11,7 +11,7 @@ import { listTrackedFiles } from "./git-files.js";
 import { runScannerLint } from "./lint.js";
 import { checkManifestDescription } from "./meta-checks.js";
 import { MIRRORED_OBSIDIANMD_VERSION } from "./scanner-config.js";
-import { describeTypescriptGap, readTypescriptNextToTypescriptEslint } from "./typescript-six.js";
+import { describeTypescriptGap, readTypescriptNextToTypescriptEslint, typescriptInUse } from "./typescript-six.js";
 import { scanTypescript } from "./use-typescript-six.js";
 
 export interface ScanInput {
@@ -66,11 +66,10 @@ export async function runScan({ cwd, manifest, reporter, readNestedEslintVersion
     if (mismatch !== undefined) {
         reporter.warn("lint", mismatch);
     }
-    if (!scanTypescript.forced) {
-        const gap = describeTypescriptGap(scanTypescript, readTypescriptNextToTypescriptEslint());
-        if (gap !== undefined) {
-            reporter.warn("lint", gap);
-        }
+    const typescriptVersion = typescriptInUse(scanTypescript, readTypescriptNextToTypescriptEslint);
+    const gap = describeTypescriptGap(scanTypescript, typescriptVersion);
+    if (gap !== undefined) {
+        reporter.warn("lint", gap);
     }
     const lint = await runScannerLint(cwd, files);
 
@@ -81,7 +80,7 @@ export async function runScan({ cwd, manifest, reporter, readNestedEslintVersion
         ...checkManifestDescription(manifest),
     ];
     const scope: Scope = {
-        lint: `${plural(lint.linted, "file")}, eslint-plugin-obsidianmd ${MIRRORED_OBSIDIANMD_VERSION}, typescript ${scanTypescript.version}${lint.untyped > 0 ? `, ${String(lint.untyped)} outside every tsconfig, advisory` : ""}`,
+        lint: `${plural(lint.linted, "file")}, eslint-plugin-obsidianmd ${MIRRORED_OBSIDIANMD_VERSION}, typescript ${typescriptVersion}${lint.untyped > 0 ? `, ${String(lint.untyped)} outside every tsconfig, advisory` : ""}`,
         css: plural(cssFiles.length, "file"),
         code: plural(codeFiles.length, "file"),
         meta: "manifest.json",

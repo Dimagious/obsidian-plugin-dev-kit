@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import type { Linter } from "eslint";
 import obsidianmd from "eslint-plugin-obsidianmd";
 import { describe, expect, it } from "vitest";
-import { createScannerConfig, MIRRORED_OBSIDIANMD_VERSION, SCANNER_IGNORES, withoutRuntimeExemptions } from "./scanner-config.js";
+import { createScannerConfig, MIRRORED_OBSIDIANMD_VERSION, SCANNER_IGNORES, SETUP_FILE_PATTERNS, withoutRuntimeExemptions } from "./scanner-config.js";
 
 function kitDependency(name: string): unknown {
     const text = readFileSync(new URL("../../package.json", import.meta.url), "utf8");
@@ -171,13 +171,30 @@ describe("createScannerConfig", () => {
 });
 
 describe("withoutRuntimeExemptions", () => {
-    it("keeps only blocks that carry ignores, as the same rules for the same files without them", () => {
+    it("keeps only blocks that carry ignores, as the same rules for the setup files only, without the ignores", () => {
         const blocks: Linter.Config[] = [
             { files: ["**/*.js"], rules: { "a/plain": "error" } },
             { files: ["**/*.js"], ignores: ["**/global-setup.*"], rules: { "a/runtime": "warn" } },
             { ignores: ["x"] },
         ];
-        expect(withoutRuntimeExemptions(blocks)).toEqual([{ files: ["**/*.js"], rules: { "a/runtime": "warn" } }]);
+        const lifted = withoutRuntimeExemptions(blocks);
+        expect(lifted).toHaveLength(1);
+        expect(lifted[0]?.rules).toEqual({ "a/runtime": "warn" });
+        expect(lifted[0]?.ignores).toBeUndefined();
+        // "all of these" in flat config: the block's own glob and one setup glob.
+        expect(lifted[0]?.files).toEqual(SETUP_FILE_PATTERNS.map((setup) => ["**/*.js", setup]));
+    });
+
+    it("pairs every pattern of a block with every setup pattern", () => {
+        const [block] = withoutRuntimeExemptions([{ files: ["**/*.ts", "**/*.tsx"], ignores: ["x"], rules: { "a/r": "warn" } }]);
+        expect(block?.files).toHaveLength(2 * SETUP_FILE_PATTERNS.length);
+    });
+
+    it("does not name workers, test helper folders or tool configs among the files that lose the exemption", () => {
+        const text = SETUP_FILE_PATTERNS.join(" ");
+        for (const exempt of ["worker", "test-helpers", "test-support", "test-utils", "testing", "testUtils", "esbuild", "version-bump", "eslint"]) {
+            expect(text).not.toContain(exempt);
+        }
     });
 
     it("exists in the installed preset: the exemption of test and tooling files is the thing it lifts", () => {
