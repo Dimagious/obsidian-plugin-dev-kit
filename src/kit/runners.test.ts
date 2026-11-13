@@ -46,7 +46,9 @@ describe("createRunNpm", () => {
 
     it("stops npm that runs past the timeout and says so", async () => {
         const dir = tempPlugin();
-        writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "fixture", version: "1.0.0", scripts: { slow: "node -e setTimeout(()=>{},3000)" } }));
+        // A script file, not inline code: npm runs scripts through `sh`, and dash on Linux rejects the parentheses.
+        writeFileSync(path.join(dir, "slow.cjs"), "setTimeout(() => undefined, 3000);\n");
+        writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "fixture", version: "1.0.0", scripts: { slow: "node slow.cjs" } }));
         await expect(createRunNpm(dir, "npm", 300)(["run", "slow"])).rejects.toThrow("npm run slow did not finish in 0.3 seconds and was stopped.");
     });
 
