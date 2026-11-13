@@ -60,12 +60,23 @@ describe("createObsidianTest", () => {
         expect(typeof fixtures.win).toBe("function");
     });
 
+    it("registers `seed` as an option that test.use() can set, with no seed by default", () => {
+        const extend = vi.spyOn(base, "extend");
+        createObsidianTest({ seedVault: "v" });
+        const fixtures = extend.mock.calls[0]?.[0] as Record<string, unknown>;
+        extend.mockRestore();
+        expect(fixtures.seed).toEqual([undefined, { option: true }]);
+    });
+
     it("gives every fixture function an object destructuring pattern as first parameter, which Playwright requires", () => {
         const extend = vi.spyOn(base, "extend");
         createObsidianTest({ seedVault: "v" });
         const fixtures = extend.mock.calls[0]?.[0] as Record<string, unknown>;
         extend.mockRestore();
-        const functions = Object.values(fixtures).map((value) => (Array.isArray(value) ? (value[0] as unknown) : value));
+        // `seed` is an option fixture (a value, not a function).
+        const functions = Object.entries(fixtures)
+            .filter(([name]) => name !== "seed")
+            .map(([, value]) => (Array.isArray(value) ? (value[0] as unknown) : value));
         expect(functions).toHaveLength(8);
         for (const fn of functions) {
             expect(String(fn)).toMatch(/^(async\s*)?(function\s*\w*\s*)?\(\s*\{/);

@@ -1,5 +1,6 @@
 import { parseTraceSetting, parseVideoSetting } from "./artifacts.js";
 import { DEFAULT_TIMEOUTS, type ResolvedOptions } from "./options.js";
+import { resolveSeed } from "./seed.js";
 import type { ObsidianSession, SessionContext } from "./session.js";
 
 /** The side effects the fixture bodies use, injectable so their control flow can be tested without Playwright. */
@@ -30,6 +31,8 @@ export interface FixtureTestInfo {
 export interface RecordingOptions {
     readonly trace?: unknown;
     readonly video?: unknown;
+    /** The `seed` option of the test (`test.use({ seed })`); checked before anything is created. */
+    readonly seed?: unknown;
 }
 
 /**
@@ -72,9 +75,11 @@ export function createFixtureFunctions(
             deps.sweep(options.sweepAfterHours);
             await use(undefined);
         },
-        session: async ({ trace, video }, use, testInfo) => {
+        session: async ({ trace, video, seed }, use, testInfo) => {
+            const resolvedSeed = resolveSeed(seed);
             const session = await deps.start({
                 label: testInfo.title,
+                seed: resolvedSeed,
                 annotate: (type, description) => {
                     testInfo.annotations.push({ type, description });
                 },

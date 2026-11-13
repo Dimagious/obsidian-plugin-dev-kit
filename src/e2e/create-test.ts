@@ -19,6 +19,7 @@ import type { DemoHelpers } from "./demo/types.js";
 import { createFixtureFunctions } from "./fixtures.js";
 import { createHelpers, type HelperKit } from "./helpers/create-helpers.js";
 import type { ObsidianHelpers } from "./helpers/types.js";
+import type { VaultSeed } from "./seed.js";
 import { gateSkipReason, isGateOpen } from "./gate.js";
 import { resolveOptions, type ObsidianTestOptions } from "./options.js";
 import { createProcessIo } from "./process-tree.js";
@@ -39,6 +40,12 @@ export interface ObsidianFixtures {
     demo: DemoHelpers;
 }
 
+/** Options a spec sets with `test.use(...)`. */
+export interface ObsidianTestUse {
+    /** Files and `app.json` keys added to this test's vault before Obsidian starts; see `VaultSeed`. */
+    seed: VaultSeed | undefined;
+}
+
 /** Internal: the one fixture the three above are views of, so setup and teardown happen in one place. */
 interface InternalFixtures {
     opdkSession: ObsidianSession;
@@ -52,7 +59,7 @@ interface InternalWorkerFixtures {
 
 /** What a spec can use. The internal fixtures are not part of the type, so a spec cannot ask for them by mistake. */
 export type ObsidianTest = TestType<
-    PlaywrightTestArgs & PlaywrightTestOptions & ObsidianFixtures,
+    PlaywrightTestArgs & PlaywrightTestOptions & ObsidianFixtures & ObsidianTestUse,
     PlaywrightWorkerArgs & PlaywrightWorkerOptions
 >;
 
@@ -85,7 +92,7 @@ export function createObsidianTest(options: ObsidianTestOptions): ObsidianTestKi
             sweepAtWorkerStart(hours, console.warn);
         },
     });
-    const extended = base.extend<InternalFixtures & ObsidianFixtures, InternalWorkerFixtures>({
+    const extended = base.extend<InternalFixtures & ObsidianFixtures & ObsidianTestUse, InternalWorkerFixtures>({
         // Playwright reads the source text of each fixture function and insists that its first parameter is an object
         // destructuring pattern (it finds the fixtures a fixture depends on that way), so a function handed over by
         // reference, or with a plain parameter, is refused when the tests are listed. Hence the wrappers.
@@ -97,11 +104,13 @@ export function createObsidianTest(options: ObsidianTestOptions): ObsidianTestKi
             },
             { scope: "worker", auto: true, box: true },
         ],
+        // An option fixture: `test.use({ seed })` sets it per file or describe block.
+        seed: [undefined, { option: true }],
         // Its own timeout: see `sessionFixtureTimeout`.
         opdkSession: [
             // `trace` and `video` are Playwright's option fixtures, so a `test.use({ trace, video })` in a spec counts.
-            async ({ trace, video }, use, testInfo) => {
-                await functions.session({ trace, video }, use, testInfo);
+            async ({ trace, video, seed }, use, testInfo) => {
+                await functions.session({ trace, video, seed }, use, testInfo);
             },
             { box: true, timeout: functions.sessionTimeoutMs },
         ],

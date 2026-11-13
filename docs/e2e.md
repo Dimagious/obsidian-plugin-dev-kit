@@ -244,6 +244,35 @@ An entry's own value always wins over the top-level one, and `OPDK_E2E_ALLOW_STA
 
 The kit does not read an env var for anything else. The names that gate your own specs are yours; see [Specs that run only on request](#specs-that-run-only-on-request).
 
+### Seeding one test's vault
+
+`seed` is a per-test option, set with `test.use` for a file or a `describe` block. It adds files and `app.json` keys to that test's vault copy before Obsidian starts, so a spec does not write them and call `obsidian.reload()`:
+
+```ts
+test.describe("with templates", () => {
+    test.use({
+        seed: {
+            files: {
+                "Daily/2026-03-14.md": "# Friday\n",
+                ".obsidian/templates.json": JSON.stringify({ folder: "Templates" }),
+            },
+            config: { propertiesInDocument: "hidden" },
+        },
+    });
+
+    test("inserts the template", async ({ obsidian }) => {
+        // Obsidian opened with the note, the templates setting and the hidden properties already in place.
+    });
+});
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `files` | `Record<string, string>` | Vault-relative path to text. Folders are created; a file of the same path in the seed vault is replaced. A path may point into `.obsidian/`. Empty, absolute, folder (trailing slash) and `..` paths fail |
+| `config` | `Record<string, unknown>` | Keys merged into `.obsidian/app.json` over the seed vault's and the kit's defaults (`settingsPopoutWindow`, `alwaysUpdateLinks`) |
+
+The seed is applied after the plugins and their `data` are installed, so a seeded `.obsidian/plugins/<id>/data.json` wins over the `data` option; use `data` for plugin settings. A wrong shape (an unknown key, a non-string file) fails the test before Obsidian starts, naming the key. The seed vault itself is never written: every test still gets its own copy. For content that depends on something only the running app knows, write it from the spec with `vault.write` and `reload()` as before.
+
 ## Helpers
 
 The `obsidian` fixture. Each helper that waits polls Obsidian's state; the only fixed delays are the 15 ms between key presses of `editor().type()` and, inside `scrollThrough`, a 100 ms fallback per step for a window that draws no frames. A failure says what went wrong and what to do. The selectors the helpers rely on (`.modal.mod-settings`, `.vertical-tab-content`, `.prompt-input`, `.prompt-results`, `.notice` and the editor's) are Obsidian internals, verified on 1.14.5; when a newer Obsidian renames one, the helper that uses it fails with its own message.

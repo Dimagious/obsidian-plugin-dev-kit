@@ -306,6 +306,36 @@ describe("startSession: happy path", () => {
     });
 });
 
+describe("startSession: seed", () => {
+    it("writes the test's files and config into the vault copy over the seed vault and the kit's defaults, not into the seed vault", async () => {
+        const r = run();
+        const session = await startSession(options(), r.deps, {
+            label: "seeded",
+            annotate: () => undefined,
+            seed: { files: { "Notes/a.md": "# a", "Welcome.md": "# replaced" }, config: { propertiesInDocument: "hidden", alwaysUpdateLinks: false } },
+        });
+        expect(session.vault.read("Notes/a.md")).toBe("# a");
+        expect(session.vault.read("Welcome.md")).toBe("# replaced");
+        expect(JSON.parse(session.vault.read(".obsidian/app.json"))).toEqual({
+            settingsPopoutWindow: false,
+            alwaysUpdateLinks: false,
+            propertiesInDocument: "hidden",
+        });
+        // The seed vault itself is untouched.
+        expect(fs.readFileSync(path.join(seed, "Welcome.md"), "utf8")).toBe("# hi");
+        expect(fs.existsSync(path.join(seed, "Notes"))).toBe(false);
+        await session.teardown();
+    });
+
+    it("cleans up when a seeded path leaves the vault", async () => {
+        const r = run();
+        await expect(
+            startSession(options(), r.deps, { label: "bad", annotate: () => undefined, seed: { files: { "../x.md": "x" } } }),
+        ).rejects.toThrow(/outside the vault/);
+        // afterEach checks that the temp root is empty again.
+    });
+});
+
 describe("startSession: version check", () => {
     it("passes when the expected version runs, and annotates both", async () => {
         const r = run({ version: "1.14.5" });
