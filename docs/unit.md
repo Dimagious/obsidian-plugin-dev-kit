@@ -192,18 +192,30 @@ Install twice is a no-op. Install without a DOM throws: "installObsidianDom() ne
 
 The behaviour of each helper was read from the shipped Obsidian app (1.14.5, the code in `app.asar`, never by running the app) and has unit tests in the kit. Covered, and nothing else:
 
-- **Create:** `createEl`, `createDiv`, `createSpan` and `createFragment` as globals; `createEl`, `createDiv`, `createSpan` on every node. The info object takes `cls`, `text` (a string or a fragment), `attr` (a `null` value removes the attribute), `title`, `value`, `type`, `placeholder`, `href`, `parent`, `prepend` and `on*` listeners, and the callback argument works. The info can also be a plain string, which is the class.
-- **Node:** `appendText`, `empty`, `instanceOf`, `doc`, `win`, `constructorWin`.
-- **Element:** `setText` (a string or a node or fragment, which replaces the children), `getText`, `setAttr`, `setAttrs`, `getAttr`, `addClass`, `addClasses`, `removeClass`, `removeClasses`, `toggleClass`, `hasClass`, `find`, `findAll`, `findAllSelf`; `find` and `findAll` on fragments.
-- **HTMLElement:** `show`, `hide`, `toggle`, `isShown`, `setCssStyles`, `setCssProps`, `onClickEvent` (`setCssStyles` and `setCssProps` also on SVG elements).
-- **Globals:** `activeWindow` and `activeDocument`.
+- **Create:** `createEl`, `createDiv`, `createSpan`, `createSvg` and `createFragment` as globals; `createEl`, `createDiv`, `createSpan`, `createSvg` on every node. The info object takes `cls`, `text` (a string or a fragment), `attr` (a `null` value removes the attribute), `title`, `value`, `type`, `placeholder`, `href`, `parent`, `prepend` and `on*` listeners, and the callback argument works. The info can also be a plain string, which is the class. `createSvg` makes an element in the SVG namespace and takes only `cls`, `attr`, `parent` and `prepend`.
+- **Node:** `appendText`, `empty`, `detach`, `insertAfter`, `indexOf`, `setChildrenInPlace`, `instanceOf`, `doc`, `win`, `constructorWin`.
+- **Element:** `setText` (a string or a node or fragment, which replaces the children), `getText`, `setAttr`, `setAttrs`, `getAttr`, `addClass`, `addClasses`, `removeClass`, `removeClasses`, `toggleClass`, `hasClass`, `find`, `findAll`, `findAllSelf`, `matchParent`, `getCssPropertyValue`, `isActiveElement`; `find` and `findAll` on fragments.
+- **HTMLElement:** `show`, `hide`, `toggle`, `isShown`, `toggleVisibility`, `innerWidth`, `innerHeight`, `setCssStyles`, `setCssProps`, `addEventListeners`, `trigger`, `onClickEvent` (`setCssStyles` and `setCssProps` also on SVG elements); `on` and `off` for delegated listeners (`el.on("click", ".item", (event, matchedElement) => ...)`), also on `document`.
+- **UIEvent:** `targetNode`, `win`, `doc`, `instanceOf`.
+- **Globals:** `activeWindow`, `activeDocument`, `fish`, `fishAll`, `ready`, `sleep`, `nextFrame`.
 
-An existing `show`, `hide`, `toggle`, `activeWindow` or `activeDocument` is left alone.
+An existing `show`, `hide`, `toggle`, `toggleVisibility`, `activeWindow` or `activeDocument` is left alone.
 
-Two deviations from the app, both forced by jsdom:
+Not installed:
+
+- The app's extensions to `Array`, `String`, `Number`, `Math` and `Object` (`first`, `last`, `contains`, `unique`, `clamp`, ...), and the globals `isBoolean` and `globalEnhance`.
+- `ajax` and `ajaxPromise`.
+- `onNodeInserted` and `onWindowMigrated`: they wait for a CSS animation event, which jsdom never fires.
+- The app's `ResizeObserver` stub (empty `observe`, `unobserve` and `disconnect`) and its `matchMedia` wrapper (adds `addEventListener` to a query object that lacks it). jsdom has neither `ResizeObserver` nor `matchMedia`, so code that calls them fails with a `ReferenceError` or `TypeError`. A test stubs them itself, for example `vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} })` and `vi.stubGlobal("matchMedia", (media: string): MediaQueryList => ({ matches: false, media, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false }))` (both undone by `vi.unstubAllGlobals()`).
+- The app's stubs for `TouchEvent`, `prepend` and `Object.hasOwn`: jsdom already has all three, so there is nothing to add.
+
+`innerWidth` and `innerHeight` are installed with the app's formula, `scrollWidth` (`scrollHeight`) minus padding. jsdom has no layout and reports a scroll size of 0, so they are 0 minus the padding unless a test defines `scrollWidth` or `scrollHeight` on the element.
+
+Three deviations from the app, two forced by jsdom and one a design choice:
 
 - **`isShown`** is true for an element that is in the document with no inline `display: none` on itself or an ancestor. The app returns `!!offsetParent`, which jsdom, having no layout, always reports as `null`.
 - **`scrollIntoView`** is added as a no-op when jsdom lacks it. The app has no such helper; browsers do, and code that scrolls an element into view fails without it.
+- **Delegated `on` and `off`** keep their listeners in a `WeakMap` keyed by the element, where the app uses an `_EVENTS` property on the element. The behaviour is the same; the kit does not add a property to the element.
 
 The helpers call each other through the public methods, as the app does: `createDiv` and `createSpan` go through `this.createEl`, the global `createDiv` through the global `createEl`, `addClass` through `addClasses`, `removeClass` through `removeClasses` and `toggle` through `show` and `hide`. A test that spies on `createEl` therefore sees the calls of `createDiv`. Like the app, `createEl` on a node writes `parent` into the info object it was given; the global `createEl` does not mutate it.
 
