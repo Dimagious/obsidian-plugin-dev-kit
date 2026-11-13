@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { devNull } from "node:os";
 import path from "node:path";
 import { createRunGit, type RunGit } from "../release/git.js";
 import { gitFreeEnvironment } from "../scanner/git-files.js";
+import { registerTempDir } from "./temp-registry.js";
 import { testTmpRoot } from "./test-tmp.js";
 
 export const VALID_MANIFEST = {
@@ -87,9 +88,7 @@ export interface ReleaseRepo {
  */
 export function createReleaseRepo(): ReleaseRepo {
     const root = mkdtempSync(path.join(testTmpRoot(), "opdk-release-fixture-"));
-    const cleanup = (): void => {
-        rmSync(root, { recursive: true, force: true });
-    };
+    const cleanup = registerTempDir(root);
     try {
         return buildReleaseRepo(root, cleanup);
     } catch (error) {

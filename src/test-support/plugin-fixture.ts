@@ -1,10 +1,14 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createReporter } from "../cli/reporter.js";
 import type { CommandContext } from "../cli/types.js";
+import { registerTempDir } from "./temp-registry.js";
 
-/** A throwaway plugin directory for tests that touch the file system. Remove it with `cleanup()`. */
+/**
+ * A throwaway plugin directory for tests that touch the file system. Remove it with `cleanup()`; one the test forgets
+ * is removed after the test by the registry (`temp-registry.ts`).
+ */
 export interface PluginFixture {
     readonly dir: string;
     /** Writes a file (creating folders) relative to the plugin root. */
@@ -14,6 +18,7 @@ export interface PluginFixture {
 
 export function createPluginFixture(manifest: Record<string, unknown> = {}): PluginFixture {
     const dir = mkdtempSync(path.join(tmpdir(), "opdk-plugin-"));
+    const remove = registerTempDir(dir);
     const write = (relativePath: string, content: string | Uint8Array): void => {
         const file = path.join(dir, relativePath);
         mkdirSync(path.dirname(file), { recursive: true });
@@ -26,9 +31,7 @@ export function createPluginFixture(manifest: Record<string, unknown> = {}): Plu
     return {
         dir,
         write,
-        cleanup: () => {
-            rmSync(dir, { recursive: true, force: true });
-        },
+        cleanup: remove,
     };
 }
 
