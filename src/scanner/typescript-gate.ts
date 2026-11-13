@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import type { Reporter } from "../cli/reporter.js";
 import { majorOf } from "./eslint-nesting.js";
 
 /**
@@ -65,4 +66,25 @@ export function readPluginTypescriptVersion(load: () => unknown = loadTypescript
         return manifest.version;
     }
     throw new Error("the typescript package next to typescript-eslint has no version in its package.json. Reinstall it with `npm install -D typescript@6`.");
+}
+
+/**
+ * The check `opdk scan` runs before it loads the scan's ESLint plugins: they `require("typescript")` at import, so
+ * without a TypeScript the import itself would fail with a bare "Cannot find package". Prints the failure and returns
+ * 1 when no TypeScript is installed; an older one is reported by `runScan`, after the tracked files are listed.
+ */
+export function missingTypescriptPreflight(
+    pluginId: string,
+    reporter: Reporter,
+    read: () => string | undefined = readPluginTypescriptVersion,
+): number | undefined {
+    if (read() !== undefined) {
+        return undefined;
+    }
+    const gap = describeTypescriptGap(undefined);
+    if (gap === undefined) {
+        return undefined;
+    }
+    reporter.failure("scan", `${pluginId}: ${gap.message}`, { hint: gap.hint });
+    return 1;
 }

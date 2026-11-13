@@ -49,7 +49,7 @@ Quick start: `npx opdk build`. Details: [docs/build.md](docs/build.md).
 
 ## Scanner
 
-`opdk scan` runs the community plugin scanner's own ESLint configuration (published upstream), a CSS check and a few source checks that reproduce findings seen on plugin listings, over the files git tracks. It fails when a step has a finding; the scanner's ESLint warnings count as findings, advisory `!` lines do not. It type-checks with its own TypeScript 6, as the scanner does, and reads every tracked stylesheet; there is no way to ignore a file the scorecard shows. A plugin lost three points of its public score to a joined domain string that no local check saw; this catches that kind of thing before the tag.
+`opdk scan` runs the community plugin scanner's own ESLint configuration (published upstream), a CSS check and a few source checks that reproduce findings seen on plugin listings, over the files git tracks. It fails when a step has a finding; the scanner's ESLint warnings count as findings, advisory `!` lines do not. It type-checks with the plugin's TypeScript, which must be 6, as the scanner's is, and reads every tracked stylesheet; there is no way to ignore a file the scorecard shows. A plugin lost three points of its public score to a joined domain string that no local check saw; this catches that kind of thing before the tag.
 
 ![Terminal: opdk scan prints lint, css, code and meta with 0 findings each, then the summary and exit code 0](docs/media/scan.gif)
 

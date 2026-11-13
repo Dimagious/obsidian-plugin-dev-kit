@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-import { describeTypescriptGap, readPluginTypescriptVersion } from "./typescript-gate.js";
+import { createContext } from "../test-support/plugin-fixture.js";
+import { describeTypescriptGap, missingTypescriptPreflight, readPluginTypescriptVersion } from "./typescript-gate.js";
 
 describe("describeTypescriptGap", () => {
     it.each(["6.0.3", "6.0.0", "7.0.0", "6.1.0-beta"])("lets TypeScript %s through", (version) => {
@@ -44,5 +45,23 @@ describe("readPluginTypescriptVersion", () => {
 
     it("fails with the reinstall command when the manifest has no version", () => {
         expect(() => readPluginTypescriptVersion(() => ({ name: "typescript" }))).toThrow("npm install -D typescript@6");
+    });
+});
+
+describe("missingTypescriptPreflight", () => {
+    it("fails with the install command when no TypeScript is installed, before anything loads it", () => {
+        const ctx = createContext("/plugin");
+        expect(missingTypescriptPreflight("my-plugin", ctx.reporter, () => undefined)).toBe(1);
+        const text = ctx.err.join("");
+        expect(text).toContain("my-plugin: the plugin has no TypeScript installed");
+        expect(text).toContain("npm install -D typescript@6");
+    });
+
+    it("leaves any installed TypeScript to runScan, older ones included", () => {
+        for (const version of ["6.0.3", "5.9.3"]) {
+            const ctx = createContext("/plugin");
+            expect(missingTypescriptPreflight("my-plugin", ctx.reporter, () => version)).toBeUndefined();
+            expect([...ctx.out, ...ctx.err].join("")).toBe("");
+        }
     });
 });

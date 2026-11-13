@@ -33,6 +33,12 @@ export const scanCommand: Command = {
         // Loaded here, not at the top: the scan pulls in ESLint, obsidianmd, typescript-eslint and doiuse, and
         // obsidianmd reads manifest.json from the current directory at import. Every other command, and
         // `opdk --help`, must not pay for that or fail on it.
+        // The scan's ESLint plugins load `typescript` at import: a missing one is reported before that import.
+        const { missingTypescriptPreflight } = await import("./typescript-gate.js");
+        const missing = missingTypescriptPreflight(manifest.id, ctx.reporter);
+        if (missing !== undefined) {
+            return missing;
+        }
         const { runScan } = await import("./run.js");
         return runScan({ cwd: ctx.cwd, manifest, reporter: ctx.reporter });
     },
