@@ -32,7 +32,7 @@ describe("parseStillPublishing", () => {
         }
     });
 
-    it.each(["{ nope", "[]", "null", '{"publish":"yes"}', '{"out":"x"}', '{"publish":true,"out":3}'])("names the file and says to record again for %s", (text) => {
+    it.each(["{ nope", "[]", "null", '{"publish":"yes"}', '{"out":"x"}', '{"publish":true,"out":3}', '{"publish":false,"out":"listing"}'])("names the file and says to record again for %s", (text) => {
         expect(() => parseStillPublishing(text, "x/f.json")).toThrow(/x\/f\.json .*Record the still again\./);
     });
 });

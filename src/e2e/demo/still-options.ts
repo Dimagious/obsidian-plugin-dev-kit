@@ -53,6 +53,9 @@ export function parseStillPublishing(text: string, file: string): StillPublishin
     if (typeof publish !== "boolean" || (out !== undefined && typeof out !== "string")) {
         throw new Error(`${file} must be { "publish": boolean, "out"?: string }. Record the still again.`);
     }
+    if (!publish && out !== undefined) {
+        throw new Error(`${file} has "out" with "publish": false, which the fixture never writes. Record the still again.`);
+    }
     return out === undefined ? { publish } : { publish, out };
 }
 

@@ -191,7 +191,11 @@ async function open(
         writePluginData(vaultPath, id, data);
     }
     if (context.seed !== undefined) {
-        applySeed(vaultPath, context.seed);
+        applySeed(
+            vaultPath,
+            context.seed,
+            sources.map((source) => source.id),
+        );
     }
     writeUserData({ userDataDir, vaultId, vaultPath, now: now() });
 

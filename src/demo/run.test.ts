@@ -721,7 +721,11 @@ describe("stills", () => {
             writeStill("listing-1");
             options({ name: "listing-1", publish: true, out: "listing" });
             expect(await run({ config: { stills: false, outputs: { listing: "docs/listing" } }, deps: noFfmpeg })).toBe(1);
+            // Stills are off, so the project has no films and says so; nothing is copied, and the still is not even looked at.
+            expect(err()).toContain("no films in");
+            expect(err()).not.toContain("listing-1");
             expect(fs.existsSync(listing())).toBe(false);
+            expect(media()).toEqual([]);
         });
 
         it("refuses a still that would overwrite a film's file in an output folder", async () => {

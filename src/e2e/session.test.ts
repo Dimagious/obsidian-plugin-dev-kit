@@ -336,6 +336,19 @@ describe("startSession: seed", () => {
     });
 });
 
+describe("startSession: seed and the plugin's data", () => {
+    it("keeps the data option in data.json, and refuses a seed that would replace the plugin's build, cleaning up", async () => {
+        const r = run();
+        const session = await startSession(options({ data: { "my-plugin": { greeting: "from data" } } }), r.deps, { label: "data", annotate: () => undefined, seed: { files: { "Notes/a.md": "# a" } } });
+        expect(JSON.parse(session.vault.read(".obsidian/plugins/my-plugin/data.json"))).toEqual({ greeting: "from data" });
+        await session.teardown();
+        await expect(
+            startSession(options(), r.deps, { label: "build", annotate: () => undefined, seed: { files: { ".obsidian/plugins/my-plugin/main.js": "//other" } } }),
+        ).rejects.toThrow(/inside the folder of the installed plugin "my-plugin"/);
+        // afterEach checks that the temp root is empty again.
+    });
+});
+
 describe("startSession: version check", () => {
     it("passes when the expected version runs, and annotates both", async () => {
         const r = run({ version: "1.14.5" });

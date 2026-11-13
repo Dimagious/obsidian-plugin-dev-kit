@@ -35,7 +35,41 @@ export function seedPathProblem(file: string): string | null {
     if (file.split(/[\\/]/).includes("..")) {
         return "leaves the vault with ..";
     }
+    const normal = normalizeSeedPath(file);
+    if (normal === "") {
+        return "names the vault folder itself, not a file";
+    }
+    if (normal === ".obsidian") {
+        return "names the .obsidian folder itself, not a file";
+    }
     return null;
+}
+
+/** The path as the vault sees it: forward slashes, no `./`, lowercase (macOS and Windows ignore case), `""` for the vault folder. */
+function normalizeSeedPath(file: string): string {
+    const normal = path.posix.normalize(file.replace(/\\/g, "/")).toLowerCase();
+    return normal === "." ? "" : normal.replace(/^\.\//, "");
+}
+
+/** Why a seed file must not replace what the kit writes, as a sentence naming the key to use instead; `null` when it may. */
+export function seedFileConflict(file: string): string | null {
+    const normal = normalizeSeedPath(file);
+    if (normal === ".obsidian/app.json") {
+        return 'would replace .obsidian/app.json, which the kit fills with its defaults (settingsPopoutWindow, alwaysUpdateLinks). Put the keys in seed.config, for example config: { propertiesInDocument: "hidden" }';
+    }
+    if (normal === ".obsidian/community-plugins.json") {
+        return "would replace .obsidian/community-plugins.json, which the kit writes from the installed plugins. List the plugins in the plugins option of createObsidianTest";
+    }
+    if (/^\.obsidian\/plugins\/[^/]+\/data\.json$/.test(normal)) {
+        return "would replace a plugin's data.json. Put the settings in the data option of createObsidianTest";
+    }
+    return null;
+}
+
+/** The id of the installed plugin whose folder `.obsidian/plugins/<id>/` the file is in, or `null`. */
+export function seedPluginFolder(file: string, installedIds: readonly string[]): string | null {
+    const match = /^\.obsidian\/plugins\/([^/]+)\//.exec(normalizeSeedPath(file));
+    return installedIds.find((id) => id.toLowerCase() === match?.[1]) ?? null;
 }
 
 /**
@@ -67,6 +101,10 @@ export function resolveSeed(value: unknown): VaultSeed {
             if (problem !== null) {
                 throw new Error(`seed: the path ${JSON.stringify(file)} ${problem}. Use a path relative to the vault, such as "Notes/a.md".`);
             }
+            const conflict = seedFileConflict(file);
+            if (conflict !== null) {
+                throw new Error(`seed: files[${JSON.stringify(file)}] ${conflict}.`);
+            }
         }
     }
     if (config !== undefined && !isRecord(config)) {
@@ -78,8 +116,17 @@ export function resolveSeed(value: unknown): VaultSeed {
     };
 }
 
-/** Writes a resolved seed into the vault copy. Call it after the kit's own files, so the seed has the last word. */
-export function applySeed(vaultPath: string, seed: VaultSeed): void {
+/**
+ * Writes a resolved seed into the vault copy. Call it after the kit's own files, so the seed has the last word. A file
+ * inside the folder of an installed plugin (`installedIds`) is refused, because it would replace the build under test.
+ */
+export function applySeed(vaultPath: string, seed: VaultSeed, installedIds: readonly string[] = []): void {
+    for (const file of Object.keys(seed.files ?? {})) {
+        const plugin = seedPluginFolder(file, installedIds);
+        if (plugin !== null) {
+            throw new Error(`seed: files[${JSON.stringify(file)}] is inside the folder of the installed plugin "${plugin}" and would replace its build. Seed notes and settings files elsewhere in the vault, and plugin settings with the data option of createObsidianTest.`);
+        }
+    }
     const vault = createVaultHandle(vaultPath);
     for (const [file, text] of Object.entries(seed.files ?? {})) {
         vault.write(file, text);

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applySeed, resolveSeed, seedPathProblem } from "./seed.js";
+import { applySeed, resolveSeed, seedPathProblem, seedPluginFolder } from "./seed.js";
 
 describe("resolveSeed", () => {
     it("treats no seed as an empty one", () => {
@@ -40,12 +40,44 @@ describe("resolveSeed", () => {
         ["Notes/", "names a folder"],
         ["../x.md", "leaves the vault"],
         ["a/../../x.md", "leaves the vault"],
+        [".", "names the vault folder itself"],
+        ["./", "names a folder"],
+        ["./.", "names the vault folder itself"],
+        [".obsidian", "names the .obsidian folder itself"],
+        ["./.obsidian", "names the .obsidian folder itself"],
+        [".Obsidian", "names the .obsidian folder itself"],
+        [".obsidian/.", "names the .obsidian folder itself"],
+        [".obsidian\\.", "names the .obsidian folder itself"],
     ])("refuses the path %j", (file, problem) => {
         expect(() => resolveSeed({ files: { [file]: "x" } })).toThrow(new RegExp(problem));
     });
 
+    it.each([
+        [".obsidian/app.json", /files\["\.obsidian\/app\.json"\] would replace \.obsidian\/app\.json.*seed\.config/],
+        ["./.obsidian/app.json", /seed\.config/],
+        [".obsidian\\app.json", /seed\.config/],
+        [".obsidian/./APP.json", /seed\.config/],
+        [".obsidian/community-plugins.json", /community-plugins\.json.*plugins option/],
+        [".obsidian/plugins/my-plugin/data.json", /plugin's data\.json.*data option/],
+    ])("refuses %j, which would replace what the kit writes, and names the key to use", (file, message) => {
+        expect(() => resolveSeed({ files: { [file]: "{}" } })).toThrow(message);
+    });
+
+    it("still accepts the other files of .obsidian", () => {
+        expect(() => resolveSeed({ files: { ".obsidian/templates.json": "{}", ".obsidian/plugins/x/notes.md": "x", "app.json": "{}" } })).not.toThrow();
+    });
+
     it("refuses config that is not an object", () => {
         expect(() => resolveSeed({ config: "x" })).toThrow(/"config" must be an object of app\.json keys/);
+    });
+});
+
+describe("seedPluginFolder", () => {
+    it("finds the installed plugin whose folder holds the file, ignoring case and slash style", () => {
+        expect(seedPluginFolder(".obsidian/plugins/my-plugin/main.js", ["my-plugin"])).toBe("my-plugin");
+        expect(seedPluginFolder(".obsidian\\plugins\\My-Plugin\\x.css", ["my-plugin"])).toBe("my-plugin");
+        expect(seedPluginFolder(".obsidian/plugins/other/main.js", ["my-plugin"])).toBeNull();
+        expect(seedPluginFolder("Notes/main.js", ["my-plugin"])).toBeNull();
     });
 });
 
@@ -99,6 +131,16 @@ describe("applySeed", () => {
         applySeed(vaultPath, {});
         applySeed(vaultPath, { config: {} });
         expect(fs.readFileSync(path.join(vaultPath, ".obsidian", "app.json"), "utf8")).toBe(before);
+    });
+
+    it("refuses a file in the folder of an installed plugin before writing anything", () => {
+        expect(() => {
+            applySeed(vaultPath, { files: { "Notes/a.md": "# a", ".obsidian/plugins/my-plugin/main.js": "x" } }, ["my-plugin"]);
+        }).toThrow(/inside the folder of the installed plugin "my-plugin".*data option/);
+        expect(fs.existsSync(path.join(vaultPath, "Notes"))).toBe(false);
+        // A folder of a plugin that is not installed is just a folder.
+        applySeed(vaultPath, { files: { ".obsidian/plugins/other/notes.txt": "x" } }, ["my-plugin"]);
+        expect(fs.existsSync(path.join(vaultPath, ".obsidian", "plugins", "other", "notes.txt"))).toBe(true);
     });
 
     it("refuses a path that leaves the vault and writes nothing outside", () => {
