@@ -28,7 +28,7 @@ describe("assertElectronInstalled", () => {
         const p = probe([], "/plugin/node_modules/electron/package.json");
         expect(() => {
             assertElectronInstalled("/plugin", p);
-        }).toThrow(/downloads it on first use \(about 100 MB\).*npx electron --version.*CI, cache/s);
+        }).toThrow(/downloads it on first use \(about 100 MB\).*node node_modules\/electron\/install\.js.*CI, cache/s);
     });
 
     it("says the plugin needs electron as a devDependency when it cannot be resolved", () => {
