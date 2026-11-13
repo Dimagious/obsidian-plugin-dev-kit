@@ -3,7 +3,7 @@ import obsidianmd from "eslint-plugin-obsidianmd";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPluginFixture, type PluginFixture } from "../test-support/plugin-fixture.js";
 import * as entry from "./index.js";
-import { DEFAULT_IGNORES, obsidianPlugin, resolveOptions } from "./obsidian-plugin.js";
+import { BARE_WINDOW_SELECTOR, DEFAULT_IGNORES, obsidianPlugin, resolveOptions } from "./obsidian-plugin.js";
 
 // Real ESLint, git and esbuild runs: they miss the 5 s default when suites share the machine. Per file, so the global default stays.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
@@ -74,6 +74,7 @@ describe("obsidianPlugin", () => {
     it("is exported from the eslint entry point", () => {
         expect(entry.obsidianPlugin).toBe(obsidianPlugin);
         expect(entry.DEFAULT_IGNORES).toBe(DEFAULT_IGNORES);
+        expect(entry.BARE_WINDOW_SELECTOR).toBe(BARE_WINDOW_SELECTOR);
     });
 
     it("starts with eslint-plugin-obsidianmd's recommended preset", () => {
@@ -89,6 +90,15 @@ describe("obsidianPlugin", () => {
     it("defaults rootDir to the folder ESLint runs in", () => {
         const block = obsidianPlugin().find((entry) => entry.files?.includes("**/*.ts") === true);
         expect(block?.languageOptions?.parserOptions).toMatchObject({ tsconfigRootDir: process.cwd() });
+    });
+
+    it("sets the bare window rule in the TypeScript block and leaves require() to the preset", () => {
+        const rules = obsidianPlugin({ rootDir: "/plugin" }).find((entry) => entry.files?.includes("**/*.ts") === true)?.rules;
+        expect(rules).not.toHaveProperty("@typescript-eslint/no-require-imports");
+        const [severity, restriction] = rules?.["no-restricted-syntax"] as [string, { selector: string; message: string }];
+        expect(severity).toBe("error");
+        expect(restriction.selector).toBe(BARE_WINDOW_SELECTOR);
+        expect(restriction.message).toContain("activeWindow");
     });
 
     it("makes the three shared rules errors", () => {
@@ -147,6 +157,62 @@ describe("obsidianPlugin on a real project", () => {
     it("reports a timer without window as an error, which the preset alone only warns about", async () => {
         plugin.write("src/main.ts", "export const wait = (): void => {\n    setTimeout(() => undefined, 1);\n};\n");
         expect(await lint(["src/main.ts"])).toEqual(["src/main.ts:2 obsidianmd/prefer-window-timers error"]);
+    });
+
+    it.each([
+        ["window.addEventListener", 'window.addEventListener("resize", () => undefined);'],
+        ["window.innerWidth", "console.debug(window.innerWidth);"],
+        ["optional access", "console.debug(window?.innerWidth);"],
+        ["computed access", 'console.debug(window["innerWidth"]);'],
+        ["computed access of an allowed name", 'window["open"]("https://example.com");'],
+    ])("reports a bare window member: %s", async (_name, code) => {
+        plugin.write("src/main.ts", `export const f = (): void => {\n    ${code}\n};\n`);
+        const messages = await lint(["src/main.ts"]);
+        expect(messages).toContain("src/main.ts:2 no-restricted-syntax error");
+    });
+
+    it.each([
+        ["window.open", 'window.open("https://example.com");'],
+        ["window.setTimeout", "window.setTimeout(() => undefined, 1);"],
+        ["window.clearTimeout", "window.clearTimeout(1);"],
+        ["window.setInterval", "window.setInterval(() => undefined, 1);"],
+        ["window.clearInterval", "window.clearInterval(1);"],
+        ["window.requestAnimationFrame", "window.requestAnimationFrame(() => undefined);"],
+        ["window.cancelAnimationFrame", "window.cancelAnimationFrame(1);"],
+        ["activeWindow member", 'activeWindow.addEventListener("resize", () => undefined);'],
+        ["a member named window of another object", "console.debug({ window: 1 }.window);"],
+    ])("lets this through: %s", async (_name, code) => {
+        plugin.write("src/main.ts", `export const f = (): void => {\n    ${code}\n};\n`);
+        const messages = await lint(["src/main.ts"]);
+        expect(messages.filter((message) => message.includes("no-restricted-syntax"))).toEqual([]);
+    });
+
+    it("reports a handler parameter named window (window-open) and accepts it renamed", async () => {
+        const handler = (name: string): string =>
+            `export const on = (cb: (win: unknown, ${name}: Window) => void): void => cb(null, activeWindow);\n` +
+            `on((_win, ${name}) => ${name}.addEventListener("resize", () => undefined));\n`;
+        plugin.write("src/main.ts", handler("window"));
+        expect(await lint(["src/main.ts"])).toContain("src/main.ts:2 no-restricted-syntax error");
+        plugin.write("src/main.ts", handler("popoutWindow"));
+        expect((await lint(["src/main.ts"])).filter((message) => message.includes("no-restricted-syntax"))).toEqual([]);
+    });
+
+    it("lets a plugin turn the bare window rule off with a later block", async () => {
+        plugin.write("src/main.ts", "export const w = (): number => window.innerWidth;\n");
+        const eslint = new ESLint({
+            cwd: plugin.dir,
+            overrideConfigFile: true,
+            baseConfig: [...obsidianPlugin({ rootDir: plugin.dir }), { files: ["**/*.ts"], rules: { "no-restricted-syntax": "off" } }],
+            warnIgnored: false,
+        });
+        const [result] = await eslint.lintFiles(["src/main.ts"]);
+        expect(result?.messages.filter((message) => message.ruleId === "no-restricted-syntax")).toEqual([]);
+    });
+
+    it("does not report require(): the preset leaves it off and a Node module goes through Platform.isDesktop", async () => {
+        plugin.write("src/main.ts", 'export const fs: unknown = require("fs");\n');
+        const messages = await lint(["src/main.ts"]);
+        expect(messages.filter((message) => message.includes("no-require-imports"))).toEqual([]);
     });
 
     it("reports an unused argument unless it starts with an underscore", async () => {
