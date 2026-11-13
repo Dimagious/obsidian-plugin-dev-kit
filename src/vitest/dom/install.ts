@@ -1,7 +1,17 @@
 /// <reference lib="dom" />
 import type {} from "obsidian";
 import {
+    addEventListeners,
     createChild,
+    createSvgChild,
+    createSvgElement,
+    type DelegatedListener,
+    eventInstanceOf,
+    isActiveElement,
+    matchParent,
+    offDelegated,
+    onDelegated,
+    setChildrenInPlace,
     createElement,
     createFragment,
     getText,
@@ -83,6 +93,22 @@ export function installObsidianDom(): void {
     method(node, "createEl", function (this: Node, tag: keyof HTMLElementTagNameMap, info?: DomElementInfo | string, cb?: (el: HTMLElement) => void) {
         return createChild(this, tag, info, cb);
     });
+    method(node, "detach", function (this: Node) {
+        this.parentNode?.removeChild(this);
+    });
+    method(node, "insertAfter", function (this: Node, child: Node, reference: Node | null) {
+        this.insertBefore(child, reference ? reference.nextSibling : this.firstChild);
+        return child;
+    });
+    method(node, "indexOf", function (this: Node, child: Node) {
+        return Array.prototype.indexOf.call(this.childNodes, child);
+    });
+    method(node, "setChildrenInPlace", function (this: Node, children: Node[]) {
+        setChildrenInPlace(this, children);
+    });
+    method(node, "createSvg", function (this: Node, tag: keyof SVGElementTagNameMap, info?: SvgElementInfo | string, cb?: (el: SVGElement) => void) {
+        return createSvgChild(this, tag, info, cb);
+    });
     // createDiv and createSpan go through this.createEl(), and the globals through the global createEl, as in the app.
     method(node, "createDiv", function (this: Node, info?: DomElementInfo | string, cb?: (el: HTMLDivElement) => void) {
         return this.createEl("div", info, cb);
@@ -137,6 +163,15 @@ export function installObsidianDom(): void {
         if (this.matches(selector)) found.unshift(this);
         return found;
     });
+    method(element, "matchParent", function (this: Element, selector: string, lastParent?: Element) {
+        return matchParent(this, selector, lastParent);
+    });
+    method(element, "getCssPropertyValue", function (this: Element, property: string, pseudoElement?: string) {
+        return getComputedStyle(this, pseudoElement).getPropertyValue(property).trim();
+    });
+    method(element, "isActiveElement", function (this: Element) {
+        return isActiveElement(this);
+    });
     // jsdom has no layout engine and no scrollIntoView; browsers (and the app) have it, tests need a no-op.
     method(
         element,
@@ -168,6 +203,24 @@ export function installObsidianDom(): void {
         if (visible) this.show();
         else this.hide();
     }, true);
+    method(html, "toggleVisibility", function (this: HTMLElement, visible: boolean) {
+        this.style.visibility = visible ? "" : "hidden";
+    }, true);
+    method(html, "addEventListeners", function (this: HTMLElement, listeners: Record<string, unknown>) {
+        addEventListeners(this, listeners);
+    });
+    method(html, "trigger", function (this: HTMLElement, eventType: string) {
+        this.dispatchEvent(new Event(eventType, { bubbles: true, cancelable: false }));
+    });
+    // The app's scrollWidth minus padding. jsdom reports scrollWidth 0 (no layout), so this is 0 minus the padding.
+    getter(html, "innerWidth", function (this: HTMLElement) {
+        const style = getComputedStyle(this);
+        return this.scrollWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+    });
+    getter(html, "innerHeight", function (this: HTMLElement) {
+        const style = getComputedStyle(this);
+        return this.scrollHeight - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0);
+    });
     method(html, "isShown", function (this: HTMLElement) {
         return isShown(this);
     });
@@ -181,11 +234,34 @@ export function installObsidianDom(): void {
         this.addEventListener("click", listener, options);
         this.addEventListener("auxclick", listener, options);
     });
+    for (const target of [html, Document.prototype]) {
+        method(target, "on", function (this: EventTarget, type: string, selector: string, listener: DelegatedListener, options?: boolean | AddEventListenerOptions) {
+            onDelegated(this, type, selector, listener, options);
+        });
+        method(target, "off", function (this: EventTarget, type: string, selector: string, listener: DelegatedListener, options?: boolean | AddEventListenerOptions) {
+            offDelegated(this, type, selector, listener, options);
+        });
+    }
     method(SVGElement.prototype, "setCssStyles", function (this: SVGElement, styles: Partial<CSSStyleDeclaration>) {
         setCssStyles(this, styles);
     });
     method(SVGElement.prototype, "setCssProps", function (this: SVGElement, props: Record<string, string>) {
         setCssProps(this, props);
+    });
+
+    // UIEvent
+    const uiEvent = UIEvent.prototype;
+    getter(uiEvent, "targetNode", function (this: UIEvent) {
+        return this.target;
+    });
+    getter(uiEvent, "win", function (this: UIEvent) {
+        return this.view ?? window;
+    });
+    getter(uiEvent, "doc", function (this: UIEvent) {
+        return this.win.document;
+    });
+    method(uiEvent, "instanceOf", function (this: UIEvent, type: abstract new () => unknown) {
+        return eventInstanceOf(this, type);
     });
 
     // Globals the app puts on `window`. Here `window` is the global scope vitest builds from jsdom.
@@ -196,7 +272,16 @@ export function installObsidianDom(): void {
     method(globalThis, "createSpan", (info?: DomElementInfo | string, cb?: (el: HTMLSpanElement) => void) =>
         createEl("span", info, cb),
     );
+    method(globalThis, "createSvg", createSvgElement);
     method(globalThis, "createFragment", createFragment);
+    method(globalThis, "fish", (selector: string) => document.querySelector<HTMLElement>(selector));
+    method(globalThis, "fishAll", (selector: string) => Array.from(document.querySelectorAll<HTMLElement>(selector)));
+    method(globalThis, "ready", (callback: () => unknown) => {
+        if (document.readyState !== "loading") callback();
+        else document.addEventListener("DOMContentLoaded", callback);
+    });
+    method(globalThis, "sleep", (ms: number) => new Promise<void>((resolve) => void window.setTimeout(resolve, ms)));
+    method(globalThis, "nextFrame", () => new Promise<void>((resolve) => void window.requestAnimationFrame(() => { resolve(); })));
     // One window only, so the active window and document are the global ones.
     define(globalThis, "activeWindow", { value: window, writable: true }, true);
     define(globalThis, "activeDocument", { value: document, writable: true }, true);

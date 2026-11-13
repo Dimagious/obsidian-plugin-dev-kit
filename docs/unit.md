@@ -160,13 +160,16 @@ Install twice is a no-op. Install without a DOM throws: "installObsidianDom() ne
 
 The behaviour of each helper was read from the shipped Obsidian app (1.14.5, the code in `app.asar`, never by running the app) and has unit tests in the kit. Covered, and nothing else:
 
-- **Create:** `createEl`, `createDiv`, `createSpan` and `createFragment` as globals; `createEl`, `createDiv`, `createSpan` on every node. The info object takes `cls`, `text` (a string or a fragment), `attr` (a `null` value removes the attribute), `title`, `value`, `type`, `placeholder`, `href`, `parent`, `prepend` and `on*` listeners, and the callback argument works. The info can also be a plain string, which is the class.
-- **Node:** `appendText`, `empty`, `instanceOf`, `doc`, `win`, `constructorWin`.
-- **Element:** `setText` (a string or a node or fragment, which replaces the children), `getText`, `setAttr`, `setAttrs`, `getAttr`, `addClass`, `addClasses`, `removeClass`, `removeClasses`, `toggleClass`, `hasClass`, `find`, `findAll`, `findAllSelf`; `find` and `findAll` on fragments.
-- **HTMLElement:** `show`, `hide`, `toggle`, `isShown`, `setCssStyles`, `setCssProps`, `onClickEvent` (`setCssStyles` and `setCssProps` also on SVG elements).
-- **Globals:** `activeWindow` and `activeDocument`.
+- **Create:** `createEl`, `createDiv`, `createSpan`, `createSvg` and `createFragment` as globals; `createEl`, `createDiv`, `createSpan`, `createSvg` on every node. The info object takes `cls`, `text` (a string or a fragment), `attr` (a `null` value removes the attribute), `title`, `value`, `type`, `placeholder`, `href`, `parent`, `prepend` and `on*` listeners, and the callback argument works. The info can also be a plain string, which is the class. `createSvg` makes an element in the SVG namespace and takes only `cls`, `attr`, `parent` and `prepend`.
+- **Node:** `appendText`, `empty`, `detach`, `insertAfter`, `indexOf`, `setChildrenInPlace`, `instanceOf`, `doc`, `win`, `constructorWin`.
+- **Element:** `setText` (a string or a node or fragment, which replaces the children), `getText`, `setAttr`, `setAttrs`, `getAttr`, `addClass`, `addClasses`, `removeClass`, `removeClasses`, `toggleClass`, `hasClass`, `find`, `findAll`, `findAllSelf`, `matchParent`, `getCssPropertyValue`, `isActiveElement`; `find` and `findAll` on fragments.
+- **HTMLElement:** `show`, `hide`, `toggle`, `isShown`, `toggleVisibility`, `innerWidth`, `innerHeight`, `setCssStyles`, `setCssProps`, `addEventListeners`, `trigger`, `onClickEvent` (`setCssStyles` and `setCssProps` also on SVG elements); `on` and `off` for delegated listeners (`el.on("click", ".item", (event, matchedElement) => ...)`), also on `document`.
+- **UIEvent:** `targetNode`, `win`, `doc`, `instanceOf`.
+- **Globals:** `activeWindow`, `activeDocument`, `fish`, `fishAll`, `ready`, `sleep`, `nextFrame`.
 
-An existing `show`, `hide`, `toggle`, `activeWindow` or `activeDocument` is left alone.
+An existing `show`, `hide`, `toggle`, `toggleVisibility`, `activeWindow` or `activeDocument` is left alone.
+
+Not installed: the app's `Array`, `String`, `Number`, `Math` and `Object` extensions (`first`, `last`, `contains`, `unique`, `clamp`, ...), `ajax` and `ajaxPromise`, `onNodeInserted` and `onWindowMigrated` (they wait for a CSS animation event, which jsdom never fires). `innerWidth` and `innerHeight` are `scrollWidth` minus padding, and jsdom reports a scroll size of 0, so expect 0 minus the padding. Delegated listeners are kept in a `WeakMap` where the app uses an `_EVENTS` property on the element.
 
 Two deviations from the app, both forced by jsdom:
 
