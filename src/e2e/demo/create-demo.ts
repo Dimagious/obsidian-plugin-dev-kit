@@ -41,6 +41,7 @@ import {
     type Viewport,
 } from "./page-scripts.js";
 import { presetViewport, type PresetViewport } from "./presets.js";
+import { resolveStillPublishing, writeStillPublishing } from "./still-options.js";
 import { assertCaptureAllowed, forbiddenMessage, mergeSelectors, type SeedVaultSource } from "./privacy.js";
 import type {
     CleanUiOptions,
@@ -387,6 +388,7 @@ export function createDemo(deps: DemoDeps): DemoController {
         const scale = preset?.scale ?? assertScale(stillOptions.scale ?? options.scale, `still "${fileName}"`);
         const settle = assertSettle(stillOptions.settle, `still "${fileName}"`);
         const cursor = assertCursor(stillOptions.cursor, `still "${fileName}"`);
+        const publishing = resolveStillPublishing(stillOptions, `still "${fileName}"`);
         // Set for every picture, so a still that hides the arrow does not leave it hidden for the next film or still.
         await setCursor(cursor);
         const { png, size } = await capture({
@@ -402,6 +404,8 @@ export function createDemo(deps: DemoDeps): DemoController {
         const file = path.join(stillsDir, `${fileName}.png`);
         fs.writeFileSync(file, png);
         writeStillOwner(options.outDir, fileName, owner);
+        // Always written, so a retake with other options replaces what the earlier take asked for.
+        writeStillPublishing(options.outDir, fileName, publishing);
         return { file, width: size.width, height: size.height };
     }
 

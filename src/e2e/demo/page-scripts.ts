@@ -4,6 +4,8 @@
  * hence the small interfaces below.
  */
 
+import type { PartialApp } from "../internals.js";
+
 /** The overlay's commands, as the page API takes them. */
 export type OverlayCall =
     | { method: "caption"; arg: string | null }
@@ -69,9 +71,7 @@ interface OverlayGlobals {
     __opdkDemo?: OverlayApi;
     /** The endless animations `freezeForShot` paused, for `releaseShot` to play again. */
     __opdkPaused?: PageAnimation[];
-    app?: {
-        vault?: { setConfig?(key: string, value: unknown): void; saveConfig?(): Promise<void> };
-    };
+    app?: PartialApp;
 }
 
 /**

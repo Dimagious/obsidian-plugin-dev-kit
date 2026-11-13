@@ -3,20 +3,11 @@
  * resolves, with no waiting of its own, because what the fixture promises is exactly that.
  */
 import fs from "node:fs";
+import type { AppWithInternals, PluginInstance } from "../../../src/e2e/index.js";
 import { expect, FIXTURE_ID, SECOND_ID, SEEDED_GREETING, SEED_VAULT, test } from "./fixtures.js";
 
-/** The slice of Obsidian's `app` these specs read. */
-interface ObsidianApp {
-    vault: { adapter: { basePath: string } };
-    plugins: {
-        plugins: Record<string, { settings?: { greeting?: string } } | undefined>;
-        enabledPlugins: Set<string>;
-        loadingPluginId: string | null;
-    };
-    commands: { commands: Record<string, unknown> };
-    setting: { open(): void; openTabById(id: string): void; pluginTabs: { id: string }[] };
-    workspace: { layoutReady: boolean };
-}
+/** The fixture plugin as the spec reads it. */
+type FixtureApp = AppWithInternals<PluginInstance & { settings?: { greeting?: string } }>;
 
 const TRUST_BUTTON = "Trust author and enable plugins";
 
@@ -26,7 +17,7 @@ test("opens the vault without the trust dialog and without the vault picker", as
     await expect(win.getByRole("button", { name: TRUST_BUTTON })).toHaveCount(0);
     expect(app.windows()).toHaveLength(1);
     expect(win.url()).not.toContain("starter");
-    const basePath = await win.evaluate(() => (globalThis as unknown as { app: ObsidianApp }).app.vault.adapter.basePath);
+    const basePath = await win.evaluate(() => (globalThis as unknown as { app: AppWithInternals }).app.vault.adapter.basePath);
     expect(fs.realpathSync(basePath)).toBe(fs.realpathSync(vault.path));
     expect(vault.path).not.toBe(SEED_VAULT);
     expect(vault.read("Welcome.md")).toContain("# Welcome");
@@ -35,7 +26,7 @@ test("opens the vault without the trust dialog and without the vault picker", as
 test("both plugins are loaded, and what onload registered after an await is there right away", async ({ win }) => {
     const state = await win.evaluate(
         (ids) => {
-            const { app } = globalThis as unknown as { app: ObsidianApp };
+            const { app } = globalThis as unknown as { app: AppWithInternals };
             return {
                 loaded: ids.map((id) => app.plugins.plugins[id] !== undefined),
                 enabled: ids.map((id) => app.plugins.enabledPlugins.has(id)),
@@ -56,7 +47,7 @@ test("both plugins are loaded, and what onload registered after an await is ther
 
 test("the settings open in the main window, not in a popout", async ({ win, app }) => {
     await win.evaluate((id) => {
-        const { app: obsidian } = globalThis as unknown as { app: ObsidianApp };
+        const { app: obsidian } = globalThis as unknown as { app: AppWithInternals };
         obsidian.setting.open();
         obsidian.setting.openTabById(id);
     }, FIXTURE_ID);
@@ -82,7 +73,7 @@ test("window.confirm() does not hang the test", async ({ win }) => {
 test("data.json is seeded and the plugin read it", async ({ win, vault }) => {
     expect(JSON.parse(vault.read(`.obsidian/plugins/${FIXTURE_ID}/data.json`))).toEqual({ greeting: SEEDED_GREETING });
     const greeting = await win.evaluate(
-        (id) => (globalThis as unknown as { app: ObsidianApp }).app.plugins.plugins[id]?.settings?.greeting,
+        (id) => (globalThis as unknown as { app: FixtureApp }).app.plugins.plugins[id]?.settings?.greeting,
         FIXTURE_ID,
     );
     expect(greeting).toBe(SEEDED_GREETING);

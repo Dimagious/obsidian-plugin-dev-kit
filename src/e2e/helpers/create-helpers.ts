@@ -3,6 +3,8 @@ import type { HelperTimeouts } from "../options.js";
 import { waitForReady } from "../readiness.js";
 import { commandDeclinedMessage, commandNotFoundMessage, toPlaywrightKeys } from "./commands.js";
 import { planComposition } from "./ime.js";
+import { findOverflow, findSmallTargets, focusWalkStart, MAX_FINDINGS_PER_CHECK, pixelStep, readFocusStop, rootExists, type FocusStop, type LayoutResult } from "./layout-page-scripts.js";
+import { capProblems, focusStartMessage, layoutFailureMessage, noChecksMessage, resolveLayoutOptions, rootMissingMessage, type LayoutCheckName, type LayoutCheckOptions, type LayoutCut, type LayoutProblem, type ResolvedLayoutOptions } from "./layout.js";
 import { createDeviceMetricsTracker, type DeviceMetricsTracker } from "./device-metrics.js";
 import { deviceMetrics, isReloadRejection, type MobileOptions } from "./mobile.js";
 import {
@@ -460,6 +462,148 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
         }, `The window did not reload within ${String(options.readyTimeoutMs)} ms after reload(). Raise timeouts.ready, or check that the app:reload command works in this Obsidian.`);
     }
 
+    interface LayoutRun {
+        problems: LayoutProblem[];
+        cuts: LayoutCut[];
+        minSize: number;
+    }
+
+    async function runLayoutChecks(layoutOptions: LayoutCheckOptions): Promise<LayoutRun> {
+        const resolved = resolveLayoutOptions(layoutOptions);
+        // The root is looked up once, before any check: a missing root fails even when every check is off.
+        if (!(await win.evaluate(rootExists, resolved.root))) {
+            throw new Error(rootMissingMessage(resolved.root));
+        }
+        const touch = resolved.touch.enabled ?? (await win.evaluate(isMobileApplied, true));
+        if (!resolved.overflow.enabled && !touch && !resolved.focus.enabled) {
+            throw new Error(noChecksMessage());
+        }
+        const found: LayoutProblem[] = [];
+        const totals: LayoutCut[] = [];
+        const collect = (check: LayoutCheckName, result: LayoutResult): void => {
+            if (!result.rootFound) {
+                throw new Error(rootMissingMessage(resolved.root));
+            }
+            found.push(...result.findings.map((finding) => ({ check, ...finding })));
+            if (result.total > result.findings.length) {
+                totals.push({ check, total: result.total });
+            }
+        };
+        if (resolved.overflow.enabled) {
+            collect("overflow", await win.evaluate(findOverflow, { root: resolved.root, ignore: resolved.overflow.ignore, limit: MAX_FINDINGS_PER_CHECK }));
+        }
+        if (touch) {
+            collect(
+                "touch-target",
+                await win.evaluate(findSmallTargets, {
+                    root: resolved.root,
+                    targets: resolved.touch.selector,
+                    ignore: resolved.touch.ignore,
+                    minSize: resolved.touch.minSize,
+                    limit: MAX_FINDINGS_PER_CHECK,
+                }),
+            );
+        }
+        if (resolved.focus.enabled) {
+            const capped = capProblems(await walkFocus(resolved.root, resolved.focus), MAX_FINDINGS_PER_CHECK);
+            found.push(...capped.problems);
+            totals.push(...capped.cuts);
+        }
+        return { problems: found, cuts: totals, minSize: resolved.touch.minSize };
+    }
+
+    async function layoutProblems(layoutOptions: LayoutCheckOptions): Promise<LayoutProblem[]> {
+        return (await runLayoutChecks(layoutOptions)).problems;
+    }
+
+    /**
+     * For a control whose ring is drawn on a vendor pseudo-element that cannot be read as a style (the thumb of a
+     * range input): whether the pixels around it change when it loses focus. The element ends up focused again.
+     */
+    async function ringShowsInPixels(box: NonNullable<FocusStop["pixelBox"]>): Promise<boolean> {
+        const pad = 6;
+        const x = Math.max(0, Math.floor(box.x) - pad);
+        const y = Math.max(0, Math.floor(box.y) - pad);
+        const clip = { x, y, width: Math.ceil(box.width) + 2 * pad, height: Math.ceil(box.height) + 2 * pad };
+        if (!(await win.evaluate(pixelStep, "begin"))) {
+            throw new Error("checkLayout(): the pixel comparison of a focus ring could not start: nothing has focus.");
+        }
+        let differs = false;
+        let failure: Error | undefined;
+        try {
+            const focused = await win.screenshot({ clip, animations: "disabled" });
+            await win.evaluate(pixelStep, "blur");
+            const plain = await win.screenshot({ clip, animations: "disabled" });
+            differs = !focused.equals(plain);
+        } catch (error) {
+            failure = error instanceof Error ? error : new Error(String(error));
+        }
+        // Always give focus back and remove the page's style, also after a failed screenshot.
+        const back = await win.evaluate(pixelStep, "end");
+        if (failure !== undefined) {
+            throw failure;
+        }
+        if (!back) {
+            throw new Error("checkLayout(): the element did not take focus back after the pixel comparison of its focus ring, so the Tab walk cannot go on. Add it to focusRing.ignore.");
+        }
+        return differs;
+    }
+
+    /**
+     * Tabs through `root` and reports every stop that shows no focus ring (and, with `stayInside`, the Tab that leaves
+     * it). The walk ends when focus leaves `root`, comes back to a stop it already visited (a trap) or after `maxStops`
+     * presses. It is an error, never a pass, when it cannot start inside `root` or sees no stop at all.
+     */
+    async function walkFocus(root: string, focus: ResolvedLayoutOptions["focus"]): Promise<LayoutProblem[]> {
+        // Chromium matches :focus-visible on a script focus only when the last input was the keyboard. After a mouse
+        // click it does not, and the first stop would read as a missing ring. A modifier key switches the heuristic
+        // and does nothing else (Escape or Tab would close a dialog or move focus).
+        await win.keyboard.press("Shift");
+        const start = await win.evaluate(focusWalkStart, { root, from: focus.from });
+        if (start === "no-root") {
+            throw new Error(rootMissingMessage(root));
+        }
+        if (start !== "ok") {
+            throw new Error(focusStartMessage(start, root, focus.from));
+        }
+        const problems: LayoutProblem[] = [];
+        const reported = new Set<string>();
+        for (let stop = 0; stop <= focus.maxStops; stop++) {
+            if (stop > 0) {
+                await win.keyboard.press("Tab");
+            }
+            let current = await win.evaluate(readFocusStop, { root, ignore: focus.ignore });
+            if (current !== null && current.pixelBox !== null) {
+                current = { ...current, hasRing: await ringShowsInPixels(current.pixelBox), pixelBox: null };
+            }
+            if (current === null || (stop === 0 && !current.inRoot)) {
+                throw new Error(`checkLayout(): the Tab walk found no stop inside ${JSON.stringify(root)}: focus is not on an element of the root after it was set. Check that the root stays on the page.`);
+            }
+            if (!current.inRoot) {
+                if (focus.stayInside) {
+                    problems.push({ check: "focus-escape", where: current.where, detail: `Tab ${String(stop)} moved focus out of ${JSON.stringify(root)}` });
+                }
+                break;
+            }
+            if (current.repeat) {
+                break;
+            }
+            const key = `${current.where}|${current.detail}`;
+            if (!current.hasRing && !reported.has(key)) {
+                reported.add(key);
+                problems.push({ check: "focus-ring", where: current.where, detail: current.detail });
+            }
+        }
+        return problems;
+    }
+
+    async function checkLayout(layoutOptions: LayoutCheckOptions): Promise<void> {
+        const run = await runLayoutChecks(layoutOptions);
+        if (run.problems.length > 0) {
+            throw new Error(layoutFailureMessage(layoutOptions.root, run.problems, run.minSize, run.cuts));
+        }
+    }
+
     /** The window width the last `mobile()` call applied; the layout (phone or tablet) was decided from it. */
     let mobileWidth: number | undefined;
 
@@ -560,7 +704,13 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
             setTheme,
             waitForMetadataCache,
             clearNotices: () => win.evaluate(removeNotices),
-            hideProperties: () => win.evaluate(hideNoteProperties),
+            checkLayout,
+            layoutProblems,
+            hideProperties: async () => {
+                if (!(await win.evaluate(hideNoteProperties))) {
+                    throw new Error("hideProperties(): this Obsidian has no app.vault.setConfig / saveConfig. The helper was verified on Obsidian 1.14.5.");
+                }
+            },
             scrollThrough,
             readingView,
             settle,

@@ -14,7 +14,9 @@ Turns the films the demo fixture recorded into finished media, in the output fol
             the frames up to 1000 px
   poster    the first frame, as wide as the MP4 (demo.poster: { width } or false)
   stills    <demo.outDir>/stills/<name>.png is copied to the output folder as <name>.png, only
-            when its bytes changed (demo.stills: false turns it off, { output } picks a folder)
+            when its bytes changed (demo.stills: false turns it off, { output } picks a folder).
+            A still recorded with out: "x" goes to the folder demo.outputs.x names; one with
+            publish: false is left where it is
   layout    "phone-captions" first puts each phone frame beside its caption list, in the
             colours of the film's theme (needs electron and @playwright/test in the plugin,
             like the e2e tests)
@@ -40,7 +42,7 @@ without names no complete film among the recorded films, an unusable manifest,
 a missing ffmpeg, an encode, a still that cannot be copied or would overwrite a film's file,
 or a check set to fail.
 
-Settings come from opdk.config.mjs ("demo" section): outDir, output, stills, films, and gif, mp4,
+Settings come from opdk.config.mjs ("demo" section): outDir, output, stills, outputs, films, and gif, mp4,
 poster, layout, budget, loop, phone for all films or per film under films.<name>.
 `;
 

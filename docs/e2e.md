@@ -258,6 +258,35 @@ An entry's own value always wins over the top-level one, and `OPDK_E2E_ALLOW_STA
 
 The kit does not read an env var for anything else. The names that gate your own specs are yours; see [Specs that run only on request](#specs-that-run-only-on-request).
 
+### Seeding one test's vault
+
+`seed` is a per-test option, set with `test.use` for a file or a `describe` block. It adds files and `app.json` keys to that test's vault copy before Obsidian starts, so a spec does not write them and call `obsidian.reload()`:
+
+```ts
+test.describe("with templates", () => {
+    test.use({
+        seed: {
+            files: {
+                "Daily/2026-03-14.md": "# Friday\n",
+                ".obsidian/templates.json": JSON.stringify({ folder: "Templates" }),
+            },
+            config: { propertiesInDocument: "hidden" },
+        },
+    });
+
+    test("inserts the template", async ({ obsidian }) => {
+        // Obsidian opened with the note, the templates setting and the hidden properties already in place.
+    });
+});
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `files` | `Record<string, string>` | Vault-relative path to text. Folders are created; a file of the same path in the seed vault is replaced. A path may point into `.obsidian/`, except the files the kit writes (below). Empty, absolute, folder (trailing slash), `..`, `.` and `.obsidian` paths fail |
+| `config` | `Record<string, unknown>` | Keys merged into `.obsidian/app.json` over the seed vault's and the kit's defaults (`settingsPopoutWindow`, `alwaysUpdateLinks`) |
+
+The seed is applied after the plugins are installed, and it refuses what would replace the kit's own files, so nothing is lost without a word: `.obsidian/app.json` (the kit fills it with its defaults; set keys with `config`), `.obsidian/community-plugins.json` (written from the `plugins` option), `.obsidian/plugins/<id>/data.json` of a plugin in the `data` option (change the settings there) and the build files `main.js`, `manifest.json`, `styles.css` of an installed plugin (they would replace the build under test). The `data.json` of a plugin without a `data` entry is the spec's to seed, per test, and so is any other file in an installed plugin's folder. Paths are compared after normalising `./`, backslashes and case. A wrong shape (an unknown key, a non-string file) fails the test before Obsidian starts, naming the key. The seed vault itself is never written: every test still gets its own copy. For content that depends on something only the running app knows, write it from the spec with `vault.write` and `reload()` as before.
+
 ## Helpers
 
 The `obsidian` fixture. Each helper that waits polls Obsidian's state; the only fixed delays are the 15 ms between key presses of `editor().type()` and, inside `scrollThrough`, a 100 ms fallback per step for a window that draws no frames. A failure says what went wrong and what to do. The selectors the helpers rely on (`.modal.mod-settings`, `.vertical-tab-content`, `.prompt-input`, `.prompt-results`, `.notice` and the editor's) are Obsidian internals, verified on 1.14.5; when a newer Obsidian renames one, the helper that uses it fails with its own message.
@@ -313,6 +342,34 @@ await obsidian.editor().type("::date");
 expect(await obsidian.editor().text()).toContain("2026");
 ```
 
+### Layout checks
+
+`checkLayout({ root, overflow?, touchTargets?, focusRing? })` looks at the part of the window under the CSS selector `root` (a modal, a view, a settings tab) and fails with the list of everything wrong, so one run shows all the problems and not the first. `layoutProblems(options)` runs the same checks and returns the list (empty when all is well), for `expect.soft` or a report. `root` is required and must match something (the first match is used), also when every check is off; it is looked up once, before the checks. A call with nothing to check (every check off) fails with "nothing to check", and a Tab walk with no stop inside `root` fails too: a check never passes by looking at nothing.
+
+| Check | Option | Default | What it reports |
+|---|---|---|---|
+| Horizontal overflow | `overflow` | on | `root` and every element under it with `scrollWidth > clientWidth + 1`, scroll panes included: a pane with `overflow-y: auto` computes `overflow-x: auto` too, so its style cannot say whether it scrolls sideways on purpose. Left out: text cut with an ellipsis (`text-overflow: ellipsis`, or `white-space: nowrap` with `overflow: hidden`) and visually hidden boxes (1 px or less, clipped by `overflow`, `clip` or `clip-path`). `{ ignore }` is a selector for the rest, matched against the element and its ancestors (`overflow: { ignore: "pre, .table-wrapper" }` for a code block or a table that scrolls on purpose) |
+| Touch targets | `touchTargets` | on in the mobile emulation (`mobile()`), off otherwise | Visible (has a box, so `position: fixed` targets count; not `visibility: hidden`) buttons, links, selects, inputs, textareas, summaries and elements with role `button`, `tab` or `menuitem` under `root` that are under 44 px wide or high (0.5 px less for rounding). `{ minSize, selector, ignore }` changes the size, what counts as a target, and what to leave out (matched against the element and its ancestors) |
+| Focus ring | `focusRing` | off, because it presses Tab and moves focus | Focuses the first focusable element of `root` that is visible and not disabled (`{ from }` picks another; it must be inside `root` and take focus), presses Tab until focus leaves `root`, comes back to a stop it already visited (a focus trap) or `maxStops` (20, at most 100) presses are done, and reports each stop that shows no ring. A ring is an outline or a box-shadow that focus changes, on the element or its `::before`/`::after` (Obsidian rings a `.setting-item` on `::after`): the outline must be visible (not `none`, width above 0) and differ, the box-shadow must differ between the focused and the unfocused state, because Obsidian gives buttons and selects a resting `box-shadow`; the element is blurred and focused again for the second read, with transitions off, and the check fails with a clear error if it did not take focus back (a control that replaces itself on blur: skip it with `focusRing: { ignore }`). Range and colour inputs ring a vendor pseudo-element (`::-webkit-slider-thumb`, `::-webkit-color-swatch`) that `getComputedStyle` cannot read, so for these the check compares screenshots of the control focused and blurred. A modifier key (Shift) is pressed before the walk so Chromium matches `:focus-visible` on the script focus even after a mouse click. `{ ignore: ".prompt-input" }` skips elements inside the selector: Obsidian's command palette and quick switcher search field shows the caret and no ring by design, so the palette passes only with it. Keep the pointer off colour inputs during the walk: their hover style can read as a ring. After `mobile()` Obsidian draws no focus ring on range inputs, so add `ignore: "input[type=range]"` there. `{ stayInside: true }` also reports the Tab that moves focus out of `root` (a modal that must trap focus); without it, leaving ends the walk |
+
+```ts
+await obsidian.mobile();
+await obsidian.runCommand("my-plugin:open-wizard");
+await obsidian.settle({ root: ".my-plugin-wizard" });
+await obsidian.checkLayout({ root: ".my-plugin-wizard", focusRing: { from: ".my-plugin-key" } });
+```
+
+```text
+checkLayout(): 3 problems inside ".my-plugin-wizard":
+  - horizontal overflow: div.my-plugin-wizard (scrollWidth 420 > clientWidth 390)
+  - touch target too small: button.my-plugin-close (30 x 28 px)
+  - no focus ring: input.my-plugin-key (focus changes neither the outline (none 0px rgb(0, 0, 0)) nor the box-shadow (none), on the element or its ::before, ::after)
+Touch targets must be at least 44 px; raise the size in CSS for the mobile layout, or pass touchTargets: { ignore } for an element that is not a target.
+A focus ring is an outline or a box-shadow that focus changes, on the element or its ::before/::after (a resting box-shadow does not count); a theme that sets outline: none needs a replacement.
+```
+
+Each kind of problem lists at most 10 elements; a longer list ends with `(first 10 of N)`. Identical Tab stops are listed once. The checks read the page as it is: open the part you check and `settle()` it first. They measure; they do not judge a design. A person should still look at the pictures of a tour: take them with `demo.still(name, { publish: false })`, with a name prefix such as `review-` so they are easy to tell from the published ones (they stay in `.opdk/demo/stills` and are not published by `opdk demo`, see [docs/demo.md](demo.md)). The kit has no review-shot helper or contact sheet of its own; `/opdk:audit` makes a contact sheet of GIFs.
+
 ### IME
 
 `editor().compose(text, { chunking })` enters text through real composition events (`Input.imeSetComposition`, then `Input.insertText`, over a CDP session), the way an input method does. `chunking` is `"word"` (default: each word composed and committed with its trailing space) or `"character"`. It inserts at the cursor, waits for CodeMirror to leave the composition between chunks, and fails when CodeMirror is still composing after a commit or the document did not change.
@@ -330,7 +387,7 @@ await obsidian.editor().compose("hello world", { chunking: "word" });
 | `setTheme({ mode, theme? })` | Switches light or dark and, with `theme`, a community theme (`""` for the default); waits until the page carries the class. An uninstalled theme fails listing the installed ones. `await obsidian.setTheme({ mode: "dark" })` |
 | `waitForMetadataCache()` | Waits until every markdown file has its metadata cached. Returns at once for a vault with no markdown files |
 | `clearNotices()` | Removes the notices on screen and returns how many there were. `const removed = await obsidian.clearNotices()` |
-| `hideProperties()` | Hides the properties block of notes (a display setting; the notes are unchanged) |
+| `hideProperties()` | Hides the properties block of notes (a display setting; the notes are unchanged). Saved to `.obsidian/app.json` at once, so a later settings save does not bring the block back. Throws on an Obsidian without `vault.setConfig` / `vault.saveConfig` (the setting would not stick) |
 | `scrollThrough(selector?)` | Scrolls a reading view from top to bottom so blocks that draw when visible are drawn. `await obsidian.scrollThrough()` |
 | `settle({ quietMs?, root? })` | Waits until the page stops changing: no DOM mutation for `quietMs` (150 ms), no font loading, every image in the viewport complete. `await obsidian.settle()` |
 
@@ -386,6 +443,24 @@ const count = await obsidian.evaluate(
 ```
 
 The generics are `evaluate<R, A = undefined, App = unknown>`: `R` is the result, `A` the argument, `App` the type of `app`, all inferred from the function you pass. `fn` is serialised as source text and rebuilt in the page, so it cannot close over variables of the test or use imports (a variable it reads fails with `<name> is not defined`); pass what it needs as `arg`. `arg` and the result must be serialisable, as for `page.evaluate`: a `TFile` or a DOM node does not survive, return the fields you need. An exception thrown by `fn` fails the test with its message. `evaluate` fails with its own message when `window.app` is missing or `fn` is not a function expression (a method shorthand is not).
+
+### Obsidian internals
+
+Obsidian's public typings leave out the internal objects that specs reach: `app.plugins.plugins`, `enablePlugin` and `disablePlugin`, `app.setting`, `app.commands`, `app.internalPlugins`, `metadataCache.inProgressTaskCount`, `vault.getConfig`. `AppWithInternals` (exported from `obsidian-plugin-dev-kit/e2e`) types them narrowly, so a spec does not declare its own copy:
+
+```ts
+import type { AppWithInternals } from "obsidian-plugin-dev-kit/e2e";
+
+await obsidian.evaluate(async (app: AppWithInternals) => {
+    await app.plugins.disablePlugin("my-plugin");
+    await app.plugins.enablePlugin("my-plugin");
+});
+
+// Read and return fields: the result has to be serialisable.
+const tabs = await obsidian.evaluate((app: AppWithInternals) => app.setting.pluginTabs.map((tab) => tab.id));
+```
+
+A plugin instance is `PluginInstance`: its `manifest` is typed and every other member is `unknown`. To read what your plugin adds, give the type as the parameter: `AppWithInternals<PluginInstance & { settings?: MySettings }>`. A member that only some Obsidian versions have is optional (`setting.activeTab`, `metadataCache.inProgressTaskCount`). The types describe Obsidian 1.14.5; a renamed member shows up as a failed spec, not a compile error, because the types cannot see the running version. The kit's own page scripts use the same types, so they and your specs agree.
 
 ### Fakes
 

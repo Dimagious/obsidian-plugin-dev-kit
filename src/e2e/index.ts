@@ -1,22 +1,36 @@
 export { defineObsidianConfig } from "./config.js";
 export { createObsidianTest } from "./create-test.js";
-export type { ObsidianFixtures, ObsidianTest, ObsidianTestKit } from "./create-test.js";
+export type { ObsidianFixtures, ObsidianTest, ObsidianTestKit, ObsidianTestUse } from "./create-test.js";
+export type { VaultSeed } from "./seed.js";
 export type { HelperTimeouts, ObsidianTestOptions, PluginOption, TimeoutOptions, WindowOption } from "./options.js";
 export { sweepLeftovers } from "./cleanup.js";
 export type { SweepOptions, SweepResult } from "./cleanup.js";
 export type { VaultHandle } from "./vault.js";
 export type {
+    AppWithInternals,
+    CommandEntry,
+    InternalPluginEntry,
+    PluginInstance,
+    SettingTabEntry,
+} from "./internals.js";
+export type {
     CompositionChunking,
     EditorHelpers,
     EditorPosition,
     EditorSelection,
+    FocusRingOptions,
     FakeHandle,
+    LayoutCheckName,
+    LayoutCheckOptions,
+    LayoutProblem,
     MobileOptions,
     ObsidianHelpers,
+    OverflowOptions,
     PageFactory,
     PageFunction,
     SettleOptions,
     ThemeOptions,
+    TouchTargetOptions,
     ViewMode,
 } from "./helpers/types.js";
 export type {

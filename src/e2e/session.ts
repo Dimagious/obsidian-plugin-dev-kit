@@ -19,6 +19,7 @@ import {
 } from "./plugins.js";
 import { terminateTree, type ProcessIo } from "./process-tree.js";
 import { waitForReady } from "./readiness.js";
+import { applySeed, type VaultSeed } from "./seed.js";
 import {
     copySeedVault,
     createVaultHandle,
@@ -67,6 +68,8 @@ export interface SessionContext {
     readonly annotate: (type: string, description: string) => void;
     /** Absent: no trace and no video. */
     readonly artifacts?: ArtifactPlan;
+    /** Absent: the vault is the seed vault as it is. */
+    readonly seed?: VaultSeed;
 }
 
 /** How the test ended; decides which recordings are kept. */
@@ -186,6 +189,13 @@ async function open(
     );
     for (const [id, data] of Object.entries(options.data)) {
         writePluginData(vaultPath, id, data);
+    }
+    if (context.seed !== undefined) {
+        applySeed(
+            vaultPath,
+            context.seed,
+            sources.map((source) => source.id),
+        );
     }
     writeUserData({ userDataDir, vaultId, vaultPath, now: now() });
 

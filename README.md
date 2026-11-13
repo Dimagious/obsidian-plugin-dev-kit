@@ -61,7 +61,7 @@ Quick start: `npx opdk scan`. Details: [docs/scanner.md](docs/scanner.md).
 
 ![Obsidian driven by the kit: in a note, text is typed key by key, the command palette finds a command, a notice appears, and the plugin's settings tab opens](docs/media/e2e.gif)
 
-Quick start: `createObsidianTest({ seedVault })` in `e2e/fixtures.ts`, `defineObsidianConfig()` in `playwright.config.ts`, then `npx playwright test`. Details: [docs/e2e.md](docs/e2e.md).
+Quick start: `createObsidianTest({ seedVault })` in `e2e/fixtures.ts`, `defineObsidianConfig()` in `playwright.config.ts`, then `npx playwright test`. Beyond the basics: `test.use({ seed })` puts notes and settings into one test's vault, `obsidian.checkLayout()` lists overflow, small touch targets and missing focus rings, and `AppWithInternals` types Obsidian's internal `app`. Details: [docs/e2e.md](docs/e2e.md).
 
 ## Demo films
 
@@ -69,7 +69,7 @@ The `demo` fixture records your plugin in the real Obsidian as a film of stills:
 
 ![A phone film made by the kit: a note opens, a heading and a line of text are typed in three stages, the command palette finds "Show notice" and a notice appears, and the plugin's settings tab opens, while the list of steps beside the phone lights the current one](docs/media/demo.gif)
 
-Quick start: `demo.film({ kind: "phone", captions })` and `film.shot({ hold })` in a gated spec, then `npx opdk demo`. For captions beside the phone, set `layout: "phone-captions"` in the `demo` section of `opdk.config.mjs`. Details: [docs/demo.md](docs/demo.md).
+Quick start: `demo.film({ kind: "phone", captions })` and `film.shot({ hold })` in a gated spec, then `npx opdk demo`. For captions beside the phone, set `layout: "phone-captions"` in the `demo` section of `opdk.config.mjs`. A still can go to its own folder (`demo.still(name, { out: "listing" })` with `demo.outputs`) or stay out of the output (`{ publish: false }`). Details: [docs/demo.md](docs/demo.md).
 
 ## Releases
 

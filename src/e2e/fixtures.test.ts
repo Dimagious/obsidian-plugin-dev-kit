@@ -94,6 +94,32 @@ describe("createFixtureFunctions: session", () => {
         expect(order).toEqual(["use", "teardown"]);
     });
 
+    it("hands the test's seed to the session, checked", async () => {
+        const s = setup();
+        const seed = { files: { "Notes/a.md": "# a" }, config: { propertiesInDocument: "hidden" } };
+        await createFixtureFunctions(resolved(), s).session({ seed }, () => Promise.resolve(), s.testInfo);
+        expect(s.start.mock.calls[0]?.[0].seed).toEqual(seed);
+        await createFixtureFunctions(resolved(), s).session({}, () => Promise.resolve(), s.testInfo);
+        expect(s.start.mock.calls[1]?.[0].seed).toEqual({});
+    });
+
+    it("fails on a bad seed before any Obsidian is started", async () => {
+        const s = setup();
+        await expect(
+            createFixtureFunctions(resolved(), s).session({ seed: { files: { "../x.md": "x" } } }, () => Promise.resolve(), s.testInfo),
+        ).rejects.toThrow(/seed: the path "\.\.\/x\.md" leaves the vault/);
+        expect(s.start).not.toHaveBeenCalled();
+    });
+
+    it("refuses a seed data.json for a plugin the data option already writes, before any Obsidian is started", async () => {
+        const s = setup();
+        const seed = { files: { ".obsidian/plugins/my-plugin/data.json": "{}" } };
+        await expect(
+            createFixtureFunctions(resolved({ data: { "my-plugin": { a: 1 } } }), s).session({ seed }, () => Promise.resolve(), s.testInfo),
+        ).rejects.toThrow(/writes for "my-plugin"/);
+        expect(s.start).not.toHaveBeenCalled();
+    });
+
     it("turns the session's annotations into report annotations", async () => {
         const s = setup();
         s.start.mockImplementation((context) => {

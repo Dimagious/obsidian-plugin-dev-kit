@@ -221,6 +221,8 @@ export interface FakeHelperWindow {
     onWait(fn: unknown, handler: Handler): void;
     /** Makes `waitFor` on this selector reject, as when the element never appears; with `state`, only for that state. */
     failWaitFor(selector: string, state?: string): void;
+    /** What the next `win.screenshot()` calls return, as text; an empty queue returns "same" each time. */
+    readonly shots: string[];
     /** What `win.isClosed()` answers. */
     closed: boolean;
     /** How many windows the app has (`win.context().pages()`); 1 unless a test opens a popout. */
@@ -248,8 +250,10 @@ export function createFakeHelperWindow(): FakeHelperWindow {
     const failing = new Set<string>();
     const unbounded: string[] = [];
     const timeouts: { what: string; timeout: number }[] = [];
+    const shots: string[] = [];
     const fake: FakeHelperWindow = {
         win: undefined as unknown as Page,
+        shots,
         log,
         cdp,
         onEvaluate: (fn, handler) => {
@@ -330,6 +334,10 @@ export function createFakeHelperWindow(): FakeHelperWindow {
         evaluate: (fn: unknown, arg?: unknown) => answer(evaluators, "evaluate", fn, arg),
         waitForFunction: (fn: unknown, arg?: unknown, options?: unknown) => answer(waiters, "waitForFunction", fn, arg, options),
         locator,
+        screenshot: (options?: { clip?: unknown }) => {
+            log.push(`screenshot:${JSON.stringify(options?.clip)}`);
+            return Promise.resolve(Buffer.from(shots.shift() ?? "same"));
+        },
         keyboard: {
             press: (keys: string) => {
                 log.push(`press:${keys}`);

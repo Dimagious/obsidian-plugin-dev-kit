@@ -1,10 +1,11 @@
 import type { Locator } from "@playwright/test";
 import type { CompositionChunking } from "./ime.js";
+import type { FocusRingOptions, LayoutCheckName, LayoutCheckOptions, LayoutProblem, OverflowOptions, TouchTargetOptions } from "./layout.js";
 import type { MobileOptions } from "./mobile.js";
 import type { SettleOptions } from "./settle.js";
 import type { ViewMode } from "./view-mode.js";
 
-export type { CompositionChunking, MobileOptions, SettleOptions, ViewMode };
+export type { CompositionChunking, FocusRingOptions, LayoutCheckName, LayoutCheckOptions, LayoutProblem, MobileOptions, OverflowOptions, SettleOptions, TouchTargetOptions, ViewMode };
 
 /** A position in a note; both numbers start at 0. */
 export interface EditorPosition {
@@ -110,7 +111,19 @@ export interface ObsidianHelpers {
     waitForMetadataCache(): Promise<void>;
     /** Removes the notices on screen (such as "Indexing complete.") and returns how many there were. */
     clearNotices(): Promise<number>;
-    /** Hides the properties block of notes, a display setting; the notes are unchanged. */
+    /**
+     * Fails with the list of everything wrong in the layout of `options.root`: horizontal overflow, touch targets under
+     * 44 px (by default only in the mobile emulation) and, when asked, a Tab stop without a focus ring. The checks read
+     * the page as it is, so open and settle it first. Each can be turned off; see `LayoutCheckOptions`.
+     */
+    checkLayout(options: LayoutCheckOptions): Promise<void>;
+    /** The same checks as `checkLayout()`, returned as a list (empty when all is well) instead of thrown, for `expect.soft` or a report. */
+    layoutProblems(options: LayoutCheckOptions): Promise<LayoutProblem[]>;
+    /**
+     * Hides the properties block of notes, a display setting; the notes are unchanged. It saves the setting to the
+     * vault's `.obsidian/app.json` at once (`vault.saveConfig()`), so a later settings save does not bring the block
+     * back. It throws on an Obsidian that has no `vault.setConfig` or `vault.saveConfig`, because it would not stick.
+     */
     hideProperties(): Promise<void>;
     /**
      * Scrolls a reading view from top to bottom so blocks that draw when visible are drawn. It stays at the bottom
