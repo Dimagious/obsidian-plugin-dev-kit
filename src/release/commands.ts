@@ -5,11 +5,12 @@ import { runReleaseCheck } from "./check.js";
 import { createRunGit } from "./git.js";
 import { changelogNotes, createPushFlow, runPublishCommand } from "./publish-command.js";
 import { runRelease } from "./release.js";
+import { createRunTests } from "./run-tests.js";
 import { resolveTag } from "./version-rules.js";
 
 const releaseUsage = `Usage: opdk release check [--tag <name>] [--no-build] [--no-reproducible] [--no-api]
        opdk release <patch|minor|major|X.Y.Z> [--dry-run] [--no-push] [--timeout <minutes>] [--zip]
-                    [--no-build] [--no-reproducible] [--no-api]
+                    [--no-build] [--no-reproducible] [--no-api] [--no-test]
        opdk release publish [X.Y.Z] [--timeout <minutes>] [--zip]
        opdk release notes [X.Y.Z]
 
@@ -33,6 +34,10 @@ opdk release check  (for CI and before a release) fails with exit 1, one line pe
                  Node-only bundle check. Warns when package.json scripts.build (else build:plugin, else
                  compile: the order the community directory uses) does not run \`opdk build\`, because the
                  directory rebuilds main.js with that script
+  kit            when the plugin depends on the kit: the tag in package.json, the commit the lockfile resolved
+                 it to and every "uses: <owner>/obsidian-plugin-dev-kit/.github/workflows/<file>@<sha> # vX.Y.Z"
+                 line of .github/workflows/*.yml name one release. No network: the lockfile's version stands
+                 for the tag. A plugin that does not use the kit, or its workflows, passes. Fix: \`opdk kit upgrade\`
   assets         main.js is produced, styles.css when the plugin has CSS, the manifest asset is the root one
   reproducible   builds the working tree, then builds the committed tree (git archive HEAD, extracted to
                  another temp folder, with the plugin's node_modules linked in) and compares main.js and
@@ -54,11 +59,14 @@ opdk release check  (for CI and before a release) fails with exit 1, one line pe
                  stub), and the check cannot tell. \`opdk scan\` does not change.
 
   Skipping: --no-build skips build, assets and reproducible (a quick CI step); --no-reproducible builds
-  once; --no-api skips the API check. The version, versions.json, manifest and changelog checks always run.
+  once; --no-api skips the API check. The version, versions.json, manifest, kit and changelog checks always run.
 
 opdk release <patch|minor|major|X.Y.Z>  cuts a release. Preflight: inside a git repository, clean
-  tree, on the default branch (origin/HEAD, or release.defaultBranch), not behind origin (it fetches), the tag absent locally and on origin,
-  "## [Unreleased]" in the changelog with entries. Then it:
+  tree, on the default branch (origin/HEAD, or release.defaultBranch), neither behind nor ahead of origin (it
+  fetches; commits that origin has not seen have not run CI, so push them through a pull request first), the tag
+  absent locally and on origin, "## [Unreleased]" in the changelog with entries. Then it:
+  - runs the plugin's \`npm test\` (output shown) before anything is changed; a failure stops the release with
+    nothing modified. --no-test skips it. A package.json without a "test" script prints a warning and goes on;
   - sets the version in package.json, package-lock.json and manifest.json, adds it to versions.json (an existing
     entry is never rewritten) and moves the [Unreleased] entries under "## [X.Y.Z] - YYYY-MM-DD", leaving an
     empty [Unreleased] (the compare links at the bottom are updated when the file has them);
@@ -142,6 +150,7 @@ export const releaseCommand: Command = {
             ...(interrupt !== undefined && { interrupt }),
             now: () => new Date(),
             ...(parsed.pushing.push && { push: createPushFlow(push) }),
+            ...(parsed.test && { test: createRunTests(ctx.cwd) }),
         });
     },
 };

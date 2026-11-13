@@ -36,7 +36,7 @@ interface Outcome {
     readonly stdout: string;
 }
 
-async function release(current: ReleaseRepo, spec: VersionSpec, options: { dryRun?: boolean; flags?: CheckFlags; config?: OpdkConfig } = {}): Promise<Outcome> {
+async function release(current: ReleaseRepo, spec: VersionSpec, options: { dryRun?: boolean; flags?: CheckFlags; config?: OpdkConfig; test?: () => Promise<number> } = {}): Promise<Outcome> {
     const ctx = createContext(current.dir);
     const printed: string[] = [];
     const code = await runRelease({
@@ -51,6 +51,7 @@ async function release(current: ReleaseRepo, spec: VersionSpec, options: { dryRu
         },
         run: current.run,
         now: () => TODAY,
+        ...(options.test !== undefined && { test: options.test }),
     });
     return { code, out: ctx.out.join(""), err: ctx.err.join(""), stdout: printed.join("") };
 }
@@ -139,14 +140,94 @@ describe("opdk release patch", () => {
         expect(result.code).toBe(0);
     });
 
-    it("warns about commits origin does not have yet, and releases them", async () => {
+    it("refuses commits origin has not seen: nothing ran CI on them", async () => {
         const current = freshRepo();
         current.write("note.txt", "x");
         current.git("add", "-A");
         current.git("commit", "--quiet", "-m", "local work");
+        const before = snapshot(current);
+        const head = current.git("rev-parse", "HEAD");
+        const result = await release(current, patch);
+        expect(result.code).toBe(1);
+        expect(result.err).toContain("✗ git     main is 1 commit(s) ahead of origin/main: CI has not seen them, and the release would tag them.");
+        expect(result.err).toContain("Push them through a pull request first");
+        expect(snapshot(current)).toEqual(before);
+        expect(current.git("rev-parse", "HEAD")).toBe(head);
+        expect(current.git("tag", "-l")).toBe("1.0.0\n");
+    });
+});
+
+describe("the plugin's tests before the release", () => {
+    function withTestScript(current: ReleaseRepo): void {
+        current.write("package.json", `${JSON.stringify({ name: "fixture-release", version: "1.0.0", private: true, scripts: { build: "opdk build", test: "vitest run" } }, null, 2)}\n`);
+        current.commitAll("add a test script");
+    }
+
+    it("runs them on the tree as it is, before any file changes, and goes on when they pass", async () => {
+        const current = freshRepo();
+        withTestScript(current);
+        const seen: string[] = [];
+        const result = await release(current, patch, {
+            test: () => {
+                seen.push(current.read("manifest.json").includes('"version": "1.0.0"') ? "1.0.0" : "changed", current.git("status", "--porcelain"));
+                return Promise.resolve(0);
+            },
+        });
+        expect(result.code).toBe(0);
+        expect(seen).toEqual(["1.0.0", ""]);
+        expect(result.out).toContain("✓ test    npm test passed");
+        expect(current.git("tag", "-l")).toContain("1.0.1");
+    });
+
+    it("stops on a failing run with nothing changed, no commit and no tag", async () => {
+        const current = freshRepo();
+        withTestScript(current);
+        const before = snapshot(current);
+        const head = current.git("rev-parse", "HEAD");
+        const result = await release(current, patch, { test: () => Promise.resolve(2) });
+        expect(result.code).toBe(1);
+        expect(result.err).toContain("✗ test    npm test failed (exit 2). Nothing was changed.");
+        expect(snapshot(current)).toEqual(before);
+        expect(current.git("rev-parse", "HEAD")).toBe(head);
+        expect(current.git("tag", "-l")).toBe("1.0.0\n");
+    });
+
+    it("runs them in a dry run too, so a red suite shows before release day", async () => {
+        const current = freshRepo();
+        withTestScript(current);
+        const calls: number[] = [];
+        const result = await release(current, patch, {
+            dryRun: true,
+            test: () => {
+                calls.push(1);
+                return Promise.resolve(1);
+            },
+        });
+        expect(calls).toHaveLength(1);
+        expect(result.code).toBe(1);
+        expect(result.stdout).toBe("");
+    });
+
+    it("warns instead of failing when package.json has no test script", async () => {
+        const current = freshRepo();
+        const calls: number[] = [];
+        const result = await release(current, patch, {
+            test: () => {
+                calls.push(1);
+                return Promise.resolve(1);
+            },
+        });
+        expect(calls).toEqual([]);
+        expect(result.code).toBe(0);
+        expect(result.out).toContain('! test    package.json has no "test" script, so no tests ran before the release.');
+    });
+
+    it("runs nothing without a test runner (--no-test)", async () => {
+        const current = freshRepo();
+        withTestScript(current);
         const result = await release(current, patch);
         expect(result.code).toBe(0);
-        expect(result.out).toContain("! git     main is 1 commit(s) ahead of origin/main; they will be part of the release.");
+        expect(result.out).not.toContain("test ");
     });
 });
 

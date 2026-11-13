@@ -29,6 +29,9 @@ export function repositoryFreeEnvironment(env: NodeJS.ProcessEnv): NodeJS.Proces
 /** Commands that talk to the remote: they must fail with a message instead of waiting for a password on the terminal. */
 const REMOTE_COMMANDS = new Set(["fetch", "ls-remote", "push"]);
 
+/** `git ls-remote` only lists refs; a host that does not answer in this time is down or unreachable, not slow. */
+export const LS_REMOTE_TIMEOUT_MS = 60_000;
+
 /**
  * The environment of a command that talks to the remote: no password prompt on the terminal, and ssh in batch mode
  * (no passphrase, host key or password question either) unless the user chose their own ssh through `GIT_SSH_COMMAND`,
@@ -43,7 +46,7 @@ export function remoteEnvironment(env: NodeJS.ProcessEnv, hasOwnSsh: boolean): N
  * The real thing. `baseEnv` is the process environment unless a test passes a hermetic one; the user's git config
  * is respected either way.
  */
-export function createRunGit(cwd: string, baseEnv: NodeJS.ProcessEnv = process.env): RunGit {
+export function createRunGit(cwd: string, baseEnv: NodeJS.ProcessEnv = process.env, lsRemoteTimeoutMs = LS_REMOTE_TIMEOUT_MS): RunGit {
     const base = repositoryFreeEnvironment(baseEnv);
     let ownSsh: Promise<boolean> | undefined;
     const hasOwnSsh = (): Promise<boolean> =>
@@ -54,17 +57,20 @@ export function createRunGit(cwd: string, baseEnv: NodeJS.ProcessEnv = process.e
     return async (args) => {
         const env = REMOTE_COMMANDS.has(args[0] ?? "") ? remoteEnvironment(base, await hasOwnSsh()) : base;
         try {
-            const { stdout } = await execFileAsync("git", [...args], { cwd, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+            const { stdout } = await execFileAsync("git", [...args], { cwd, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...(args[0] === "ls-remote" && { timeout: lsRemoteTimeoutMs }) });
             return stdout;
         } catch (error) {
-            throw new Error(describeGitFailure(args, error), { cause: error });
+            throw new Error(describeGitFailure(args, error, lsRemoteTimeoutMs), { cause: error });
         }
     };
 }
 
-function describeGitFailure(args: readonly string[], error: unknown): string {
+function describeGitFailure(args: readonly string[], error: unknown, lsRemoteTimeoutMs: number): string {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
         return "git is not installed or not on PATH.";
+    }
+    if (args[0] === "ls-remote" && error instanceof Error && "killed" in error && error.killed === true) {
+        return `git ${args.join(" ")} did not answer in ${String(lsRemoteTimeoutMs / 1000)} seconds and was stopped.`;
     }
     const stderr = error instanceof Error && "stderr" in error && typeof error.stderr === "string" ? error.stderr.trim() : "";
     const credentials = /terminal prompts disabled|could not read (?:Username|Password)/i.test(stderr)

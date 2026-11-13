@@ -15,7 +15,7 @@ export interface PushOptions {
 
 export type ReleaseArgs =
     | { readonly mode: "check"; readonly tag: string | undefined; readonly flags: CheckFlags }
-    | { readonly mode: "bump"; readonly spec: VersionSpec; readonly dryRun: boolean; readonly flags: CheckFlags; readonly pushing: PushOptions }
+    | { readonly mode: "bump"; readonly spec: VersionSpec; readonly dryRun: boolean; readonly flags: CheckFlags; readonly pushing: PushOptions; readonly test: boolean }
     | { readonly mode: "publish"; readonly version: string | undefined; readonly pushing: PushOptions }
     | { readonly mode: "notes"; readonly version: string | undefined };
 
@@ -38,6 +38,7 @@ export function parseReleaseArgs(args: readonly string[]): ReleaseArgs {
     let dryRun = false;
     let push = true;
     let zip = false;
+    let test = true;
     let timeoutMinutes: number | undefined;
     let positional: string | undefined;
     const used: string[] = [];
@@ -52,6 +53,9 @@ export function parseReleaseArgs(args: readonly string[]): ReleaseArgs {
             used.push(arg);
         } else if (arg === "--no-push") {
             push = false;
+            used.push(arg);
+        } else if (arg === "--no-test") {
+            test = false;
             used.push(arg);
         } else if (arg === "--zip") {
             zip = true;
@@ -103,7 +107,7 @@ export function parseReleaseArgs(args: readonly string[]): ReleaseArgs {
     if (!push && (zip || timeoutMinutes !== undefined)) {
         throw new Error(`"--zip" and "--timeout" describe the push flow, which "--no-push" turns off. ${USAGE_HINT}`);
     }
-    return { mode: "bump", spec: parseSpec(first), dryRun, flags, pushing: { push, timeoutMinutes, zip } };
+    return { mode: "bump", spec: parseSpec(first), dryRun, flags, pushing: { push, timeoutMinutes, zip }, test };
 }
 
 function parseOptionalVersion(value: string | undefined): string | undefined {
