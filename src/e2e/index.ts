@@ -6,6 +6,13 @@ export { sweepLeftovers } from "./cleanup.js";
 export type { SweepOptions, SweepResult } from "./cleanup.js";
 export type { VaultHandle } from "./vault.js";
 export type {
+    AppWithInternals,
+    CommandEntry,
+    InternalPluginEntry,
+    PluginInstance,
+    SettingTabEntry,
+} from "./internals.js";
+export type {
     CompositionChunking,
     EditorHelpers,
     EditorPosition,

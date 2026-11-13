@@ -373,6 +373,24 @@ const count = await obsidian.evaluate(
 
 The generics are `evaluate<R, A = undefined, App = unknown>`: `R` is the result, `A` the argument, `App` the type of `app`, all inferred from the function you pass. `fn` is serialised as source text and rebuilt in the page, so it cannot close over variables of the test or use imports (a variable it reads fails with `<name> is not defined`); pass what it needs as `arg`. `arg` and the result must be serialisable, as for `page.evaluate`: a `TFile` or a DOM node does not survive, return the fields you need. An exception thrown by `fn` fails the test with its message. `evaluate` fails with its own message when `window.app` is missing or `fn` is not a function expression (a method shorthand is not).
 
+### Obsidian internals
+
+Obsidian's public typings leave out the internal objects that specs reach: `app.plugins.plugins`, `enablePlugin` and `disablePlugin`, `app.setting`, `app.commands`, `app.internalPlugins`, `metadataCache.inProgressTaskCount`, `vault.getConfig`. `AppWithInternals` (exported from `obsidian-plugin-dev-kit/e2e`) types them narrowly, so a spec does not declare its own copy:
+
+```ts
+import type { AppWithInternals } from "obsidian-plugin-dev-kit/e2e";
+
+await obsidian.evaluate(async (app: AppWithInternals) => {
+    await app.plugins.disablePlugin("my-plugin");
+    await app.plugins.enablePlugin("my-plugin");
+});
+
+// In a win.evaluate, globalThis carries the app:
+const tabs = await win.evaluate(() => (globalThis as unknown as { app: AppWithInternals }).app.setting.pluginTabs.map((tab) => tab.id));
+```
+
+A plugin instance is `PluginInstance`: its `manifest` is typed and every other member is `unknown`. To read what your plugin adds, give the type as the parameter: `AppWithInternals<PluginInstance & { settings?: MySettings }>`. A member that only some Obsidian versions have is optional (`setting.activeTab`, `metadataCache.inProgressTaskCount`). The types describe Obsidian 1.14.5; a renamed member shows up as a failed spec, not a compile error, because the types cannot see the running version. The kit's own page scripts use the same types, so they and your specs agree.
+
 ### Fakes
 
 `replace(pluginId, propertyPath, impl, arg?)` assigns a function at `app.plugins.plugins[id].<path>` on the live plugin instance and returns `{ calls(), restore() }`. `impl` is a factory: it runs once in the page with `arg` and returns the replacement, so it can keep state between calls. A factory that declares a parameter must be given the `arg`.

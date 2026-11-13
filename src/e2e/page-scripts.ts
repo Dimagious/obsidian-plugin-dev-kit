@@ -4,12 +4,11 @@
  * so tests can run them against a fake `globalThis`.
  */
 
+import type { PartialApp } from "./internals.js";
+
 /** The slice of Obsidian's window globals these scripts read. */
 interface ObsidianGlobals {
-    app?: {
-        workspace?: { layoutReady?: boolean };
-        plugins?: { plugins?: Record<string, unknown>; loadingPluginId?: string | null };
-    };
+    app?: PartialApp;
     require?: (id: string) => unknown;
     localStorage?: { setItem(key: string, value: string): void };
 }

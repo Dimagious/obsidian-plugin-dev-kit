@@ -5,37 +5,7 @@
  * own DOM and Obsidian types are not available to the kit (`lib` has no DOM), hence the small interfaces below.
  */
 
-interface PagePosition {
-    line: number;
-    ch: number;
-}
-
-interface PageEditor {
-    getValue(): string;
-    getSelection(): string;
-    listSelections(): { anchor: PagePosition; head: PagePosition }[];
-    setCursor(position: PagePosition): void;
-    focus(): void;
-    /** The CodeMirror 6 view behind the editor. */
-    cm?: { composing?: boolean };
-}
-
-interface PageView {
-    getState?(): Record<string, unknown>;
-    setState?(state: Record<string, unknown>, result: { history: boolean }): Promise<void>;
-}
-
-interface PageLeaf {
-    view: PageView;
-    openFile(file: unknown, state: Record<string, unknown>): Promise<void>;
-}
-
-/** One of the two side panels of the workspace (`app.workspace.leftSplit` and `rightSplit`). */
-interface PageSidebar {
-    collapsed?: boolean;
-    collapse?(): void;
-    expand?(): void;
-}
+import type { PagePosition, PartialApp } from "../internals.js";
 
 interface PageElement {
     scrollTop: number;
@@ -46,49 +16,6 @@ interface PageElement {
     contains(other: unknown): boolean;
     /** Only images are looked up this way (`settle()`). */
     querySelectorAll(selector: string): ArrayLike<PageImage>;
-}
-
-/**
- * The slice of Obsidian's `app` the helpers touch. Most of it is internal API (`app.setting`, `app.commands`,
- * `app.emulateMobile`, `app.changeTheme`, `vault.getConfig`, `customCss`) that is not in the public typings.
- * Verified on Obsidian 1.14.5; a newer Obsidian may rename it, and the helper then fails with the message of the step
- * that broke.
- */
-interface PageApp {
-    commands?: {
-        commands?: Record<string, { checkCallback?: (checking: boolean) => unknown } | undefined>;
-        executeCommandById?(id: string): boolean;
-    };
-    setting?: {
-        open?(): void;
-        close?(): void;
-        openTabById?(id: string): void;
-        pluginTabs?: { id: string }[];
-        settingTabs?: { id: string }[];
-    };
-    vault?: {
-        getAbstractFileByPath?(path: string): { extension?: unknown } | null;
-        getMarkdownFiles?(): unknown[];
-        getConfig?(key: string): unknown;
-        setConfig?(key: string, value: unknown): void;
-        saveConfig?(): Promise<void>;
-    };
-    workspace?: {
-        getLeaf?(newLeaf: boolean): PageLeaf;
-        setActiveLeaf?(leaf: PageLeaf, options: { focus: boolean }): void;
-        getActiveFile?(): { path: string } | null;
-        activeEditor?: { editor?: PageEditor } | null;
-        trigger?(name: string): void;
-        layoutReady?: boolean;
-        saveLayout?(): Promise<void>;
-        leftSplit?: PageSidebar;
-        rightSplit?: PageSidebar;
-    };
-    metadataCache?: { getFileCache?(file: unknown): unknown };
-    plugins?: { plugins?: Record<string, Record<string, unknown> | undefined>; enabledPlugins?: Set<string> };
-    customCss?: { themes?: Record<string, unknown>; setTheme?(name: string): void };
-    changeTheme?(name: string): void;
-    emulateMobile?(on: boolean): void;
 }
 
 interface FakeRecord {
@@ -114,7 +41,7 @@ interface PageImage {
 }
 
 interface PageGlobals {
-    app?: PageApp;
+    app?: PartialApp;
     document?: {
         body: PageElement;
         activeElement: unknown;
