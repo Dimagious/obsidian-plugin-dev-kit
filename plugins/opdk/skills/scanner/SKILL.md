@@ -5,7 +5,7 @@ description: Lint an Obsidian plugin for the community plugin scorecard with `op
 
 # opdk scanner module
 
-Run all commands from the plugin root: `eslint-plugin-obsidianmd` reads `manifest.json` from the current directory. The plugin name always comes from `manifest.json`. Full docs: https://github.com/Dimagious/obsidian-plugin-dev-kit/blob/main/docs/scanner.md
+Run all commands from the plugin root: `eslint-plugin-obsidianmd` reads `manifest.json` from the current directory. The plugin name always comes from `manifest.json`. Full docs: `node_modules/obsidian-plugin-dev-kit/docs/scanner.md`
 
 ## Commands
 

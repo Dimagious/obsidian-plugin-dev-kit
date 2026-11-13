@@ -5,7 +5,7 @@ description: Build, bundle or watch an Obsidian plugin that uses obsidian-plugin
 
 # opdk build module
 
-Run all commands from the plugin root. The plugin id and name always come from `manifest.json`. Full docs: https://github.com/Dimagious/obsidian-plugin-dev-kit/blob/main/docs/build.md
+Run all commands from the plugin root. The plugin id and name always come from `manifest.json`. Full docs: `node_modules/obsidian-plugin-dev-kit/docs/build.md`
 
 ## Commands
 

@@ -126,9 +126,95 @@ describe("terminateTree", () => {
         expect(calls.map((call) => call.signal)).toEqual([0, "SIGTERM", 0, 0, "SIGKILL", 0]);
     });
 
-    it("surfaces a signal error other than ESRCH", async () => {
-        const { io } = fakeIo("dies-on-term", "darwin", { SIGTERM: "EPERM" });
-        await expect(terminateTree(100, io)).rejects.toThrow("EPERM");
+    /** A group that exits right after the first probe; the signal then fails with `signalCode` (macOS answers EPERM). */
+    function exitsBeforeSignal(signalCode: string): { io: ProcessIo; calls: (NodeJS.Signals | 0)[] } {
+        const calls: (NodeJS.Signals | 0)[] = [];
+        let alive = true;
+        const io: ProcessIo = {
+            platform: "darwin",
+            sleep: () => Promise.resolve(),
+            spawnSync: () => ({ status: 0, stderr: "" }),
+            kill: (_pid, signal) => {
+                calls.push(signal);
+                if (signal === 0) {
+                    if (!alive) {
+                        throw Object.assign(new Error("kill ESRCH"), { code: "ESRCH" });
+                    }
+                    return;
+                }
+                alive = false;
+                throw Object.assign(new Error(`kill ${signalCode}`), { code: signalCode });
+            },
+        };
+        return { io, calls };
+    }
+
+    it("treats EPERM on the signal as success when the group is gone by the first poll", async () => {
+        const { io, calls } = exitsBeforeSignal("EPERM");
+        await expect(terminateTree(100, io, { polls: 1, pollMs: 1 })).resolves.toBe("terminated");
+        expect(calls).toEqual([0, "SIGTERM", 0]);
+    });
+
+    /**
+     * macOS: a group of unreaped zombies answers EPERM to every signal, signal 0 included, until the event loop has
+     * run (the parent reaps the child). Nothing is decided synchronously; the first `sleep` makes it ESRCH.
+     */
+    function zombieGroup(): { io: ProcessIo; calls: (NodeJS.Signals | 0)[]; sleeps: number[] } {
+        const calls: (NodeJS.Signals | 0)[] = [];
+        const sleeps: number[] = [];
+        const io: ProcessIo = {
+            platform: "darwin",
+            sleep: (ms) => {
+                sleeps.push(ms);
+                return Promise.resolve();
+            },
+            spawnSync: () => ({ status: 0, stderr: "" }),
+            kill: (_pid, signal) => {
+                calls.push(signal);
+                const code = sleeps.length === 0 ? "EPERM" : "ESRCH";
+                throw Object.assign(new Error(`kill ${code}`), { code });
+            },
+        };
+        return { io, calls, sleeps };
+    }
+
+    it("waits for the zombie group to be reaped instead of rethrowing EPERM", async () => {
+        const { io, calls, sleeps } = zombieGroup();
+        await expect(terminateTree(100, io, { polls: 3, pollMs: 7 })).resolves.toBe("terminated");
+        expect(sleeps).toEqual([7]);
+        expect(calls).toEqual([0, "SIGTERM", 0, 0]);
+    });
+
+    it("still fails, with EPERM in the message and as the cause, when a live group cannot be signalled", async () => {
+        const { io } = fakeIo("immortal", "darwin", { SIGTERM: "EPERM", SIGKILL: "EPERM", probe: "EPERM" });
+        const error = await terminateTree(100, io, { polls: 2, pollMs: 1 }).then(
+            () => undefined,
+            (caught: unknown) => caught,
+        );
+        if (!(error instanceof Error)) {
+            throw new Error("expected terminateTree to reject with an Error");
+        }
+        expect(error.message).toMatch(/survived SIGKILL.*EPERM.*kill -9 -100/s);
+        expect(error.cause).toBeInstanceOf(Error);
+    });
+
+    it("keeps the SIGKILL denial as the cause when only SIGKILL is refused", async () => {
+        const { io } = fakeIo("immortal", "darwin", { SIGKILL: "EPERM", probe: "EPERM" });
+        const error = await terminateTree(100, io, { polls: 2, pollMs: 1 }).then(
+            () => undefined,
+            (caught: unknown) => caught,
+        );
+        if (!(error instanceof Error)) {
+            throw new Error("expected terminateTree to reject with an Error");
+        }
+        expect(error.message).toMatch(/EPERM/);
+        expect(error.cause).toBeInstanceOf(Error);
+        expect(error.cause instanceof Error ? error.cause.message : "").toBe("kill EPERM");
+    });
+
+    it("surfaces a signal error other than ESRCH and EPERM", async () => {
+        const { io } = fakeIo("dies-on-term", "darwin", { SIGTERM: "EINVAL" });
+        await expect(terminateTree(100, io)).rejects.toThrow("EINVAL");
     });
 });
 

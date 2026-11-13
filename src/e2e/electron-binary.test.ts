@@ -28,7 +28,19 @@ describe("assertElectronInstalled", () => {
         const p = probe([], "/plugin/node_modules/electron/package.json");
         expect(() => {
             assertElectronInstalled("/plugin", p);
-        }).toThrow(/downloads it on first use \(about 100 MB\).*npx electron --version.*CI, cache/s);
+        }).toThrow(/downloads it on first use \(about 100 MB\).*node [^"]*electron[\\/]install\.js.*CI, cache/s);
+    });
+
+    it("prints the install script where electron really is, also when it is hoisted above the plugin", () => {
+        const hoisted = probe([], "/repo/node_modules/electron/package.json");
+        let message = "";
+        try {
+            assertElectronInstalled("/repo/packages/plugin", hoisted);
+        } catch (error) {
+            message = error instanceof Error ? error.message : String(error);
+        }
+        expect(message).toContain(`node ${path.join("/repo/node_modules/electron", "install.js")}`);
+        expect(message).not.toContain("packages/plugin/node_modules");
     });
 
     it("says the plugin needs electron as a devDependency when it cannot be resolved", () => {

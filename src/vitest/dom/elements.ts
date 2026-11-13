@@ -166,3 +166,167 @@ export function instanceOf(node: Node, type: abstract new () => unknown): boolea
     };
     return lookup(node.win) || lookup(node.constructorWin);
 }
+
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+
+/**
+ * `createSvg()` of the app: an SVG element in the SVG namespace. A string is shorthand for `{ cls }`; `cls` (string
+ * or array) goes to `classList`, then `attr`, then the callback, then insertion into `parent` (first, with `prepend`).
+ * Unlike `createEl`, there is no `text`, `title` or `on*` handling.
+ */
+export function createSvgElement<K extends keyof SVGElementTagNameMap>(
+    tag: K,
+    info?: SvgElementInfo | string,
+    callback?: (el: SVGElementTagNameMap[K]) => void,
+): SVGElementTagNameMap[K] {
+    const el = document.createElementNS(SVG_NAMESPACE, tag);
+    const { cls, attr, parent, prepend } = typeof info === "string" ? { cls: info } : (info ?? {});
+    if (cls) el.classList.add(...(Array.isArray(cls) ? cls : [cls]));
+    if (attr) el.setAttrs(attr);
+    callback?.(el);
+    if (parent) {
+        if (prepend) parent.insertBefore(el, parent.firstChild);
+        else parent.appendChild(el);
+    }
+    return el;
+}
+
+/** `Node#createSvg`: the global `createSvg` with `parent` set to the node. As with `createChild`, `parent` is written into the info. */
+export function createSvgChild<K extends keyof SVGElementTagNameMap>(
+    parent: Node,
+    tag: K,
+    info?: SvgElementInfo | string,
+    callback?: (el: SVGElementTagNameMap[K]) => void,
+): SVGElementTagNameMap[K] {
+    const given: SvgElementInfo = typeof info === "string" ? { cls: info } : (info ?? {});
+    given.parent = parent;
+    return createSvgElement(tag, given, callback);
+}
+
+/**
+ * `Node#setChildrenInPlace`: makes the children of `node` exactly `children`, in order, moving as little as possible.
+ * A child already in the right place is not touched (it keeps focus and state); a child not in the list is removed.
+ */
+export function setChildrenInPlace(node: Node, children: readonly Node[]): void {
+    let current = node.firstChild;
+    const wanted = new Set(children);
+    for (const child of children) {
+        while (current && !wanted.has(current)) {
+            const stale = current;
+            current = current.nextSibling;
+            node.removeChild(stale);
+        }
+        if (child !== current) node.insertBefore(child, current);
+        else current = current.nextSibling;
+    }
+    while (current) {
+        const stale = current;
+        current = current.nextSibling;
+        node.removeChild(stale);
+    }
+}
+
+/**
+ * `Element#matchParent`: the element itself or its closest ancestor that matches `selector`, not looking above
+ * `lastParent` (which is itself checked), or null.
+ */
+export function matchParent(el: Element, selector: string, lastParent?: Element): Element | null {
+    for (let node: Element | null = el; node; node = node.parentElement) {
+        if (node.matches(selector)) return node;
+        if (node === lastParent) return null;
+    }
+    return null;
+}
+
+/**
+ * `Element#isActiveElement`: focused in its own document, and every frame up to the top window is focused in its
+ * parent document too, and that top window is the active one.
+ */
+export function isActiveElement(el: Element): boolean {
+    for (let node: Element = el; ; ) {
+        if (node.doc.activeElement !== node) return false;
+        const frame: Element | null = node.win.frameElement;
+        if (!frame) return node.win === activeWindow;
+        node = frame;
+    }
+}
+
+export type DelegatedListener = (this: EventTarget, ev: Event, delegateTarget: Element) => unknown;
+
+interface Delegation {
+    readonly selector: string;
+    readonly listener: DelegatedListener;
+    readonly options: boolean | AddEventListenerOptions | undefined;
+    readonly callback: EventListener;
+}
+
+/** The delegated listeners per target, so `off` finds the wrapper `on` registered. The app keeps them in `_EVENTS`. */
+const delegations = new WeakMap<EventTarget, Map<string, Delegation[]>>();
+
+/**
+ * `on(type, selector, listener, options)`: a listener on the target that runs when the event's target (or an
+ * ancestor, up to the target) matches `selector`; `listener` gets the event and the matching element.
+ */
+export function onDelegated(
+    target: EventTarget,
+    type: string,
+    selector: string,
+    listener: DelegatedListener,
+    options?: boolean | AddEventListenerOptions,
+): void {
+    let byType = delegations.get(target);
+    if (!byType) {
+        byType = new Map();
+        delegations.set(target, byType);
+    }
+    const list = byType.get(type) ?? [];
+    byType.set(type, list);
+    const callback = (event: Event): void => {
+        const origin = event.target;
+        if (origin instanceof Element) {
+            const match = origin.matchParent(selector, event.currentTarget instanceof Element ? event.currentTarget : undefined);
+            if (match) listener.call(target, event, match);
+        }
+    };
+    list.push({ selector, listener, options, callback });
+    target.addEventListener(type, callback, options);
+}
+
+/** `off(type, selector, listener, options)`: removes what `onDelegated` registered for the same four arguments. */
+export function offDelegated(
+    target: EventTarget,
+    type: string,
+    selector: string,
+    listener: DelegatedListener,
+    options?: boolean | AddEventListenerOptions,
+): void {
+    const byType = delegations.get(target);
+    const list = byType?.get(type);
+    if (!byType || !list) return;
+    byType.set(
+        type,
+        list.filter((entry) => {
+            if (entry.selector === selector && entry.listener === listener && entry.options === options) {
+                target.removeEventListener(type, entry.callback, options);
+                return false;
+            }
+            return true;
+        }),
+    );
+}
+
+/** `UIEvent#instanceOf`: the plain operator, then the same class by name on the window the event came from. */
+export function eventInstanceOf(event: UIEvent, type: abstract new () => unknown): boolean {
+    if (event instanceof type) return true;
+    const view = event.view;
+    if (!view) return false;
+    const candidate: unknown = Reflect.get(view, type.name);
+    return typeof candidate === "function" && candidate !== type && event instanceof candidate;
+}
+
+/** `addEventListeners`: `addEventListener(type, fn)` for every own key whose value is a function; other values are skipped. */
+export function addEventListeners(el: EventTarget, listeners: Record<string, unknown>): void {
+    for (const [type, listener] of Object.entries(listeners)) {
+        if (isListener(listener)) el.addEventListener(type, listener);
+    }
+}

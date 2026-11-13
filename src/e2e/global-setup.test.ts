@@ -21,7 +21,7 @@ describe("checkElectron", () => {
         const missing: ElectronProbe = { ...present, exists: () => false };
         expect(() => {
             checkElectron("/p", missing, supported);
-        }).toThrow(/binary is not downloaded yet.*npx electron --version/s);
+        }).toThrow(/binary is not downloaded yet.*node [^"]*electron[\\/]install\.js/s);
     });
 
     it("fails with the install hint when electron is not installed", () => {

@@ -5,7 +5,7 @@
  * Node: no `process`, no `require`, no `__dirname`. Desktop Obsidian is
  * Electron and has all three, so a bundle that reaches for them works
  * perfectly on the machine it was built on and fails on every block on a
- * phone, which is exactly how Dashy 1.0.0 shipped. esbuild was told
+ * phone, which is exactly how one plugin release shipped. esbuild was told
  * `--platform=node`, so it took the `node` branch of the `yaml` package's
  * export map and bundled the build that reads `process.env`.
  *

@@ -5,11 +5,12 @@ description: Set up, extend or fix the Vitest unit tests of an Obsidian plugin t
 
 # opdk unit module
 
-`defineUnitConfig()` returns a plain Vitest config: tests in `src/**/*.test.ts`, v8 coverage with the gate 90 lines, functions and statements and 80 branches, an `obsidian` alias, and a split between node and jsdom. Run commands from the plugin root. The `test` script stays `vitest run --coverage`; the kit adds no command. Full docs: https://github.com/Dimagious/obsidian-plugin-dev-kit/blob/main/docs/unit.md
+`defineUnitConfig()` returns a plain Vitest config: tests in `src/**/*.test.ts`, v8 coverage with the gate 90 lines, functions and statements and 80 branches, an `obsidian` alias, and a split between node and jsdom. Run commands from the plugin root. The `test` script stays `vitest run --coverage`; the kit adds no command. Full docs: `node_modules/obsidian-plugin-dev-kit/docs/unit.md`
 
 ## Safety
 
 - Unit tests never start Obsidian. Do not launch the Obsidian app to check a helper; its behaviour is in `docs/unit.md`, and reading it from `app.asar` is the only way to verify more.
+- `obsidian-plugin-dev-kit/vitest/dom` ports the app helpers a plugin meets: the create family (`createEl`, `createDiv`, `createSpan`, `createSvg`, `createFragment`), `setText`, class and attribute helpers, `detach`, `insertAfter`, `indexOf`, `setChildrenInPlace`, `matchParent`, `toggleVisibility`, delegated `on`/`off`, `trigger`, `fish`/`fishAll`, `sleep`, `nextFrame`. Check `docs/unit.md` before writing a hand polyfill: it lists what is not ported and how a test stubs the missing browser APIs.
 - Do not lower a threshold to make a run pass. `thresholds` below the default throw unless `allowLowerThresholds: true`; set that only when the owner decided so.
 - Do not move a file to `coverage.exclude` to hide a gap without a comment saying why; the gate is a floor, and an excluded file escapes it.
 
@@ -72,7 +73,13 @@ Tests run in node unless listed in `dom`. To find the files that need a DOM:
 
 ## Type-check the tests
 
-Recommended: let `tsc --noEmit` in the `typecheck` script include the `*.test.ts` files. Not required by the preset. If `[...nodeList]` fails to type-check, add `DOM.Iterable` to `lib`.
+Recommended: type-check the `*.test.ts` files, but through a `tsconfig.test.json` (`extends` the root, `lib` `["ES2022", "DOM", "DOM.Iterable"]`, `noEmit`, `include` the sources, tests and `src/test`) and a script such as `tsc -p tsconfig.test.json`, so the plugin's own tsconfig keeps its target `lib`. Not required by the preset.
+- A relative import that climbs one level too far lands on the root `main.js` (the bundle): `tsc -p tsconfig.test.json` with `strict` reports TS7016, Vitest runs it as `any`. Import from the source file (`src/main.ts`) through the right relative path. (In one folder TypeScript prefers `main.ts` over `main.js`.)
+- `obsidianPlugin()` ignores `src/**/*.test.ts` in lint (`DEFAULT_IGNORES`), so tests are not linted; helper files such as `src/test/helpers.ts` are, unless the plugin puts them in `ignores`. The type check is what covers the tests.
+
+## `isolate: false`
+
+Only on request, never a default (the preset does not set it). Add `{ test: { isolate: false } }` with `mergeConfig`, and accept it only when every run passes: `vitest run --maxWorkers=1 --sequence.shuffle --sequence.seed=N` for several seeds, the default order on one worker, and the default order on two and three workers. Many-worker shuffles hide leaks (each worker gets few files). Typical leaks: a `vi.mock` that never reaches a module another file loaded, the `moment` locale, date and locale overrides, DOM left in `document`, globals. Of three plugins, one gained 3x after four fixes, one gained nothing, one gained 1.8x but failed on one worker. See `node_modules/obsidian-plugin-dev-kit/docs/unit.md`.
 
 ## Migrating a plugin
 

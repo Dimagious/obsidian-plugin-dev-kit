@@ -45,6 +45,7 @@
   "files": [
     "bin",
     "dist",
+    "docs/*.md",
     "plugins/opdk/skills"
   ],
   "scripts": {

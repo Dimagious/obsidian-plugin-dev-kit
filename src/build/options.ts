@@ -15,7 +15,7 @@ export const DEFAULT_EXTERNAL: readonly string[] = ["obsidian", "electron", "@co
 export const CJS_FOOTER = "module.exports = module.exports.default || module.exports;";
 
 /**
- * Loaders every build starts with; `build.loader` entries merge over it. Dashy's and Snipsy's vault
+ * Loaders every build starts with; `build.loader` entries merge over it. Two plugins' vault
  * builds had `.css` as text, so an `import "x.css"` meant as a string does not fail with
  * "No loader is configured for .css".
  */
@@ -37,7 +37,7 @@ export interface ResolvedBuild {
     readonly css: ResolvedCss | false;
 }
 
-/** Fills the defaults (Dashy's release build) into the user's `build` section. */
+/** Fills the defaults (one plugin's release build) into the user's `build` section. */
 export function resolveBuild(config: BuildConfig | undefined): ResolvedBuild {
     const css = config?.css;
     return {

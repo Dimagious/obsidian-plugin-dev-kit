@@ -145,6 +145,38 @@ Notes:
 - **Globs are relative to the folder of `vitest.config.ts`**, and a file matching both lists runs only in `dom`.
 - **Vitest 5 appends a project's `include` to the root one.** The config therefore sets the root `include` only when there are no projects, and puts `include` inside each project otherwise.
 
+## `isolate: false` for jsdom-heavy suites
+
+By default Vitest gives every test file a fresh module registry and global scope. That is what costs time in a jsdom-heavy suite. `test.isolate: false` lets the files that share a worker share their modules and globals, which is faster and unsafe: it is an option to try, never a default, and the preset does not set it. Add it with `mergeConfig` (the projects extend the root config):
+
+```ts
+export default mergeConfig(defineUnitConfig({ /* ... */ }), { test: { isolate: false } });
+```
+
+Three plugins tried it. One jsdom-heavy suite went from 20.6 s to 6.7 s (3x) after four leaks were fixed first. One gained nothing. One ran 1.8x faster and was green on two and three workers, but six tests failed on one worker in default order, and between six and 37 failed in every shuffled seed. The same switch is a gain for one suite and a source of failures for the next.
+
+A leak is state one file leaves behind and a later file in the same worker reads. Typical ones:
+
+- a `vi.mock` of a module that another file already loaded: the mock never reaches that module, or reaches it for the files that run after it;
+- the `moment` locale, and date or locale overrides (`Intl`, a patched `Date`, a timezone) that one file sets and never restores;
+- DOM left in `document` (a modal, a container appended to `body`) that a later file queries;
+- globals a test sets (`window.app`, `globalThis` fields, a patched `console`, fake timers) and does not restore.
+
+Prove the suite before relying on it, on one worker, in shuffled order, for several seeds, because with many workers each worker gets few files and the leaks stay hidden:
+
+```bash
+# The subshell stops at the first failing run and leaves your terminal open.
+(
+  set -e
+  for seed in 1 2 3 4 5; do npx vitest run --maxWorkers=1 --sequence.shuffle --sequence.seed=$seed --coverage.enabled=false; done
+  npx vitest run --maxWorkers=1 --coverage.enabled=false
+  npx vitest run --maxWorkers=2 --coverage.enabled=false
+  npx vitest run --maxWorkers=3 --coverage.enabled=false
+)
+```
+
+Every run has to pass: the shuffled ones, the default order on one worker, and the default order on two and three workers. A failure names a file that leaks into the next one: fix it with `afterEach` cleanup (`vi.restoreAllMocks()`, `document.body.replaceChildren()`, restoring the global) and run the loop again. If the suite does not gain, or the fixes cost more than the saved time, leave `isolate` on.
+
 ## The DOM polyfill
 
 `installObsidianDom()` and `uninstallObsidianDom()` come from `obsidian-plugin-dev-kit/vitest/dom`. The `dom` project runs the setup file `obsidian-plugin-dev-kit/vitest/dom/setup`, which calls `installObsidianDom()` once per test file, so you rarely call it yourself. For hand use, in a test file that runs under jsdom:
@@ -160,18 +192,30 @@ Install twice is a no-op. Install without a DOM throws: "installObsidianDom() ne
 
 The behaviour of each helper was read from the shipped Obsidian app (1.14.5, the code in `app.asar`, never by running the app) and has unit tests in the kit. Covered, and nothing else:
 
-- **Create:** `createEl`, `createDiv`, `createSpan` and `createFragment` as globals; `createEl`, `createDiv`, `createSpan` on every node. The info object takes `cls`, `text` (a string or a fragment), `attr` (a `null` value removes the attribute), `title`, `value`, `type`, `placeholder`, `href`, `parent`, `prepend` and `on*` listeners, and the callback argument works. The info can also be a plain string, which is the class.
-- **Node:** `appendText`, `empty`, `instanceOf`, `doc`, `win`, `constructorWin`.
-- **Element:** `setText` (a string or a node or fragment, which replaces the children), `getText`, `setAttr`, `setAttrs`, `getAttr`, `addClass`, `addClasses`, `removeClass`, `removeClasses`, `toggleClass`, `hasClass`, `find`, `findAll`, `findAllSelf`; `find` and `findAll` on fragments.
-- **HTMLElement:** `show`, `hide`, `toggle`, `isShown`, `setCssStyles`, `setCssProps`, `onClickEvent` (`setCssStyles` and `setCssProps` also on SVG elements).
-- **Globals:** `activeWindow` and `activeDocument`.
+- **Create:** `createEl`, `createDiv`, `createSpan`, `createSvg` and `createFragment` as globals; `createEl`, `createDiv`, `createSpan`, `createSvg` on every node. The info object takes `cls`, `text` (a string or a fragment), `attr` (a `null` value removes the attribute), `title`, `value`, `type`, `placeholder`, `href`, `parent`, `prepend` and `on*` listeners, and the callback argument works. The info can also be a plain string, which is the class. `createSvg` makes an element in the SVG namespace and takes only `cls`, `attr`, `parent` and `prepend`.
+- **Node:** `appendText`, `empty`, `detach`, `insertAfter`, `indexOf`, `setChildrenInPlace`, `instanceOf`, `doc`, `win`, `constructorWin`.
+- **Element:** `setText` (a string or a node or fragment, which replaces the children), `getText`, `setAttr`, `setAttrs`, `getAttr`, `addClass`, `addClasses`, `removeClass`, `removeClasses`, `toggleClass`, `hasClass`, `find`, `findAll`, `findAllSelf`, `matchParent`, `getCssPropertyValue`, `isActiveElement`; `find` and `findAll` on fragments.
+- **HTMLElement:** `show`, `hide`, `toggle`, `isShown`, `toggleVisibility`, `innerWidth`, `innerHeight`, `setCssStyles`, `setCssProps`, `addEventListeners`, `trigger`, `onClickEvent` (`setCssStyles` and `setCssProps` also on SVG elements); `on` and `off` for delegated listeners (`el.on("click", ".item", (event, matchedElement) => ...)`), also on `document`.
+- **UIEvent:** `targetNode`, `win`, `doc`, `instanceOf`.
+- **Globals:** `activeWindow`, `activeDocument`, `fish`, `fishAll`, `ready`, `sleep`, `nextFrame`.
 
-An existing `show`, `hide`, `toggle`, `activeWindow` or `activeDocument` is left alone.
+An existing `show`, `hide`, `toggle`, `toggleVisibility`, `activeWindow` or `activeDocument` is left alone.
 
-Two deviations from the app, both forced by jsdom:
+Not installed:
+
+- The app's extensions to `Array`, `String`, `Number`, `Math` and `Object` (`first`, `last`, `contains`, `unique`, `clamp`, ...), and the globals `isBoolean` and `globalEnhance`.
+- `ajax` and `ajaxPromise`.
+- `onNodeInserted` and `onWindowMigrated`: they wait for a CSS animation event, which jsdom never fires.
+- The app's `ResizeObserver` stub (empty `observe`, `unobserve` and `disconnect`) and its `matchMedia` wrapper (adds `addEventListener` to a query object that lacks it). jsdom has neither `ResizeObserver` nor `matchMedia`, so code that calls them fails with a `ReferenceError` or `TypeError`. A test stubs them itself, for example `vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} })` and `vi.stubGlobal("matchMedia", (media: string): MediaQueryList => ({ matches: false, media, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false }))` (both undone by `vi.unstubAllGlobals()`).
+- The app's stubs for `TouchEvent`, `prepend` and `Object.hasOwn`: jsdom already has all three, so there is nothing to add.
+
+`innerWidth` and `innerHeight` are installed with the app's formula, `scrollWidth` (`scrollHeight`) minus padding. jsdom has no layout and reports a scroll size of 0, so they are 0 minus the padding unless a test defines `scrollWidth` or `scrollHeight` on the element.
+
+Three deviations from the app, two forced by jsdom and one a design choice:
 
 - **`isShown`** is true for an element that is in the document with no inline `display: none` on itself or an ancestor. The app returns `!!offsetParent`, which jsdom, having no layout, always reports as `null`.
 - **`scrollIntoView`** is added as a no-op when jsdom lacks it. The app has no such helper; browsers do, and code that scrolls an element into view fails without it.
+- **Delegated `on` and `off`** keep their listeners in a `WeakMap` keyed by the element, where the app uses an `_EVENTS` property on the element. The behaviour is the same; the kit does not add a property to the element.
 
 The helpers call each other through the public methods, as the app does: `createDiv` and `createSpan` go through `this.createEl`, the global `createDiv` through the global `createEl`, `addClass` through `addClasses`, `removeClass` through `removeClasses` and `toggle` through `show` and `hide`. A test that spies on `createEl` therefore sees the calls of `createDiv`. Like the app, `createEl` on a node writes `parent` into the info object it was given; the global `createEl` does not mutate it.
 
@@ -199,7 +243,27 @@ A package that is not installed gives `"<name>" is not installed; the kit needs 
 
 ## Type-check the tests
 
-Recommended, not required: let `tsc --noEmit` cover the test files. Many plugins exclude `*.test.ts` from `tsconfig.json`, so a type error in a test is found only when the test fails at run time. The preset does not check types. A plugin that wants it removes `*.test.ts` from the `exclude` of its `tsconfig.json`, so the `typecheck` script covers them. Tests often spread a `NodeList` (`[...container.querySelectorAll("li")]`); if `lib` in `tsconfig.json` has `DOM` but not `DOM.Iterable`, add `DOM.Iterable` (TypeScript 5.x; TypeScript 6 includes it in `DOM`).
+Recommended, not required: let `tsc --noEmit` cover the test files. Many plugins exclude `*.test.ts` from `tsconfig.json`, so a type error in a test is found only when the test fails at run time. The preset does not check types. Tests often need more than the plugin's build does: they spread a `NodeList` (`[...container.querySelectorAll("li")]`, which needs `DOM.Iterable`) or use ES2022 features that the plugin's `lib` leaves out on purpose. Do not widen the plugin's own `tsconfig.json` for that; add a `tsconfig.test.json` and point a script at it:
+
+```json
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "lib": ["ES2022", "DOM", "DOM.Iterable"], "noEmit": true },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
+```
+
+```json
+"typecheck:tests": "tsc -p tsconfig.test.json"
+```
+
+The plugin keeps its target `lib`, so `tsc` on the build config still rejects an API the plugin must not call. (TypeScript 6 includes `DOM.Iterable` in `DOM`; listing it is harmless.) `src/**/*.ts` already covers the tests and `src/test`; take the `include` globs from where your tests and their helpers live if they sit elsewhere.
+
+Two things show up when a plugin first type-checks its tests:
+
+- **A test that reaches the bundled `main.js` gets `any`.** Where `main.ts` and `main.js` sit in one folder, TypeScript prefers `main.ts`, so that is not the trap. The trap is a relative path that climbs one level too far, to the plugin root, where only the bundle lives: `../main` from `src/test/` is `src/main`, but from `src/` it is the root `main.js`. With `strict`, `tsc -p tsconfig.test.json` reports TS7016 (no declaration file) there, while Vitest runs the import as `any` and the test checks nothing. Import from the source file through the right relative path (for example `src/main.ts`), never from the root bundle.
+- **The preset's lint does not read `*.test.ts`.** `obsidianPlugin()` ignores `src/**/*.test.ts` (it is in `DEFAULT_IGNORES`), so a test is never linted by `eslint .`. Helpers are different: a file such as `src/test/helpers.ts` is linted like any source file unless the plugin lists it in `ignores`. Keep helpers out of `ignores` so they are linted, and name them without `.test.ts`. The type check above is what covers the test files themselves.
 
 ## Migrating a plugin
 
