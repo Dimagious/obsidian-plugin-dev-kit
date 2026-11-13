@@ -46,6 +46,26 @@ describe("install and uninstall", () => {
         }
     });
 
+    it("replaces a global the test defined itself (fish, sleep) and puts it back on uninstall", () => {
+        uninstallObsidianDom();
+        const ownFish = (): null => null;
+        const ownSleep = (): Promise<void> => Promise.resolve();
+        Object.defineProperty(globalThis, "fish", { value: ownFish, configurable: true, writable: true });
+        Object.defineProperty(globalThis, "sleep", { value: ownSleep, configurable: true, writable: true });
+        try {
+            installObsidianDom();
+            expect(Reflect.get(globalThis, "fish")).not.toBe(ownFish);
+            expect(Reflect.get(globalThis, "sleep")).not.toBe(ownSleep);
+            uninstallObsidianDom();
+            expect(Reflect.get(globalThis, "fish")).toBe(ownFish);
+            expect(Reflect.get(globalThis, "sleep")).toBe(ownSleep);
+        } finally {
+            uninstallObsidianDom();
+            Reflect.deleteProperty(globalThis, "fish");
+            Reflect.deleteProperty(globalThis, "sleep");
+        }
+    });
+
     it("uninstall without an install is a no-op", () => {
         uninstallObsidianDom();
         expect(() => {
@@ -485,6 +505,20 @@ describe("Node: detach, insertAfter, indexOf, setChildrenInPlace", () => {
         expect(removals).toEqual([b, d]);
     });
 
+    it("setChildrenInPlace touches only the child that has to move", () => {
+        const parent = document.body.createDiv();
+        const [a, b, c] = ["a", "b", "c"].map((text) => parent.createSpan({ text }));
+        if (!a || !b || !c) throw new Error("setup");
+        const observer = new MutationObserver(() => undefined);
+        observer.observe(parent, { childList: true });
+        parent.setChildrenInPlace([a, c, b]);
+        const records = observer.takeRecords();
+        observer.disconnect();
+        expect(Array.from(parent.childNodes)).toEqual([a, c, b]);
+        const touched = records.flatMap((record) => [...record.addedNodes, ...record.removedNodes]);
+        expect(new Set(touched)).toEqual(new Set([c]));
+    });
+
     it("setChildrenInPlace with an empty list empties the node, and moves a node that is out of order", () => {
         const parent = document.body.createDiv();
         const a = parent.createSpan();
@@ -592,6 +626,31 @@ describe("HTMLElement: toggleVisibility, innerWidth, addEventListeners, trigger"
         expect(el.style.visibility).toBe("");
     });
 
+    it("keeps a toggleVisibility that already exists and puts it back on uninstall", () => {
+        uninstallObsidianDom();
+        const own = vi.fn();
+        Object.defineProperty(HTMLElement.prototype, "toggleVisibility", { value: own, configurable: true, writable: true });
+        try {
+            installObsidianDom();
+            document.body.createDiv().toggleVisibility(false);
+            expect(own).toHaveBeenCalledTimes(1);
+            uninstallObsidianDom();
+            expect(Reflect.get(HTMLElement.prototype, "toggleVisibility")).toBe(own);
+        } finally {
+            uninstallObsidianDom();
+            Reflect.deleteProperty(HTMLElement.prototype, "toggleVisibility");
+        }
+    });
+
+    it("innerWidth and innerHeight subtract the padding from the scroll size", () => {
+        const el = document.body.createDiv();
+        el.style.padding = "3px 5px";
+        Object.defineProperty(el, "scrollWidth", { value: 100 });
+        Object.defineProperty(el, "scrollHeight", { value: 50 });
+        expect(el.innerWidth).toBe(90);
+        expect(el.innerHeight).toBe(44);
+    });
+
     it("innerWidth and innerHeight are the scroll size minus padding; jsdom has no layout, so scroll size is 0", () => {
         const el = document.body.createDiv();
         el.style.padding = "3px 5px";
@@ -647,6 +706,35 @@ describe("delegated on / off", () => {
         expect(listener).not.toHaveBeenCalled();
     });
 
+    it("stops looking for a match at the delegating element, even when it sits inside a matching ancestor", () => {
+        const outer = document.body.createDiv("item");
+        const root = outer.createDiv();
+        const inner = root.createDiv("plain");
+        const listener = vi.fn();
+        root.on("click", ".item", listener);
+        inner.click();
+        expect(listener).not.toHaveBeenCalled();
+    });
+
+    it("off requires the same options: a different value leaves the listener, the same value removes it", () => {
+        const root = document.body.createDiv();
+        const item = root.createDiv("item");
+        const plain = vi.fn();
+        const capture = vi.fn();
+        root.on("click", ".item", plain);
+        root.on("click", ".item", capture, true);
+        root.off("click", ".item", plain, true);
+        root.off("click", ".item", capture);
+        item.click();
+        expect(plain).toHaveBeenCalledTimes(1);
+        expect(capture).toHaveBeenCalledTimes(1);
+        root.off("click", ".item", plain);
+        root.off("click", ".item", capture, true);
+        item.click();
+        expect(plain).toHaveBeenCalledTimes(1);
+        expect(capture).toHaveBeenCalledTimes(1);
+    });
+
     it("off removes only the listener registered with the same selector, function and options", () => {
         const root = document.body.createDiv();
         const item = root.createDiv("item");
@@ -674,8 +762,12 @@ describe("delegated on / off", () => {
         document.off("click", ".item", listener);
         item.click();
         expect(listener).toHaveBeenCalledTimes(1);
-        root.on("click", ".x", vi.fn());
-        root.off("focus", ".x", vi.fn());
+        const focused = vi.fn();
+        const field = root.createEl("input", { cls: "x" });
+        root.on("focus", ".x", focused, true);
+        root.off("focus", ".x", vi.fn(), true);
+        field.dispatchEvent(new FocusEvent("focus"));
+        expect(focused).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -714,6 +806,11 @@ describe("UIEvent: targetNode, win, doc, instanceOf", () => {
         const Foreign = Object.defineProperty(function MouseEvent() { return undefined; }, Symbol.hasInstance, { value: () => true });
         const foreignClass = mouseEventIn({ MouseEvent: Foreign });
         expect(foreignClass.instanceOf(MouseEvent)).toBe(true);
+        // A class this event is not an instance of here: only the `view[type.name]` lookup can say yes.
+        const ForeignKeyboard = Object.defineProperty(function KeyboardEvent() { return undefined; }, Symbol.hasInstance, { value: () => true });
+        expect(event.instanceOf(KeyboardEvent)).toBe(false);
+        expect(mouseEventIn({ KeyboardEvent: ForeignKeyboard }).instanceOf(KeyboardEvent)).toBe(true);
+        expect(mouseEventIn({ KeyboardEvent: "not a class" }).instanceOf(KeyboardEvent)).toBe(false);
         const sameClass = mouseEventIn({ KeyboardEvent });
         expect(sameClass.instanceOf(KeyboardEvent)).toBe(false);
         expect(mouseEventIn({}).instanceOf(KeyboardEvent)).toBe(false);
