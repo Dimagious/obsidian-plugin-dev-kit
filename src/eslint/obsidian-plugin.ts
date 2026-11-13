@@ -15,8 +15,7 @@ export interface ObsidianPluginOptions {
 }
 
 /**
- * What all three of Snipsy, Dashy and Garmy leave out of linting (the intersection of their lists, not the
- * union): dependencies and build output, unit-test files, e2e folders, scripts, and the config files of the test
+ * What every plugin on the kit leaves out of linting (the intersection of their lists, not the union): dependencies and build output, unit-test files, e2e folders, scripts, and the config files of the test
  * runners (they are not in the tsconfig). Paths only some plugins have (`site/**`, `.preview/**`,
  * `src/test/**`, `tools/**`, `integration/**`) belong in that plugin's `ignores` option.
  */
