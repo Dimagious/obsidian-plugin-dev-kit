@@ -67,6 +67,10 @@ describe("resolveSeed", () => {
         expect(() => resolveSeed({ files: { ".obsidian\\Plugins\\My-Plugin\\DATA.json": "{}" } }, ["my-plugin"])).toThrow(/writes for "my-plugin"/);
     });
 
+    it("matches the data option's id without regard to case, as the path compare does", () => {
+        expect(() => resolveSeed({ files: { ".obsidian/plugins/my-plugin/data.json": "{}" } }, ["My-Plugin"])).toThrow(/writes for "my-plugin"/);
+    });
+
     it("allows the data.json of a plugin that has no data entry: per-test settings, or a plugin that lives in the seed vault", () => {
         const files = { ".obsidian/plugins/other/data.json": '{"a":1}' };
         expect(resolveSeed({ files }, ["my-plugin"])).toEqual({ files });

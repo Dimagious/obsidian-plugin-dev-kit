@@ -111,6 +111,15 @@ describe("createFixtureFunctions: session", () => {
         expect(s.start).not.toHaveBeenCalled();
     });
 
+    it("refuses a seed data.json for a plugin the data option already writes, before any Obsidian is started", async () => {
+        const s = setup();
+        const seed = { files: { ".obsidian/plugins/my-plugin/data.json": "{}" } };
+        await expect(
+            createFixtureFunctions(resolved({ data: { "my-plugin": { a: 1 } } }), s).session({ seed }, () => Promise.resolve(), s.testInfo),
+        ).rejects.toThrow(/writes for "my-plugin"/);
+        expect(s.start).not.toHaveBeenCalled();
+    });
+
     it("turns the session's annotations into report annotations", async () => {
         const s = setup();
         s.start.mockImplementation((context) => {
