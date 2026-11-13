@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 - Agent skill `/opdk:audit` for a plugin that already uses the kit, with its eval case. Phase 1 reads and measures without changing anything: coverage over all of `src` against the gate, the tests type-checked through a scratch tsconfig, unit runs on one worker in shuffled order before anyone turns `isolate` off, every picture's size, ratio, alt text and maker, a contact sheet per GIF that keeps the last frame, and the plugin's own claims about the kit. Findings carry file:line or a measured value and a triage (KIT, KIT-GENERIC, PLUGIN-ONLY, KNOWN with the number of plugins). The author picks what phase 2 does, one branch per batch, or takes backlog items only. It is distilled from a draft that was run on three plugins.
 
+### Changed
+
+- `obsidianPlugin()` turns on one more rule for every plugin that uses it: a bare `window.<member>` (`window.addEventListener`, `window.innerWidth`, `window["x"]`) is an `error` through `no-restricted-syntax`, because it refers to the main window and not to the popout window the code runs in; use `activeWindow`. This is plain Obsidian behaviour that every plugin meets. `window.open` and the timer functions stay allowed. A handler parameter named `window` (the second argument of `workspace.on("window-open")`) is reported too; rename it. The community scanner does not report the rule, so `opdk scan` is unchanged. To opt out, add a block after the preset with `"no-restricted-syntax": "off"`; a plugin that sets `no-restricted-syntax` itself replaces the kit's selector (`BARE_WINDOW_SELECTOR` is exported). `@typescript-eslint/no-require-imports` stays off, like upstream; [docs/scanner.md](docs/scanner.md) shows how to add it and what to do instead for a Node module on mobile.
+- `ui/sentence-case` is documented as off on the public scorecard too, with the snippet that turns it on.
+
+### Fixed
+
+- Docs: `opdk scan` reported 0 where the public scorecard flagged `moment(date).format(...)` (`moment` imported from `obsidian`) as `no-unsafe-call`, `-member-access` and `-return`. Reproduced: the cause is `esModuleInterop` (TypeScript 6 forces it on; TypeScript 5 with `esModuleInterop: true` behaves the same), under which the namespace import of an `export =` module such as `moment` is not callable. It is TS2349 in the plugin's own `tsc --noEmit` too. The live scanner very likely runs TypeScript 6 (inferred). [docs/scanner.md](docs/scanner.md) has the version table, how to see it (`typescript@6.0` for the check, which also breaks the plugin's typecheck until the call is fixed) and the plugin-side fix.
+
 ## [0.1.0] - 2026-11-12
 
 ### Added

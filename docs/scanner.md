@@ -81,13 +81,32 @@ export default [
 ];
 ```
 
-It is `eslint-plugin-obsidianmd`'s `recommended` preset (which carries ESLint's core rules and typescript-eslint's `recommendedTypeChecked`) plus what three real plugins all added to it: `prefer-window-timers` and `settings-tab/prefer-setting-definitions` as errors, and unused arguments, variables and caught errors as errors unless they start with `_`. Run `eslint . --max-warnings=0` so the warnings the preset leaves count as well.
+It is `eslint-plugin-obsidianmd`'s `recommended` preset (which carries ESLint's core rules and typescript-eslint's `recommendedTypeChecked`) plus what three real plugins all added to it: `prefer-window-timers` and `settings-tab/prefer-setting-definitions` as errors, and unused arguments, variables and caught errors as errors unless they start with `_`. One more rule is an error that the preset does not have: a bare `window.<member>` (below). Run `eslint . --max-warnings=0` so the warnings the preset leaves count as well.
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
 | `rootDir` | string | `process.cwd()` | Folder the tsconfig is looked up from. Pass `import.meta.dirname` so an editor that starts ESLint elsewhere finds it |
 | `tsconfig` | string | `"./tsconfig.json"` | tsconfig for the type-aware rules, relative to `rootDir` |
 | `ignores` | string[] | `[]` | ESLint globs added to `DEFAULT_IGNORES`, which the entry point also exports so a config can extend or print it. It is what three real plugins all left out of their own lint (the intersection of their lists): `node_modules/**`, `coverage/**`, `dist/**`, `main.js`, `scripts/**`, `src/**/*.test.ts`, `vitest.config.ts`, `e2e/**`, `e2e-vault.pristine/**`, `playwright.config.ts`, `.obsidian-unpacked/**`, `design/**`. Paths only some plugins have (`site/**`, `.preview/**`, `src/test/**`, `tools/**`) go in your own `ignores` |
+
+**Bare `window`.** A plain `window` is the main window; code that runs in a popout window must use `activeWindow`. The preset reports `window.addEventListener`, `window.innerWidth`, `window?.x` and `window["x"]` through `no-restricted-syntax`, and lets `window.open` and the timer functions (`setTimeout`, `clearTimeout`, `setInterval`, `clearInterval`, `requestAnimationFrame`, `cancelAnimationFrame`) through, because `prefer-window-timers` asks for those on `window`. A handler parameter that is named `window` is reported too, although it is the popout's own window: `workspace.on("window-open", (win, window) => ...)` is typed that way by `obsidian.d.ts`, so rename the binding (`(win, popoutWindow) => popoutWindow.addEventListener(...)`). This is the kit's own rule: the community scanner does not report it (`prefer-active-doc` covers `document` only), so `opdk scan` does not check it either. To turn it off, add a block after the preset:
+
+```js
+export default [
+    ...obsidianPlugin({ rootDir: import.meta.dirname }),
+    { files: ["**/*.ts"], rules: { "no-restricted-syntax": "off" } },
+];
+```
+
+**`require()`.** The preset leaves `@typescript-eslint/no-require-imports` off, like upstream: `obsidianmd/no-nodejs-modules` already checks Node `require()`, and a bundled local `require("./x")` is not a phone problem. A plugin that wants the rule adds it in its own config:
+
+```js
+{ files: ["**/*.ts"], rules: { "@typescript-eslint/no-require-imports": "error" } },
+```
+
+The right fix for a Node module on mobile is a dynamic `import()` (or `require()`) guarded by `Platform.isDesktop`, never a static import of a Node module.
+
+If the plugin sets `no-restricted-syntax` itself in a later block, that setting replaces the kit's selector; repeat the selector (`BARE_WINDOW_SELECTOR` is exported from `obsidian-plugin-dev-kit/eslint`) next to your own if you want both. A bare `window` that is not a member access (`const w = window`) is not reported.
 
 Do not enable `@typescript-eslint/no-misused-promises` next to it: the preset replaces it with `obsidianmd/no-misused-promises`, which does not count Obsidian's chaining `then` (every `Setting` chain) as a Promise. The preset reads ESLint's core rules from the ESLint resolved next to `eslint-plugin-obsidianmd`. `no-useless-assignment` and `preserve-caught-error` exist in ESLint 9.39 but only ESLint 10 added them to `recommended`, so on 9 enable them yourself.
 
@@ -143,6 +162,29 @@ An advisory finding prints as a `!` line and leaves the exit code alone:
 
 - **Layers.** The scanner keeps layers by submission date. Upstream's docs say the older ones switch `@typescript-eslint/no-unsafe-*` and the command-id rules off, and the newest has them back at `warn`. A plugin's public scorecard (version 1.7.1) lists them, so the kit runs the newest layer: a clean scan here is clean in the older layers too. Before this, `opdk scan` missed those warnings.
 - **`eslint.config.js` and `.ts`.** The kit lints them (only these two; `.mjs`, `.cjs`, `.mts` and `.cts` configs stay ignored by the extension globs), with type information, as the live scanner does. That plugin's 1.7.1 scorecard has four `no-unsafe-*` warnings in its root `eslint.config.js` (lines 14 to 17, `any` from an untyped helper), although `eslint-plugin-obsidianmd` 0.5.1's documented ignore list contains `**/eslint.config.*`. The kit follows the live scanner over the 0.5.1 text here (owner decision, 2026-11-11): `eslint` is removed from that ignore entry and the project service has `allowDefaultProject: ["eslint.config.*"]`. A config that the plugin's tsconfig already covers is linted with types through that tsconfig instead (typescript-eslint refuses a file that is both). `opdk scan` on that version reports the same four. Fix them in the file or type the helper.
+- **`esModuleInterop` and `moment`.** `opdk scan` type-checks with the TypeScript your plugin installs (the kit's peer, `>=4.8.4 <6.1.0`) and that plugin's compiler options. The cause of the gap is `esModuleInterop`: TypeScript 6 forces it on, and TypeScript 5 with `esModuleInterop: true` behaves the same. Under it the namespace import of an `export =` module is not callable, and `obsidian`'s typings declare `moment` that way (`export const moment: typeof Moment`, with `Moment` from `import * as Moment from 'moment'`). A call such as `moment(date).format("YYYY-MM-DD")` with `moment` imported from `obsidian` is therefore TS2349 ("This expression is not callable") in the plugin's own `tsc --noEmit`, and `no-unsafe-call`, `no-unsafe-member-access` and `no-unsafe-return` warnings in the scan. A plugin on TypeScript 5 without `esModuleInterop` gets neither. Checked on a minimal project with `obsidian` 1.14.4 and `moment` 2.31.0:
+
+  | TypeScript | `esModuleInterop` | `moment(...)` from `obsidian` |
+  |---|---|---|
+  | 5.9.3 | unset or `false` | compiles |
+  | 5.9.3 | `true` | TS2349 |
+  | 6.0.3 | unset (forced on) | TS2349 |
+  | 6.0.3 | `false` with `ignoreDeprecations: "6.0"` | compiles |
+  | 6.0.3 | `false` | TS5107 (the option is deprecated), no type check |
+
+  The public scorecard of one plugin (1.7.1) lists exactly these three on such a line although `moment` was a devDependency, and `opdk scan` with TypeScript 5.9 reported 0 there. Reproduced on a minimal plugin in a temporary directory: with TypeScript 6.0.3 the scan reports them whether `node_modules/moment` is installed or not; with TypeScript 5.9.3 it reports none when `moment` is installed (and reports them when it is not, under either version). So the cause is the compiler switch, not a missing install; the live scanner very likely runs TypeScript 6 (inferred from this symptom, not confirmed). The kit cannot choose another TypeScript than the one the plugin resolves, so to see what the scanner sees, install `typescript@6.0` for the check (`npm install --save-dev typescript@6.0`) and run `opdk scan`. That also breaks the plugin's own typecheck (TS2349) until the call is fixed. The fix in the plugin is to type the call instead of relying on the `obsidian` typing:
+
+  ```ts
+  import { moment } from "obsidian";
+
+  interface MomentLike {
+      format(pattern: string): string;
+  }
+  const toMoment = moment as unknown as (input: Date) => MomentLike;
+  ```
+
+  Under TypeScript 6 this scans clean. The wider rule: any `no-unsafe-*` warning on the scorecard that `opdk scan` does not show deserves a check with TypeScript 6.
+- **`obsidianmd/ui/sentence-case`.** Off here and on the scorecard. Upstream's docs list "the three sentence-case rules" among the rules the scanner disables for every layer, and the newest layer's additions do not include them. A plugin that wants the check turns it on itself, as in `eslint-plugin-obsidianmd`'s "Upgrading to 0.5.0" section ("`ui/sentence-case` is off"): `{ rules: { "obsidianmd/ui/sentence-case": ["warn", { enforceCamelCaseLower: true }] } }`.
 - **The kit can be stricter.** It uses the `recommended` set of the ESLint that runs it, and ESLint 10 adds `preserve-caught-error` and `no-useless-assignment` to it; it also reports the `moment` ban (`depend/ban-dependencies`). On that version these three are not on the public scorecard, so `opdk scan` reports 12 findings there against the scorecard's 9.
 - **Partly supported CSS.** `css-browser-feature/*` findings are real: the public scorecard reports "partially supported" features too (`text-decoration: underline dotted ...`, for one plugin). Only bare `underline` and `none` pass.
 - **Browser target.** The scorecard names an Obsidian version per plugin: "Obsidian 1.4.5" for a plugin with `minAppVersion` 1.5.0 and "Obsidian 1.11.4" in listings of plugins with `minAppVersion` 1.13.0. How the scanner maps a plugin to a version is not documented, so the kit checks one target, Chrome 142 (Obsidian 1.11.4). A feature that only an older Chromium lacks can appear on the scorecard of a plugin with a low `minAppVersion` and not here.
