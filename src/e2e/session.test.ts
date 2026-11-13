@@ -225,7 +225,7 @@ describe("startSession: happy path", () => {
         const deps: SessionDeps = { ...r.deps, electron: { resolvePackageJson: () => "/p/node_modules/electron/package.json", exists: () => false } };
         await expect(
             startSession(options(), deps, { label: "t", annotate: () => undefined }),
-        ).rejects.toThrow(/node node_modules\/electron\/install\.js/);
+        ).rejects.toThrow(/node [^"]*electron[\\/]install\.js/);
         expect(r.fake.calls).toEqual([]);
         expect(leftovers()).toEqual([]);
     });
