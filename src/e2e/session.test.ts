@@ -344,7 +344,7 @@ describe("startSession: seed and the plugin's data", () => {
         await session.teardown();
         await expect(
             startSession(options(), r.deps, { label: "build", annotate: () => undefined, seed: { files: { ".obsidian/plugins/my-plugin/main.js": "//other" } } }),
-        ).rejects.toThrow(/inside the folder of the installed plugin "my-plugin"/);
+        ).rejects.toThrow(/is a build file of the installed plugin "my-plugin"/);
         // afterEach checks that the temp root is empty again.
     });
 });

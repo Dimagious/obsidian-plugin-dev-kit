@@ -58,9 +58,19 @@ describe("resolveSeed", () => {
         [".obsidian\\app.json", /seed\.config/],
         [".obsidian/./APP.json", /seed\.config/],
         [".obsidian/community-plugins.json", /community-plugins\.json.*plugins option/],
-        [".obsidian/plugins/my-plugin/data.json", /plugin's data\.json.*data option/],
     ])("refuses %j, which would replace what the kit writes, and names the key to use", (file, message) => {
         expect(() => resolveSeed({ files: { [file]: "{}" } })).toThrow(message);
+    });
+
+    it("refuses the data.json of a plugin in the data option, and names the option", () => {
+        expect(() => resolveSeed({ files: { ".obsidian/plugins/my-plugin/data.json": "{}" } }, ["my-plugin"])).toThrow(/writes for "my-plugin".*drop that plugin from the data option/);
+        expect(() => resolveSeed({ files: { ".obsidian\\Plugins\\My-Plugin\\DATA.json": "{}" } }, ["my-plugin"])).toThrow(/writes for "my-plugin"/);
+    });
+
+    it("allows the data.json of a plugin that has no data entry: per-test settings, or a plugin that lives in the seed vault", () => {
+        const files = { ".obsidian/plugins/other/data.json": '{"a":1}' };
+        expect(resolveSeed({ files }, ["my-plugin"])).toEqual({ files });
+        expect(resolveSeed({ files })).toEqual({ files });
     });
 
     it("still accepts the other files of .obsidian", () => {
@@ -75,7 +85,12 @@ describe("resolveSeed", () => {
 describe("seedPluginFolder", () => {
     it("finds the installed plugin whose folder holds the file, ignoring case and slash style", () => {
         expect(seedPluginFolder(".obsidian/plugins/my-plugin/main.js", ["my-plugin"])).toBe("my-plugin");
-        expect(seedPluginFolder(".obsidian\\plugins\\My-Plugin\\x.css", ["my-plugin"])).toBe("my-plugin");
+        expect(seedPluginFolder(".obsidian/plugins/my-plugin/manifest.json", ["my-plugin"])).toBe("my-plugin");
+        expect(seedPluginFolder(".obsidian\\plugins\\My-Plugin\\styles.css", ["my-plugin"])).toBe("my-plugin");
+        // Only the build files: the rest of the folder is the spec's.
+        expect(seedPluginFolder(".obsidian/plugins/my-plugin/x.css", ["my-plugin"])).toBeNull();
+        expect(seedPluginFolder(".obsidian/plugins/my-plugin/data.json", ["my-plugin"])).toBeNull();
+        expect(seedPluginFolder(".obsidian/plugins/my-plugin/sub/main.js", ["my-plugin"])).toBeNull();
         expect(seedPluginFolder(".obsidian/plugins/other/main.js", ["my-plugin"])).toBeNull();
         expect(seedPluginFolder("Notes/main.js", ["my-plugin"])).toBeNull();
     });
@@ -133,11 +148,13 @@ describe("applySeed", () => {
         expect(fs.readFileSync(path.join(vaultPath, ".obsidian", "app.json"), "utf8")).toBe(before);
     });
 
-    it("refuses a file in the folder of an installed plugin before writing anything", () => {
+    it("refuses a build file of an installed plugin before writing anything, but not its other files", () => {
         expect(() => {
             applySeed(vaultPath, { files: { "Notes/a.md": "# a", ".obsidian/plugins/my-plugin/main.js": "x" } }, ["my-plugin"]);
-        }).toThrow(/inside the folder of the installed plugin "my-plugin".*data option/);
+        }).toThrow(/is a build file of the installed plugin "my-plugin" and would replace its build/);
         expect(fs.existsSync(path.join(vaultPath, "Notes"))).toBe(false);
+        applySeed(vaultPath, { files: { ".obsidian/plugins/my-plugin/data.json": '{"a":1}', ".obsidian/plugins/my-plugin/extra.txt": "x" } }, ["my-plugin"]);
+        expect(fs.readFileSync(path.join(vaultPath, ".obsidian", "plugins", "my-plugin", "data.json"), "utf8")).toBe('{"a":1}');
         // A folder of a plugin that is not installed is just a folder.
         applySeed(vaultPath, { files: { ".obsidian/plugins/other/notes.txt": "x" } }, ["my-plugin"]);
         expect(fs.existsSync(path.join(vaultPath, ".obsidian", "plugins", "other", "notes.txt"))).toBe(true);

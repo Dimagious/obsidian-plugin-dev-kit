@@ -76,7 +76,7 @@ export function createFixtureFunctions(
             await use(undefined);
         },
         session: async ({ trace, video, seed }, use, testInfo) => {
-            const resolvedSeed = resolveSeed(seed);
+            const resolvedSeed = resolveSeed(seed, Object.keys(options.data));
             const session = await deps.start({
                 label: testInfo.title,
                 seed: resolvedSeed,
