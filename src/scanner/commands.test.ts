@@ -219,6 +219,42 @@ describe("opdk scan", () => {
     });
 });
 
+describe("the TypeScript the plugin installs", () => {
+    function scanWith(readTypescriptVersion: () => string | undefined): Promise<{ code: number; out: string; err: string }> {
+        const plugin = cleanPlugin();
+        trackAll(plugin.dir);
+        const ctx = createContext(plugin.dir);
+        return runScan({
+            cwd: plugin.dir,
+            manifest: { id: "fixture-plugin", name: "Fixture", version: "1.0.0", isDesktopOnly: false },
+            reporter: ctx.reporter,
+            readTypescriptVersion,
+        }).then((code) => ({ code, out: ctx.out.join(""), err: ctx.err.join("") }));
+    }
+
+    it("fails before linting on TypeScript 5 and says to install 6", async () => {
+        const { code, out, err } = await scanWith(() => "5.9.3");
+        expect(code).toBe(1);
+        expect(err).toContain("✗ scan");
+        expect(err).toContain("TypeScript 5.9.3");
+        expect(err).toContain("npm install -D typescript@6");
+        expect(out).not.toContain("lint");
+    });
+
+    it("fails when TypeScript is missing and names the install command", async () => {
+        const { code, err } = await scanWith(() => undefined);
+        expect(code).toBe(1);
+        expect(err).toContain("no TypeScript installed");
+        expect(err).toContain("npm install -D typescript@6");
+    });
+
+    it("prints the version in the lint line on TypeScript 6", async () => {
+        const { code, out } = await scanWith(() => "6.0.3");
+        expect(code).toBe(0);
+        expect(out).toContain("typescript 6.0.3");
+    });
+});
+
 describe("ESLint next to eslint-plugin-obsidianmd", () => {
     it("warns with both versions and the fix, without failing the scan, when the majors differ", async () => {
         const plugin = cleanPlugin();

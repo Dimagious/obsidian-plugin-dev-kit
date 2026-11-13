@@ -1,10 +1,8 @@
 import type { ESLint } from "eslint";
 
 /**
- * Kept apart from lint.ts on purpose: lint.ts installs the TypeScript 6 resolve hook as its first import (`opdk scan`
- * only), and `opdk release check` needs these constants without that hook. A module that imports lint.ts loads the
- * plugin's own `typescript` first and then switches compiler half way, so one lint would mix two (typescript-eslint's
- * project service requires `typescript/lib/tsserverlibrary` lazily). Keep this file free of side effects.
+ * Kept apart from lint.ts so `opdk release check` (the API check) can use `isOutsideProject` without importing the
+ * scanner's lint run. Keep this file free of side effects.
  */
 
 /**

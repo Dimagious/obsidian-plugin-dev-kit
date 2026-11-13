@@ -1,4 +1,3 @@
-import "./use-typescript-six.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { Reporter } from "../cli/reporter.js";
@@ -11,8 +10,7 @@ import { listTrackedFiles } from "./git-files.js";
 import { runScannerLint } from "./lint.js";
 import { checkManifestDescription } from "./meta-checks.js";
 import { MIRRORED_OBSIDIANMD_VERSION } from "./scanner-config.js";
-import { describeTypescriptGap, readTypescriptNextToTypescriptEslint, typescriptInUse } from "./typescript-six.js";
-import { scanTypescript } from "./use-typescript-six.js";
+import { describeTypescriptGap, readPluginTypescriptVersion } from "./typescript-gate.js";
 
 export interface ScanInput {
     readonly cwd: string;
@@ -20,6 +18,8 @@ export interface ScanInput {
     readonly reporter: Reporter;
     /** Reads the ESLint version that `eslint-plugin-obsidianmd` resolves. Tests inject it; the default reads the install. */
     readonly readNestedEslintVersion?: () => string;
+    /** Reads the version of the TypeScript the plugin installs, or `undefined` when there is none. Tests inject it; the default reads the install. */
+    readonly readTypescriptVersion?: () => string | undefined;
 }
 
 const plural = (count: number, noun: string): string => `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
@@ -50,12 +50,18 @@ export function reportCheck(check: ScanCheck, findings: readonly Finding[], scop
 }
 
 /** `opdk scan`: the scanner's ESLint pass, the CSS check and the source checks over the tracked files. Returns the exit code. */
-export async function runScan({ cwd, manifest, reporter, readNestedEslintVersion }: ScanInput): Promise<number> {
+export async function runScan({ cwd, manifest, reporter, readNestedEslintVersion, readTypescriptVersion = readPluginTypescriptVersion }: ScanInput): Promise<number> {
     const files = await listTrackedFiles(cwd);
     if (files.length === 0) {
         reporter.failure("scan", `${manifest.id}: no files to scan (git tracks none in this folder).`, {
             hint: "Run `git add` for the plugin's files, or run opdk from the plugin repository.",
         });
+        return 1;
+    }
+    const typescriptVersion = readTypescriptVersion();
+    const gap = describeTypescriptGap(typescriptVersion);
+    if (gap !== undefined) {
+        reporter.failure("scan", `${manifest.id}: ${gap.message}`, { hint: gap.hint });
         return 1;
     }
     reporter.info("scan", `${manifest.id}: ${plural(files.length, "tracked file")}`);
@@ -66,11 +72,6 @@ export async function runScan({ cwd, manifest, reporter, readNestedEslintVersion
     if (mismatch !== undefined) {
         reporter.warn("lint", mismatch);
     }
-    const typescriptVersion = typescriptInUse(scanTypescript, readTypescriptNextToTypescriptEslint);
-    const gap = describeTypescriptGap(scanTypescript, typescriptVersion);
-    if (gap !== undefined) {
-        reporter.warn("lint", gap);
-    }
     const lint = await runScannerLint(cwd, files);
 
     const findings: Finding[] = [
@@ -80,7 +81,7 @@ export async function runScan({ cwd, manifest, reporter, readNestedEslintVersion
         ...checkManifestDescription(manifest),
     ];
     const scope: Scope = {
-        lint: `${plural(lint.linted, "file")}, eslint-plugin-obsidianmd ${MIRRORED_OBSIDIANMD_VERSION}, typescript ${typescriptVersion}${lint.untyped > 0 ? `, ${String(lint.untyped)} outside every tsconfig, advisory` : ""}`,
+        lint: `${plural(lint.linted, "file")}, eslint-plugin-obsidianmd ${MIRRORED_OBSIDIANMD_VERSION}, typescript ${String(typescriptVersion)}${lint.untyped > 0 ? `, ${String(lint.untyped)} outside every tsconfig, advisory` : ""}`,
         css: plural(cssFiles.length, "file"),
         code: plural(codeFiles.length, "file"),
         meta: "manifest.json",

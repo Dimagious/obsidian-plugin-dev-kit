@@ -33,7 +33,7 @@ npm install -D "github:Dimagious/obsidian-plugin-dev-kit#v0.2.0"
 npx opdk --help
 ```
 
-Install size, measured on 2026-11-12: the package is 260 KB packed and 1.4 MB installed. In an empty project it brings about 100 MB with its required dependencies, mostly TypeScript, esbuild and the ESLint stack a plugin usually has already. Electron, Playwright, Vitest, `@vitest/coverage-v8` and jsdom are not dependencies of the kit at all: the plugin installs them for end-to-end tests, demo films and unit tests, and the kit checks their versions when it runs and fails with the install command. ESLint and TypeScript are the only peer dependencies. `opdk scan` type-checks with a TypeScript 6 of its own (`typescript-6`, 24 MB measured on 2026-11-13), so a plugin on another TypeScript holds two copies.
+Install size, measured on 2026-11-12: the package is 260 KB packed and 1.4 MB installed. In an empty project it brings about 100 MB with its required dependencies, mostly TypeScript, esbuild and the ESLint stack a plugin usually has already. Electron, Playwright, Vitest, `@vitest/coverage-v8` and jsdom are not dependencies of the kit at all: the plugin installs them for end-to-end tests, demo films and unit tests, and the kit checks their versions when it runs and fails with the install command. ESLint and TypeScript 6 are the only peer dependencies; `opdk scan` fails on an older TypeScript, because the community scanner type-checks with 6.
 
 ## Build
 

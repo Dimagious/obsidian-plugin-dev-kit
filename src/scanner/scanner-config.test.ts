@@ -53,12 +53,15 @@ describe("the mirrored scanner configuration", () => {
     });
 
     // typescript is a peer of the kit because typescript-eslint needs it; the kit must not promise a wider
-    // range than the typescript-eslint it pins.
-    it("declares the typescript peer range of the typescript-eslint it pins", () => {
+    // range than the typescript-eslint it pins. It requires 6 (the scanner type-checks with it), so the lower bound is
+    // the kit's own and the upper bound must be the one typescript-eslint declares.
+    it("declares the typescript peer range of the typescript-eslint it pins, from 6", () => {
         const kit = readPackageJson(new URL("../../package.json", import.meta.url));
         const tseslint = readPackageJson(new URL("../../node_modules/typescript-eslint/package.json", import.meta.url));
-        expect(peerRange(tseslint, "typescript")).toEqual(expect.any(String));
-        expect(peerRange(kit, "typescript")).toBe(peerRange(tseslint, "typescript"));
+        const upstream = peerRange(tseslint, "typescript");
+        expect(upstream).toEqual(expect.any(String));
+        expect(String(upstream).endsWith(" <6.1.0")).toBe(true);
+        expect(peerRange(kit, "typescript")).toBe(">=6.0.0 <6.1.0");
     });
 
     it("was diffed against the version that is installed", () => {

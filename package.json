@@ -49,8 +49,8 @@
     "plugins/opdk/skills"
   ],
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && node node_modules/typescript/bin/tsc -p tsconfig.build.json && node scripts/write-build-info.mjs",
-    "typecheck": "node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node scripts/write-build-info.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run --coverage",
     "smoke": "bash scripts/pack-smoke.sh",
@@ -66,12 +66,11 @@
     "esbuild": "0.28.2",
     "eslint-plugin-obsidianmd": "0.5.1",
     "postcss": "8.5.32",
-    "typescript-6": "npm:typescript@6.0.3",
     "typescript-eslint": "8.72.2"
   },
   "peerDependencies": {
     "eslint": "^9.19.0 || ^10.0.0",
-    "typescript": ">=4.8.4 <6.1.0"
+    "typescript": ">=6.0.0 <6.1.0"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -82,7 +81,6 @@
     "eslint": "10.14.0",
     "jsdom": "30.1.1",
     "obsidian": "1.14.4",
-    "plugin-typescript-5": "npm:typescript@5.9.3",
     "typescript": "6.0.3",
     "vitest": "5.1.0",
     "yaml": "2.9.1"

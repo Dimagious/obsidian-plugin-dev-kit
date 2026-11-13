@@ -44,7 +44,6 @@
  * (see the block marked "newest" below); its other additions, the obsidianmd rules at `error`, are already
  * `error` in the recommended config for TypeScript. The older layers report less, so a clean scan here is clean in them too.
  */
-import "./use-typescript-six.js";
 import type { Linter } from "eslint";
 import obsidianmd from "eslint-plugin-obsidianmd";
 import tseslint from "typescript-eslint";
