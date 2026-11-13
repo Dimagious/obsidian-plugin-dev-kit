@@ -7,7 +7,7 @@ import { registerTempDir } from "./temp-registry.js";
 
 /**
  * A throwaway plugin directory for tests that touch the file system. Remove it with `cleanup()`; one the test forgets
- * is removed after the test by the registry (`temp-registry.ts`).
+ * is removed after the test by the registry (`temp-registry.ts`). Per test only: do not create it in `beforeAll`.
  */
 export interface PluginFixture {
     readonly dir: string;

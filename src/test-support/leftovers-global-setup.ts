@@ -40,7 +40,8 @@ export function isProcessAlive(pid: number): boolean {
 
 /**
  * Removes the roots in `base` that a killed run left: those whose pid file names a process that is gone. Returns
- * the names it removed. Roots without a readable pid file are kept: nothing says their run is over.
+ * the names it removed. Roots without a readable pid file are kept: nothing says their run is over. `process.kill(pid, 0)`
+ * sees only this PID namespace, so containers that share one temp directory would see each other's runs as gone.
  */
 export function removeStaleRoots(base: string, isAlive: (pid: number) => boolean = isProcessAlive): string[] {
     const removed: string[] = [];
