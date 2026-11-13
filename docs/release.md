@@ -162,6 +162,7 @@ Every stop of the push flow, from the `gh` check on, prints where it stopped, wh
 | Stopped at | State | What to do |
 |---|---|---|
 | Preflight, `gh` check | Nothing was pushed or changed | Fix the printed problem and rerun |
+| The tests (`npm test`, before the bump) | Nothing was changed | Fix the tests and rerun `opdk release <bump>`. `--no-test` only when they are covered elsewhere |
 | The check, after the bump | Files restored, nothing committed | Fix and rerun `opdk release <bump>` |
 | Pushing the tag | The tag was not pushed (after Ctrl+C it may have arrived: check with `git ls-remote --tags origin X.Y.Z`) | `opdk release publish X.Y.Z` |
 | No workflow run within 3 minutes | The tag is on `origin` | Make the plugin's tag workflow call the kit's `release.yml`, enable Actions, then `opdk release publish X.Y.Z`. The tag is not pushed twice |
@@ -179,7 +180,7 @@ A stop whose own hint says to release a new version prints `opdk release patch` 
 
 ## `opdk release publish [X.Y.Z]`
 
-Starts the push flow (steps 5 to 10) from an existing local tag. Use it to resume, or after `--no-push`. Without a version it uses the version in `manifest.json`. It needs the local annotated tag, the tag's commit on the local default branch, and `gh` signed in with write access. It takes `--timeout <minutes>` and `--zip`.
+Starts the push flow (steps 6 to 10) from an existing local tag. Use it to resume, or after `--no-push`. Without a version it uses the version in `manifest.json`. It needs the local annotated tag, the tag's commit on the local default branch, and `gh` signed in with write access. It takes `--timeout <minutes>` and `--zip`.
 
 ## `opdk release notes [X.Y.Z]`
 

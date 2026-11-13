@@ -13,13 +13,15 @@ Without a tag it takes the latest vX.Y.Z tag of the kit's repository (git ls-rem
 network and no GitHub login). It:
   - resolves the tag to its commit;
   - rewrites the tag in package.json and runs \`npm install\` for that one package, so the lockfile follows (npm
-    builds the kit, which takes a minute); if npm fails, package.json and the lockfile are put back;
-  - rewrites every kit workflow line to the new commit and sets its "# vX.Y.Z" comment;
+    builds the kit, which takes a minute); if npm fails, package.json and the lockfile are put back (run \`npm ci\`
+    if node_modules looks off); without a lockfile npm does not run and node_modules keeps the old kit;
+  - rewrites every kit workflow line of the package.json owner to the new commit and sets its "# vX.Y.Z" comment;
   - runs the "kit" step of \`opdk release check\` on the result;
   - prints the kit's CHANGELOG sections between the old and the new version, read from the tag on GitHub (a
     failure to read them is only reported).
-It never commits or pushes: review the diff, commit on a branch and open a pull request. Dependabot ignores
-the kit on purpose; watch the kit's releases on GitHub to learn about a new one.
+It never commits or pushes: review the diff, commit on a branch and open a pull request. Configure Dependabot
+to ignore the kit (a bump of one pin alone makes the check fail; see docs/ci.md for the entries) and watch the
+kit's releases on GitHub to learn about a new one.
 
   --dry-run  prints the lines that would change and the changelog, writes nothing, runs no npm; works on a
              dirty tree and outside a git repository. Without it the tree must be clean.

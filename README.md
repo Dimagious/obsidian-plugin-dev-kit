@@ -118,14 +118,14 @@ If your default branch is not `main`, use its name in `branches`. Inputs (all op
 
 ## Updating the kit
 
-A plugin pins the kit in three places: the tag in `package.json`, the commit in the lockfile, and the commit in each `uses:` line of the kit's workflows. They have to name one release, and `opdk release check` (so CI) fails when they do not. `opdk kit upgrade` moves all three:
+A plugin pins the kit in three places: the tag in `package.json`, the commit in the lockfile, and the commit in each `uses:` line of the kit's workflows. They have to name one release, and `opdk release check` (so CI) fails when they do not. `opdk kit upgrade` moves them together:
 
 ```bash
 npx opdk kit upgrade --dry-run   # what would change, and the kit's CHANGELOG since your version
 npx opdk kit upgrade             # latest release; or: npx opdk kit upgrade v0.2.0
 ```
 
-It needs a clean git tree, never commits or pushes, and puts `package.json` and the lockfile back if `npm install` fails. Review the diff and open a pull request. Dependabot ignores the kit on purpose, so watch the kit's releases on GitHub. Details: [docs/ci.md](docs/ci.md#updating-the-kit).
+It needs a clean git tree, never commits or pushes, and puts `package.json` and the lockfile back if `npm install` fails (run `npm ci` if `node_modules` looks off). Review the diff and open a pull request. Configure Dependabot to ignore the kit (a lone bump of one pin breaks the check; the `ignore` entries are in the docs) and watch the kit's releases on GitHub. Details: [docs/ci.md](docs/ci.md#updating-the-kit).
 
 ## Unit tests
 
