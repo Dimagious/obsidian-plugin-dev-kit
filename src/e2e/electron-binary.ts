@@ -36,7 +36,7 @@ export function assertElectronInstalled(cwd: string, probe: ElectronProbe): void
     if (!probe.exists(path.join(path.dirname(packageJson), "path.txt"))) {
         throw new Error(
             `Electron is installed in ${path.dirname(packageJson)} but its binary is not downloaded yet. Electron downloads it on first use (about 100 MB), ` +
-                `which would not fit in the launch timeout. Run "npx electron --version" once in ${cwd} and run the tests again. ` +
+                `which would not fit in the launch timeout. Run "node ${path.join(path.dirname(packageJson), "install.js")}" once and run the tests again. ` +
                 `In CI, cache the Electron download (the ELECTRON_CACHE folder) and run that command in a step before the tests.`,
         );
     }

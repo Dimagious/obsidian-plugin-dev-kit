@@ -16,7 +16,7 @@ function sibling(relative: string): string {
 }
 
 /**
- * The unit-test setup Snipsy, Dashy and Garmy share, as a Vitest config to export from the plugin's own
+ * The unit-test setup three plugins share, as a Vitest config to export from the plugin's own
  * `vitest.config.ts`:
  *
  * ```ts

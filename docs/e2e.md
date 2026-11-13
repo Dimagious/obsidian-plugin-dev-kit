@@ -28,6 +28,20 @@ The kit fixes each of these once: the trust flag is set before the vault loads, 
 | `vault` | `VaultHandle` | The per-test copy of the seed vault: `path`, `resolve(rel)`, `exists(rel)`, `read(rel)`, `write(rel, content)`. A path that leaves the vault throws |
 | `obsidian` | `ObsidianHelpers` | The [helpers](#helpers), bound to this window |
 
+`vault.write` is plain file system access. Obsidian's index (`app.vault.getFileByPath`, the metadata cache, the file explorer) learns of the new file only when its file watcher fires, a moment later. A spec that writes a file and then acts through the index, for example by opening it from the palette or clicking a link to it, races the watcher. Poll for the file first:
+
+```ts
+import type { App } from "obsidian";
+
+vault.write("notes/new.md", "# New\n");
+// obsidian.evaluate runs in the page and passes Obsidian's `app`; the `app` fixture is the Electron app.
+await expect
+    .poll(() => obsidian.evaluate((app: App, p: string) => app.vault.getFileByPath(p) !== null, "notes/new.md"))
+    .toBe(true);
+```
+
+`obsidian.waitForMetadataCache()` is not a substitute for that poll: it only loops over the files already in `getMarkdownFiles()`, so it returns at once for a file the index has not seen yet. Poll for the file first, then call `waitForMetadataCache()` when the spec reads links, tags or frontmatter of it (or poll `app.metadataCache.getCache(p) !== null` the same way).
+
 Obsidian's own `app` object (`app.workspace`, `app.plugins`) lives in the page, so you reach it with `win.evaluate`. The kit's helpers do that for the common cases.
 
 ## Quick start
@@ -48,7 +62,7 @@ Install the kit and the two things it runs on. The kit does not declare them as 
 }
 ```
 
-Replace `vX.Y.Z` with the latest tag and pin it exactly. The kit accepts `@playwright/test` `^1.62.0` and `electron` `>=39.0.0` and is developed against 1.65.0 and 44.10.2. Electron 42 and newer do not download their binary at install time but on first use (about 100 MB); 39 to 41 download it on install. Run `npx electron --version` once after installing, and in CI cache the Electron download (the `ELECTRON_CACHE` folder) and run that command in a step before the tests. Without it the run fails once, before any test starts, saying exactly this, instead of every test timing out in the launch.
+Replace `vX.Y.Z` with the latest tag and pin it exactly. The kit accepts `@playwright/test` `^1.62.0` and `electron` `>=39.0.0` and is developed against 1.65.0 and 44.10.2. Electron 42 and newer do not download their binary at install time but on first use (about 100 MB); 39 to 41 download it on install. Run `node node_modules/electron/install.js` once after installing (the script downloads the binary; `npx electron --version` would download it too, but it starts Electron), and in a fresh checkout and in CI cache the Electron download (the `ELECTRON_CACHE` folder) and run that command in a step before the tests. Without it the run fails once, before any test starts, saying exactly this, instead of every test timing out in the launch.
 
 The tests drive the Obsidian that is installed on the machine. On macOS the kit finds `/Applications/Obsidian.app`; elsewhere, set `OBSIDIAN_PATH` or the `obsidianPath` option.
 
@@ -322,7 +336,7 @@ await obsidian.editor().compose("hello world", { chunking: "word" });
 
 `scrollThrough` stays at the bottom and does not scroll back: the reading view drops the sections that leave the viewport, and scrolling back would drop the blocks it just drew. Without a selector it takes the active reading view; a selector that matches nothing fails.
 
-`settle()` is the wait to use where a spec would sleep before a screenshot. It watches the DOM with a `MutationObserver` on the `<body>` (or on `root`, a CSS selector) and resolves when nothing was added, removed or changed there for `quietMs` and no web font is loading and every `<img>` in the viewport has finished loading (a broken image counts as finished). The default of 150 ms is above the 100 ms debounce that views and plugins commonly use for a refresh, and still costs a fraction of a second on a page that is already still. CSS animations and transitions are not DOM changes, so an endless spinner or a blinking caret does not hold it up. It waits `timeouts.helpers.ui` at most; on timeout it throws an error that names `settle()`, the budget, what was still changing (the DOM, a font or a number of images) and how to raise it. It sees changes that are happening, not ones that are only scheduled: a gap between two changes longer than `quietMs` (a request that takes 400 ms between the click and the render) looks like a still page, so raise `quietMs` for such a view, or assert on the element it renders. Content that a script keeps rewriting (a clock, a live counter) inside the watched part never settles: pass a `root` that leaves it out. A `quietMs` that is not below the budget is refused up front. The demo helpers call it for you when a shot or a still passes `settle: true` ([docs/demo.md](demo.md)).
+`settle()` is the wait to use where a spec would sleep before a screenshot. It watches the DOM with a `MutationObserver` on the `<body>` (or on `root`, a CSS selector) and resolves when nothing was added, removed or changed there for `quietMs` and no web font is loading and every `<img>` in the viewport has finished loading (a broken image counts as finished). The default of 150 ms is above the 100 ms debounce that views and plugins commonly use for a refresh, and still costs a fraction of a second on a page that is already still. CSS animations and transitions are not DOM changes, so an endless spinner or a blinking caret does not hold it up. It waits `timeouts.helpers.ui` at most; on timeout it throws an error that names `settle()`, the budget, what was still changing (the DOM, a font or a number of images) and how to raise it. It sees changes that are happening, not ones that are only scheduled: a gap between two changes longer than `quietMs` (a request that takes 400 ms between the click and the render) looks like a still page, so raise `quietMs` for such a view, or assert on the element it renders. Content that a script keeps rewriting (a clock, a live counter) inside the watched part never settles: pass a `root` that leaves it out. Drawing on a `<canvas>` (a chart) is not a DOM change either: `settle()` can return while the chart is still animating or has not been drawn, so a screenshot of a canvas needs its own wait, for example polling a pixel (`getImageData`) until it is not blank, or the ready flag or `animation.onComplete` callback of the chart library. A `quietMs` that is not below the budget is refused up front. The demo helpers call it for you when a shot or a still passes `settle: true` ([docs/demo.md](demo.md)).
 
 ### Mobile
 
@@ -429,7 +443,7 @@ This replaces `--grep-invert` in a script: the default run needs no flag to leav
 
 ## Migrating from a plugin's own harness
 
-1. Install `@playwright/test` and `electron` as devDependencies, and the kit.
+1. Install `@playwright/test` and `electron` as devDependencies, and the kit. On a fresh checkout run `node node_modules/electron/install.js` once, so the binary is downloaded before the first test.
 2. Replace the plugin's `e2e/fixtures.ts` with `createObsidianTest({ seedVault, plugins, data, window })`. Delete the code it replaces: the vault copy, `obsidian.json`, plugin installation (a setup shell script too), `data.json` seeding, the Electron launch, the dialog handlers, the version reader, the folder removal.
 3. Replace `playwright.config.ts` with `defineObsidianConfig()` and keep only what is yours (`globalSetup`, a different `testDir`).
 4. Move the shared helpers to the `obsidian` fixture (see the table below) and keep only the plugin's own (page objects for its own views, for example).

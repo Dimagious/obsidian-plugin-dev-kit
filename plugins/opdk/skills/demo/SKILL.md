@@ -5,7 +5,7 @@ description: Make a demo film, GIF, MP4, poster or README and listing screenshot
 
 # opdk demo module
 
-A film is a list of stills: each `film.shot()` freezes the Obsidian window and takes a picture at 2x, with a hold in seconds and an optional caption. `opdk demo` encodes the film to `<name>.mp4`, `<name>.gif` and `<name>-poster.png`. No audio, no intro or outro cards. Run commands from the plugin root. Full docs: https://github.com/Dimagious/obsidian-plugin-dev-kit/blob/main/docs/demo.md
+A film is a list of stills: each `film.shot()` freezes the Obsidian window and takes a picture at 2x, with a hold in seconds and an optional caption. `opdk demo` encodes the film to `<name>.mp4`, `<name>.gif` and `<name>-poster.png`. No audio, no intro or outro cards. Run commands from the plugin root. Full docs: `node_modules/obsidian-plugin-dev-kit/docs/demo.md`
 
 Safety: specs run in a temp copy of the seed vault. When you run anything that writes into a vault (`opdk build --vault`), use `env -u VAULT_PLUGIN`. Never film a vault that is not the plugin's own seed vault.
 
@@ -91,6 +91,8 @@ npx opdk demo [names...]                   # encodes every complete film, copies
 - `settle(): the page was not quiet for N ms within M ms (...)`: something keeps changing the DOM, a font or an image in view is slow. Pass `settle` only where the page can be still, call `obsidian.settle({ root })` with a `root` that leaves out a part that never stops changing, or raise `timeouts.helpers.ui`.
 - `layout "phone-captions" ... has none` / `is for phone films`: pass `captions` to `demo.film()`, and use `kind: "phone"`.
 - `... must be a CSS value without "..."`: a `phone` colour or font holds `; { } < > \ /* url(` or quotes; use a plain value.
+
+Hint, not an error message: `settle` does not see canvas drawing (charts): before a still of a canvas, poll a pixel or the chart library's ready flag yourself.
 
 ## Migrating a plugin's own scripts
 

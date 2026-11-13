@@ -20,7 +20,7 @@
  * - The ignore list is upstream's `globalIgnores` (48 entries) with one change: `eslint` is removed from the
  *   `**\/{astro,babel,...}.config.*` group, so the plugin's `eslint.config.js` and `.ts` are linted (`.mjs`, `.cjs`,
  *   `.mts` and `.cts` stay ignored by their extension globs), with type information
- *   (`allowDefaultProject`, above). 0.5.1's text ignores it, but the live scanner lints it: Snipsy 1.7.1's public
+ *   (`allowDefaultProject`, above). 0.5.1's text ignores it, but the live scanner lints it: one plugin's public
  *   scorecard reports four `no-unsafe-*` warnings in its `eslint.config.js`. The kit follows the live scanner
  *   (owner decision, 2026-11-11). Re-check this on every bump of the package. Its first three, `main.js`,
  *   `**\/*.min.js` and `**\/{dist,build,out,release}/**`, are upstream's stand-ins for bundled and minified
@@ -158,7 +158,7 @@ export function createScannerConfig({ cwd, typeAware, allowDefaultProject = true
                 "import/no-unresolved": "off",
 
                 // Newest layer: turns these back on at `warn` (upstream's docs, "Rule severity
-                // adjustments"), and the public scorecard of Snipsy 1.7.1 lists them. In 0.5.1's recommended config
+                // adjustments"), and the public scorecard of a real plugin lists them. In 0.5.1's recommended config
                 // the five `no-unsafe-*` rules are `error` for TypeScript files only (off under package.json,
                 // manifest.json and LICENSE, absent for JavaScript), so they are set here at `warn`: TypeScript and
                 // JavaScript (`eslint.config.js` included) both get them as warnings, as the newest layer does. The

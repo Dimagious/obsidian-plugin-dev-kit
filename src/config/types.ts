@@ -29,7 +29,7 @@ export interface BuildCssConfig {
     readonly outfile?: string;
 }
 
-/** `build` section. Every key is optional; defaults are the Dashy release build. */
+/** `build` section. Every key is optional; defaults are one plugin's release build. */
 export interface BuildConfig {
     /** Default `src/main.ts`. */
     readonly entry?: string;
