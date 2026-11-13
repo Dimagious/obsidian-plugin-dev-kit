@@ -273,7 +273,7 @@ export function removeNotices(): number {
 /**
  * Hides the properties block of notes and saves the setting to app.json at once. `setConfig` alone changes it in
  * memory only: Obsidian reads app.json again after the next settings save (`cleanUi` does one) and the block came
- * back (found in the Garmy pictures run). Returns false when this Obsidian cannot be configured, so the helper can
+ * back. Returns false when this Obsidian cannot be configured, so the helper can
  * fail with a message.
  */
 export async function hideNoteProperties(): Promise<boolean> {
