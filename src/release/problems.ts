@@ -1,5 +1,5 @@
 /** The parts of a release check, in the order they run and print. */
-export const CHECK_GROUPS = ["versions", "versions.json", "manifest", "changelog", "build", "assets", "reproducible", "api"] as const;
+export const CHECK_GROUPS = ["versions", "versions.json", "manifest", "changelog", "kit", "build", "assets", "reproducible", "api"] as const;
 
 export type CheckGroup = (typeof CHECK_GROUPS)[number];
 
