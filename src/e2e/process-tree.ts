@@ -40,7 +40,7 @@ function errorCode(error: unknown): string | undefined {
     return error instanceof Error && "code" in error && typeof error.code === "string" ? error.code : undefined;
 }
 
-/** True while any process of the group is alive. EPERM means it exists but is not ours to signal: still alive. */
+/** True while any process of the group is alive. EPERM counts as alive: the group is not ours to signal, or (on macOS) its processes have exited but are not reaped yet, which the next poll sees (see `signalTree`). */
 export function isTreeAlive(pid: number, io: ProcessIo): boolean {
     try {
         io.kill(targetFor(pid, io.platform), 0);

@@ -198,6 +198,20 @@ describe("terminateTree", () => {
         expect(error.cause).toBeInstanceOf(Error);
     });
 
+    it("keeps the SIGKILL denial as the cause when only SIGKILL is refused", async () => {
+        const { io } = fakeIo("immortal", "darwin", { SIGKILL: "EPERM", probe: "EPERM" });
+        const error = await terminateTree(100, io, { polls: 2, pollMs: 1 }).then(
+            () => undefined,
+            (caught: unknown) => caught,
+        );
+        if (!(error instanceof Error)) {
+            throw new Error("expected terminateTree to reject with an Error");
+        }
+        expect(error.message).toMatch(/EPERM/);
+        expect(error.cause).toBeInstanceOf(Error);
+        expect(error.cause instanceof Error ? error.cause.message : "").toBe("kill EPERM");
+    });
+
     it("surfaces a signal error other than ESRCH and EPERM", async () => {
         const { io } = fakeIo("dies-on-term", "darwin", { SIGTERM: "EINVAL" });
         await expect(terminateTree(100, io)).rejects.toThrow("EINVAL");
