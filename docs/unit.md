@@ -165,11 +165,14 @@ A leak is state one file leaves behind and a later file in the same worker reads
 Prove the suite before relying on it, on one worker, in shuffled order, for several seeds, because with many workers each worker gets few files and the leaks stay hidden:
 
 ```bash
-set -e # as a script: the first failing run stops it with a non-zero exit code
-for seed in 1 2 3 4 5; do npx vitest run --maxWorkers=1 --sequence.shuffle --sequence.seed=$seed --coverage.enabled=false; done
-npx vitest run --maxWorkers=1 --coverage.enabled=false
-npx vitest run --maxWorkers=2 --coverage.enabled=false
-npx vitest run --maxWorkers=3 --coverage.enabled=false
+# The subshell stops at the first failing run and leaves your terminal open.
+(
+  set -e
+  for seed in 1 2 3 4 5; do npx vitest run --maxWorkers=1 --sequence.shuffle --sequence.seed=$seed --coverage.enabled=false; done
+  npx vitest run --maxWorkers=1 --coverage.enabled=false
+  npx vitest run --maxWorkers=2 --coverage.enabled=false
+  npx vitest run --maxWorkers=3 --coverage.enabled=false
+)
 ```
 
 Every run has to pass: the shuffled ones, the default order on one worker, and the default order on two and three workers. A failure names a file that leaks into the next one: fix it with `afterEach` cleanup (`vi.restoreAllMocks()`, `document.body.replaceChildren()`, restoring the global) and run the loop again. If the suite does not gain, or the fixes cost more than the saved time, leave `isolate` on.
