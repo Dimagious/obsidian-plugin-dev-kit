@@ -72,6 +72,16 @@ describe("release check, kit step", () => {
         expect(result.err).toContain("Run `opdk kit upgrade v0.2.0`");
     });
 
+    it("names no tag in the fix when package.json asks for a branch, a commit or a tag without the v", async () => {
+        for (const tag of ["main", "0.2.0", NEW_SHA]) {
+            const result = await check(pluginWith({ tag, workflows: { "ci.yml": [OLD_SHA, "v0.1.0"] } }));
+            expect(result.code, tag).toBe(1);
+            expect(result.err, tag).toContain("Run `opdk kit upgrade` to rewrite");
+            expect(result.err, tag).toContain("`opdk kit upgrade vX.Y.Z` names one");
+            expect(result.err, tag).not.toMatch(/opdk kit upgrade (main|0\.2\.0|[0-9a-f]{40})/);
+        }
+    });
+
     it("fails when one workflow names another commit", async () => {
         const result = await check(pluginWith({ workflows: { "ci.yml": [OLD_SHA, "v0.1.0"], "release.yml": [NEW_SHA, "v0.1.0"] } }));
         expect(result.code).toBe(1);
@@ -96,5 +106,8 @@ describe("release check, kit step", () => {
         const result = await check(created);
         expect(result.out).toContain("· check   build: skipped (--no-build)");
         expect(result.code).toBe(1);
+        expect(result.err).toContain("✗ check   kit: the kit is not pinned to one release.");
+        expect(result.err).toContain("the places below name 2 different commits of the kit.");
+        expect(result.out).not.toContain("✗");
     });
 });

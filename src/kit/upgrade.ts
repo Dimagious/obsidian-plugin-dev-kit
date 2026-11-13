@@ -11,6 +11,7 @@ import { compareVersions } from "../release/semver.js";
 import { loadWorkflows } from "./files.js";
 import { isFullSha, readLockPin, readPackageJsonPins, rewritePackageJson, rewriteWorkflow, shortSha, stripV, type TextChange } from "./pins.js";
 import { kitChangelogUrl, kitRepositoryUrl, latestTag, parseKitTags, sortedTags } from "./remote.js";
+import { stripTerminalControls } from "./terminal-text.js";
 
 /** What the upgrade does to the world. Injected, so a test never touches the network or runs npm. */
 export interface UpgradeDeps {
@@ -33,6 +34,8 @@ export interface UpgradeInput {
 }
 
 const STEP = "kit";
+/** `a`, `a and b`, `a, b and c`. */
+const joinList = (items: readonly string[]): string => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items.at(-1) ?? ""}`);
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 interface FileChange {
@@ -107,9 +110,11 @@ export async function runKitUpgrade(input: UpgradeInput): Promise<number> {
     const lockText = lock.kind === "ok" ? lock.text : undefined;
     const lockPin = lock.kind === "ok" ? readLockPin(lock.value) : undefined;
     const packageChange: FileChange = { file: "package.json", ...rewritePackageJson(pkg.text, tag) };
-    const workflowChanges: FileChange[] = loadWorkflows(cwd).map(({ file, text }) => ({ file, ...rewriteWorkflow(text, sha, tag) })).filter((file) => file.changes.length > 0);
+    const workflowChanges: FileChange[] = loadWorkflows(cwd).map(({ file, text }) => ({ file, ...rewriteWorkflow(text, sha, tag, owner) })).filter((file) => file.changes.length > 0);
     const changed = [packageChange, ...workflowChanges].filter((file) => file.changes.length > 0);
     const lockStale = lockText !== undefined && lockPin?.commit !== sha;
+    // npm also rewrites the lockfile's root entry, which holds the spec from package.json, so a changed spec needs it too.
+    const runNpm = lockText !== undefined && (lockStale || packageChange.changes.length > 0);
 
     reporter.info(STEP, `kit ${isFullSha(current) ? shortSha(current) : current} -> ${tag} (${shortSha(sha)})${dryRun ? " (dry run)" : ""}`);
     if (changed.length === 0 && !lockStale) {
@@ -122,8 +127,10 @@ export async function runKitUpgrade(input: UpgradeInput): Promise<number> {
     if (lockStale) {
         const was = lockPin?.commit === undefined ? "no commit" : shortSha(lockPin.commit);
         reporter.info(STEP, `package-lock.json: ${was} -> ${shortSha(sha)}, rewritten by \`npm install\``);
+    } else if (runNpm) {
+        reporter.info(STEP, "package-lock.json already holds that commit; `npm install` still runs so its record of the package.json spec follows");
     } else if (lockText === undefined) {
-        reporter.warn(STEP, "there is no package-lock.json; run `npm install` yourself to create one.");
+        reporter.warn(STEP, "there is no package-lock.json, so npm will not run and node_modules keeps the old kit; run `npm install` to create the lockfile and install the new kit.");
     }
     await showKitChanges(input, owner, tag, lockPin?.version ?? (isFullSha(current) ? undefined : stripV(current)));
 
@@ -134,20 +141,25 @@ export async function runKitUpgrade(input: UpgradeInput): Promise<number> {
 
     // Everything that can fail halfway is written first and restored on failure: package.json, then npm's lockfile.
     writeFileSync(packagePath, packageChange.text);
-    if (lockStale) {
+    if (runNpm) {
         reporter.info(STEP, `npm install obsidian-plugin-dev-kit@${tag} (builds the kit, can take a minute)`);
         try {
             await deps.npm(["install", "--no-audit", "--no-fund", `obsidian-plugin-dev-kit@github:${owner}/obsidian-plugin-dev-kit#${tag}`]);
         } catch (error) {
             writeFileSync(packagePath, pkg.text);
             writeFileSync(lockPath, lockText);
-            return fail(reporter, `npm install failed, so nothing was changed: ${message(error)}`, `Fix npm, or run \`npm install --save-dev github:${owner}/obsidian-plugin-dev-kit#${tag}\` yourself and then \`opdk kit upgrade ${tag}\` for the workflow pins.`);
+            return fail(reporter, `npm install failed; package.json and package-lock.json were put back, no workflow file was touched: ${message(error)}`, `npm may have left node_modules half installed: run \`npm ci\` if it looks off. Then fix npm, or run \`npm install --save-dev github:${owner}/obsidian-plugin-dev-kit#${tag}\` yourself and then \`opdk kit upgrade ${tag}\` for the workflow pins.`);
         }
     }
     for (const file of workflowChanges) {
         writeFileSync(path.join(cwd, file.file), file.text);
     }
-    reporter.success(STEP, `package.json, package-lock.json and ${String(workflowChanges.length)} workflow file(s) now point at ${tag} (${shortSha(sha)})`);
+    const updated = [
+        ...(packageChange.changes.length > 0 ? ["package.json"] : []),
+        ...(runNpm ? ["package-lock.json"] : []),
+        ...(workflowChanges.length > 0 ? [`${String(workflowChanges.length)} workflow ${workflowChanges.length === 1 ? "file" : "files"}`] : []),
+    ];
+    reporter.success(STEP, `${joinList(updated)} updated to ${tag} (${shortSha(sha)})`);
 
     const errors = reportResults([checkKit(loadProjectFiles(cwd), loadWorkflows(cwd))], ALL_CHECKS, reporter);
     if (errors > 0) {
@@ -176,7 +188,8 @@ async function showKitChanges(input: UpgradeInput, owner: string, tag: string, f
             return;
         }
         reporter.info(STEP, `kit changes${from === undefined ? "" : ` since ${from}`}, newest first:`);
-        input.stdout(`\n${sections.join("\n\n")}\n\n`);
+        // The text came over the network: no escape sequence or control character may reach the terminal.
+        input.stdout(`\n${stripTerminalControls(sections.join("\n\n"))}\n\n`);
     } catch (error) {
         reporter.info(STEP, `could not read the kit CHANGELOG (${message(error)}); see ${url}`);
     }

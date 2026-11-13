@@ -28,12 +28,15 @@ export function checkKit(files: ProjectFiles, workflows: readonly WorkflowFile[]
     if (verdict.reasons.length === 0) {
         return { group: "kit", passed: agreement(verdict, pins.packageJson.length > 0, pins.lock !== undefined), problems: [] };
     }
-    const upgrade = verdict.tag === undefined ? "`opdk kit upgrade`" : `\`opdk kit upgrade ${verdict.tag}\``;
+    // `opdk kit upgrade` only takes vX.Y.Z; a branch or other ref in package.json cannot be named there.
+    const named = verdict.tag !== undefined && /^v\d+\.\d+\.\d+$/.test(verdict.tag) ? verdict.tag : undefined;
+    const upgrade = named === undefined ? "`opdk kit upgrade`" : `\`opdk kit upgrade ${named}\``;
+    const latest = named !== undefined ? " (`opdk kit upgrade` alone takes the latest release)" : " (it takes the latest release; `opdk kit upgrade vX.Y.Z` names one)";
     return {
         group: "kit",
         passed: "",
         problems: [
-            errorProblem("kit", "the kit is not pinned to one release.", `Run ${upgrade} to rewrite the lockfile and the workflow pins to one commit (\`opdk kit upgrade\` alone takes the latest release), then commit the result.`, [...verdict.reasons, ...verdict.places]),
+            errorProblem("kit", "the kit is not pinned to one release.", `Run ${upgrade} to rewrite the lockfile and the workflow pins to one commit${latest}, then commit the result.`, [...verdict.reasons, ...verdict.places]),
         ],
     };
 }
