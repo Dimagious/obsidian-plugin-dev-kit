@@ -185,6 +185,10 @@ describe("opdk kit upgrade", () => {
         expect(read(created, ".github/workflows/other.yml")).toBe(other);
         expect(read(created, ".github/workflows/shared.yml")).toBe(shared);
         expect(result.out).toContain("package.json, package-lock.json and 1 workflow file updated to v0.2.0");
+        // The other owner's line is left alone, so the check after the writes fails and says why.
+        expect(result.code).toBe(1);
+        expect(result.err).toContain("other.yml:");
+        expect(result.err).toContain("calls someone-else's kit workflow, but package.json installs fork-owner's kit");
     });
 
     it("runs npm when package.json asks for another tag even though the lockfile already holds the commit", async () => {

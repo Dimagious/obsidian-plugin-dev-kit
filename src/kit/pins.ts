@@ -174,6 +174,16 @@ export function judgePins(pins: KitPins): PinVerdict {
     if (commits.size > 1) {
         reasons.push(`the places below name ${String(commits.size)} different commits of the kit.`);
     }
+    const installedOwner = pins.packageJson[0]?.parsed.owner;
+    if (installedOwner !== undefined) {
+        for (const use of pins.uses) {
+            if (use.owner.toLowerCase() !== installedOwner.toLowerCase()) {
+                reasons.push(
+                    `${use.file}:${String(use.line)} calls ${use.owner}'s kit workflow, but package.json installs ${installedOwner}'s kit; \`opdk kit upgrade\` does not rewrite that line, edit it by hand.`,
+                );
+            }
+        }
+    }
     const tag = tags[0];
     const wanted = tag !== undefined ? stripV(tag) : pins.lock?.version;
     if (tag !== undefined && pins.lock?.version !== undefined && stripV(tag) !== pins.lock.version) {

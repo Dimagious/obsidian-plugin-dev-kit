@@ -88,6 +88,7 @@ A plugin pins the kit in three places that have to name one release: the tag in 
 - **Learn about a release.** Watch the kit's repository on GitHub (Watch, Custom, Releases). Configure Dependabot to ignore the kit. It would bump the `uses:` pins and the dependency in separate pull requests, and a bump of one pin alone makes `opdk release check` fail (and would let the release workflow run a kit version that does not match the `opdk` in `node_modules`). Add one `ignore` entry to each ecosystem in `.github/dependabot.yml`; use your kit's owner in place of `<owner>` (`Dimagious` for the upstream kit):
 
   ```yaml
+  version: 2
   updates:
     - package-ecosystem: npm
       directory: /

@@ -157,7 +157,7 @@ The version, `versions.json`, manifest, kit and changelog checks always run.
 
 ### Every stop, and what to do
 
-Every stop of the push flow, from the `gh` check on, prints where it stopped, what is on `origin`, and the command to resume. Ctrl+C does the same and exits 130. The steps check what is already done, so resuming is safe from any of them.
+Every stop from the `gh` check on prints where it stopped; the stops of the push flow also print what is on `origin` and the command to resume, and the local ones (tests, check) say what to fix and rerun. Ctrl+C does the same and exits 130. The steps check what is already done, so resuming is safe from any of them.
 
 | Stopped at | State | What to do |
 |---|---|---|

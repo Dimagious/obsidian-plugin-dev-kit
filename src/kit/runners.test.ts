@@ -67,6 +67,8 @@ describe("fetchText", () => {
         expect(cut.split("\n")[0]).toBe("a".repeat(100));
         expect(cut).toContain("is longer than 100 bytes; the rest was not read");
         expect(await fetchText(url, 1000)).toBe(`${"a".repeat(100)}${"b".repeat(900)}`);
+        const oneOver = await fetchText(url, 999);
+        expect(oneOver).toContain("is longer than 999 bytes; the rest was not read");
     });
 
     it("returns an empty body as empty text", async () => {
