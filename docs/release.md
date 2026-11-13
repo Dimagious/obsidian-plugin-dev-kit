@@ -83,6 +83,7 @@ For CI and for the minute before a release. Exit 1 with one `✗` line and a hin
 | `versions.json` | The file exists and is an object; the current version maps to the manifest's `minAppVersion`; `minAppVersion` never goes down as versions go up (errors), and the file is formatted the way `JSON.stringify` writes it, so a one-line `{"1.7.1": "1.5.0"}` fails with a `node -e` command that rewrites it (Prettier would leave it on one line). A key or value that is not a version is a warning, as in the official action |
 | `manifest` | The rules of the official [`obsidianmd/obsidian-workflows`](https://github.com/obsidianmd/obsidian-workflows) action (v1.2.3): required fields, `id`, `name` and `description` rules, an `author` without an email or a URL, HTTPS URLs, `isDesktopOnly` a boolean, version not `0.0.0`, `minAppVersion` a version |
 | `changelog` | `CHANGELOG.md` has a `## [X.Y.Z]` section with at least one entry |
+| `kit` | When the plugin depends on the kit, its three pins name one release: the tag in `package.json`, the commit the lockfile resolved it to, and the commit in every `uses: <owner>/obsidian-plugin-dev-kit/.github/workflows/<file>@<sha> # vX.Y.Z` line of `.github/workflows/*.yml`. It works offline: the lockfile's `version` stands for the tag, and a `# vX.Y.Z` comment must match it. A workflow pinned to a tag or a branch instead of a full commit SHA fails. A plugin that does not use the kit, or does not call its workflows, passes. The failure lists every place with the commit it names and the fix, `opdk kit upgrade` (see [Updating the kit](ci.md#updating-the-kit)) |
 | `build` | A production build into temp folders (your `main.js` and `styles.css` are not touched) passes the Node-only bundle check. Warns when `scripts.build` (else `build:plugin`, else `compile`) does not run `opdk build` |
 | `assets` | `main.js` is produced, `styles.css` when the plugin has CSS, and the manifest asset is the root `manifest.json` |
 | `reproducible` | The working tree is built, then the committed tree, and `main.js` and `styles.css` must match byte for byte |
@@ -112,7 +113,7 @@ Its limits:
 - pnpm and Yarn PnP installs fall back to two builds of the working tree, with a warning that names the layout, because their packages cannot be linked into a copy.
 - `git archive` applies `export-ignore` from `.gitattributes`, and Git LFS files are pointer text in it. A build input that is ignored on export, or tracked by LFS, makes the comparison differ.
 
-When `opdk release` publishes, the assets are compared again, this time with GitHub's build of the tag (see step 7 below).
+When `opdk release` publishes, the assets are compared again, this time with GitHub's build of the tag (see step 8 below).
 
 ### The build script warning
 
@@ -132,26 +133,27 @@ The rule reads `@since` tags from `obsidian.d.ts` through the TypeScript program
 | `--no-reproducible` | the second build: it builds once |
 | `--no-api` | the API check |
 
-The version, `versions.json`, manifest and changelog checks always run.
+The version, `versions.json`, manifest, kit and changelog checks always run.
 
 ## `opdk release <bump>`
 
 `<bump>` is `patch`, `minor`, `major` or an exact `X.Y.Z`. A `v` prefix and pre-release versions are refused with a message that says what to type.
 
-1. **Preflight.** The folder is a git repository with a clean tree, on the default branch, not behind `origin` (it runs `git fetch --no-tags origin`, never a push), the tag does not exist locally or on `origin`, the three versions agree before the bump, the new version is higher than the current one, and `## [Unreleased]` has entries. Every problem prints with a hint. Then `gh` access is checked (skipped with `--no-push` and `--dry-run`).
-2. **Bump.** The version is set in `package.json`, `package-lock.json` and `manifest.json`. It is added to `versions.json` mapped to `minAppVersion`: an existing entry is never rewritten, and a missing file is created. The `[Unreleased]` entries move under `## [X.Y.Z] - YYYY-MM-DD`, leaving an empty `[Unreleased]`, and the compare links at the bottom are updated when the file has them.
-3. **Check.** `opdk release check` runs on the result, with the bumped files laid over the committed tree so that tree matches the commit to come. When it fails, or on Ctrl+C (exit 130), the files are restored, the temp folders are removed and nothing is committed.
-4. **Commit and tag.** `chore(release): X.Y.Z`, then the annotated tag object `X.Y.Z`. With `--no-push` the command stops here. With `--dry-run` it stops before the commit, prints the diff and restores the files: no commit or tag is created, nothing is pushed and `gh` is never called, but preflight still fetches from `origin` and asks it for the tag (`ls-remote`).
-5. **Push the tag.** Only `git push origin refs/tags/X.Y.Z`. The branch waits. There is no force flag in the code, and a tag on `origin` that is not this tag object (it points elsewhere) stops the flow.
-6. **Wait for the workflow.** The run is found by the tagged commit and the tag (`head_branch`), among the runs whose `referenced_workflows` include the kit's `release.yml`. Other workflows on the same push, such as a Pages deploy, are not waited for. If no such run starts within 3 minutes, the plugin's tag workflow does not call the kit's. A progress line prints whenever the state changes, and every minute while it does not. The default wait is 20 minutes (`--timeout <minutes>`).
-7. **Verify the draft.**
+1. **Preflight.** The folder is a git repository with a clean tree, on the default branch, neither behind nor ahead of `origin` (it runs `git fetch --no-tags origin`, never a push), the tag does not exist locally or on `origin`, the three versions agree before the bump, the new version is higher than the current one, and `## [Unreleased]` has entries. Every problem prints with a hint. Then `gh` access is checked (skipped with `--no-push` and `--dry-run`). Commits that `origin` has not seen are refused, not warned about: the tag is pushed before the branch, so they would reach the release workflow without having run in the branch's CI. Push them through a pull request, wait for CI, pull, and rerun.
+2. **Tests.** `npm test` runs on the tree as it is, with its output on the terminal, before any file changes. A failure stops the release with nothing modified. CI already ran the tests for the pushed commits; this run protects the release commit on your machine. `--no-test` skips it, and a `package.json` without a `test` script prints a warning and goes on. A dry run runs the tests too.
+3. **Bump.** The version is set in `package.json`, `package-lock.json` and `manifest.json`. It is added to `versions.json` mapped to `minAppVersion`: an existing entry is never rewritten, and a missing file is created. The `[Unreleased]` entries move under `## [X.Y.Z] - YYYY-MM-DD`, leaving an empty `[Unreleased]`, and the compare links at the bottom are updated when the file has them.
+4. **Check.** `opdk release check` runs on the result, with the bumped files laid over the committed tree so that tree matches the commit to come. When it fails, or on Ctrl+C (exit 130), the files are restored, the temp folders are removed and nothing is committed.
+5. **Commit and tag.** `chore(release): X.Y.Z`, then the annotated tag object `X.Y.Z`. With `--no-push` the command stops here. With `--dry-run` it stops before the commit, prints the diff and restores the files: no commit or tag is created, nothing is pushed and `gh` is never called, but preflight still fetches from `origin` and asks it for the tag (`ls-remote`).
+6. **Push the tag.** Only `git push origin refs/tags/X.Y.Z`. The branch waits. There is no force flag in the code, and a tag on `origin` that is not this tag object (it points elsewhere) stops the flow.
+7. **Wait for the workflow.** The run is found by the tagged commit and the tag (`head_branch`), among the runs whose `referenced_workflows` include the kit's `release.yml`. Other workflows on the same push, such as a Pages deploy, are not waited for. If no such run starts within 3 minutes, the plugin's tag workflow does not call the kit's. A progress line prints whenever the state changes, and every minute while it does not. The default wait is 20 minutes (`--timeout <minutes>`).
+8. **Verify the draft.**
    - It holds `main.js`, `manifest.json` and `styles.css` only when the plugin has CSS, each uploaded and not empty, and nothing else (`--zip` also expects `<id>-<version>.zip`). Two releases for one tag stop the flow. A release that is already public (a resume) is verified the same way.
    - Its notes equal the `## [X.Y.Z]` section of the CHANGELOG as committed at the tag (trailing whitespace aside).
    - The assets are downloaded and compared byte for byte with a build of the tagged commit made on your machine (`git archive` of the tag, built like the reproducibility check does) and with the committed `manifest.json`. The zip is checked for presence and size only.
    - `gh attestation verify` runs for each attested file against the repository, the tag ref, the tagged commit and the signer. The signer identity must match `^https://github\.com/Dimagious/obsidian-plugin-dev-kit/\.github/workflows/release\.yml@`: the kit's `release.yml` at any ref.
-8. **Publish.** `gh release edit X.Y.Z --draft=false --latest`, then it confirms the release is public and GitHub's latest release.
-9. **Push the branch.** `git push origin <release commit>:refs/heads/<default branch>`, no force. Later local commits stay local, and nothing is pushed when `origin` already holds the commit. From this moment Obsidian reads the new version.
-10. **Summary.** The release URL, the workflow run URL and the branch.
+9. **Publish.** `gh release edit X.Y.Z --draft=false --latest`, then it confirms the release is public and GitHub's latest release.
+10. **Push the branch.** `git push origin <release commit>:refs/heads/<default branch>`, no force. Later local commits stay local, and nothing is pushed when `origin` already holds the commit. From this moment Obsidian reads the new version.
+11. **Summary.** The release URL, the workflow run URL and the branch.
 
 ### Every stop, and what to do
 
@@ -210,6 +212,28 @@ What it refuses:
 
 Every third-party action is pinned to a full commit SHA, with its version in a comment.
 
+**The workflow runs the plugin's build and release check, not its tests.** `opdk release` runs `npm test` on your machine before it creates the release commit, and CI has run the tests of every pushed commit, but the tag workflow itself does not. A plugin that wants the tag to wait for a green test run adds its own job and makes the kit's job depend on it:
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test
+  release:
+    needs: test
+    uses: Dimagious/obsidian-plugin-dev-kit/.github/workflows/release.yml@<full commit SHA of the kit>
+```
+
+The `permissions:` block of the caller stays as in the Quick start. `opdk release` finds the kit's run by the workflows it references, so the extra job does not confuse it; the 3-minute wait for a run to start then includes the time the tests take.
+
 **Call it, do not copy it.** The attestations are signed by this workflow, and `opdk release` verifies that the signer identity is the kit's `release.yml`. A copy in the plugin's repository is signed as the plugin's file, so the release stops before it is published. The same goes for pinning: use a full commit SHA of the kit so a moved tag cannot change what runs with your `contents: write` token.
 
 ## Configuration
@@ -239,6 +263,7 @@ The `build` section applies too: the checks and the verification build with the 
 | `--no-build` | `check`, `<bump>` | Skip `build`, `assets` and `reproducible` |
 | `--no-reproducible` | `check`, `<bump>` | Build once |
 | `--no-api` | `check`, `<bump>` | Skip the API check |
+| `--no-test` | `<bump>` | Do not run the plugin's `npm test` before the bump |
 | `--dry-run` | `<bump>` | Run everything but the commit, the tag and the pushes; print the diff; restore the files. Never calls `gh`; does fetch from and `ls-remote` `origin` |
 | `--no-push` | `<bump>` | Stop at the local tag. Continue later with `opdk release publish` |
 | `--timeout <minutes>` | `<bump>`, `publish` | How long to wait for the workflow once it started (default 20) |
@@ -257,6 +282,8 @@ A bad release is fixed by a new patch version. `opdk release` never moves or del
 A successful run of `opdk release patch`:
 
 ```text
+· test    npm test (--no-test skips it)
+✓ test    npm test passed
 · bump    my-plugin: 0.2.1 -> 0.2.2
 ✓ bump    package.json updated
 ✓ bump    package-lock.json updated
@@ -268,6 +295,7 @@ A successful run of `opdk release patch`:
 ✓ check   versions.json: 0.2.2 maps to 1.5.0
 ✓ check   manifest: manifest.json follows the directory's rules
 ✓ check   changelog: CHANGELOG.md has a section for 0.2.2
+✓ check   kit: the kit is v0.1.0 (6e33ca4) in package.json, package-lock.json, 2 workflow lines
 ✓ check   build: production build of src/main.ts: main.js 0.7 KiB, free of Node-only references
 ✓ check   assets: main.js, manifest.json, styles.css (built)
 ✓ check   reproducible: main.js, styles.css identical byte for byte between the working-tree build and a build of the committed tree (HEAD 4e22a12) extracted to another folder

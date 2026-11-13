@@ -6,7 +6,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- `opdk kit upgrade [vX.Y.Z] [--dry-run]` moves a plugin to a kit release: it finds the latest `vX.Y.Z` tag of the kit's repository with `git ls-remote --tags` (no login), resolves it to its commit, rewrites the tag in `package.json`, runs `npm install` for that one package so the lockfile follows, rewrites every kit `uses: ...@<sha>` line in `.github/workflows` with the new commit and a `# vX.Y.Z` comment, runs the new `kit` release check, and prints the kit's CHANGELOG sections between the old and the new version (read from the tag on GitHub; failing to read them only prints a note). It refuses a dirty tree, puts `package.json` and the lockfile back when npm fails, and never commits or pushes. `--dry-run` prints the changed lines and the changelog and writes nothing; it also works on a dirty tree and outside a git repository.
+- `kit` step in `opdk release check`, and so in the CI workflow's `release-check`: the tag in `package.json`, the commit the lockfile resolved the kit to and every `uses: <owner>/obsidian-plugin-dev-kit/.github/workflows/<file>@<sha>` line name one release. No network: the lockfile's `version` stands for the tag, and a `# vX.Y.Z` comment must agree. A workflow pinned to a tag or branch instead of a full commit SHA fails. The failure lists every place with the commit it names and points at `opdk kit upgrade`. A plugin that does not use the kit, or does not call its workflows, passes.
+- `opdk release` runs the plugin's `npm test` before it changes anything; a failure stops the release with nothing modified. `--no-test` skips it, and a `package.json` without a `test` script is a warning. [docs/release.md](docs/release.md) shows how to make the tag workflow wait for tests too.
+- Docs: "Updating the kit" in the README and [docs/ci.md](docs/ci.md#updating-the-kit) (how a plugin learns about a kit release, why Dependabot ignores the kit, the command, the check), and `opdk kit upgrade` and the new check in the `/opdk:release` skill.
 - Agent skill `/opdk:audit` for a plugin that already uses the kit, with its eval case. Phase 1 reads and measures without changing anything: coverage over all of `src` against the gate, the tests type-checked through a scratch tsconfig, unit runs on one worker in shuffled order before anyone turns `isolate` off, every picture's size, ratio, alt text and maker, a contact sheet per GIF that keeps the last frame, and the plugin's own claims about the kit. Findings carry file:line or a measured value and a triage (KIT, KIT-GENERIC, PLUGIN-ONLY, KNOWN with the number of plugins). The author picks what phase 2 does, one branch per batch, or takes backlog items only. It is distilled from a draft that was run on three plugins.
+
+### Changed
+
+- `opdk release` now refuses, with a `✗` and the way out, when the default branch is ahead of `origin`. It used to print a warning and tag the unpushed commits, which could publish code that CI had never seen. Push them through a pull request, wait for CI, pull, rerun.
 
 ## [0.1.0] - 2026-11-12
 

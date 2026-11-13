@@ -7,7 +7,7 @@ import { runReleaseCheck, type CheckFlags } from "./check.js";
 import { collectFacts, type RunGit } from "./git.js";
 import { CleanupSet, guardInterrupt, INTERRUPTED_EXIT, type InterruptHooks } from "./interrupt.js";
 import { asRecord } from "./json.js";
-import { changelogPreflight, preflightProblems, unpushedWarning, type PreflightProblem } from "./preflight.js";
+import { changelogPreflight, preflightProblems, type PreflightProblem } from "./preflight.js";
 import { DEFAULT_CHANGELOG, loadProjectFiles, valueOf, type ProjectFiles } from "./project-files.js";
 import { compareVersions } from "./semver.js";
 import { resolveVersion, type VersionSpec } from "./args.js";
@@ -30,6 +30,13 @@ export interface ReleaseInput {
     readonly now: () => Date;
     /** The push flow after the tag. Without it (`--no-push`, a test) the release stops at the local tag. */
     readonly push?: PushFlow;
+    /** Runs the plugin's `npm test` and returns its exit code. Without it (`--no-test`, a test) no tests run. */
+    readonly test?: () => Promise<number>;
+}
+
+function hasTestScript(files: ProjectFiles): boolean {
+    const scripts = asRecord(asRecord(valueOf(files.packageJson))?.scripts);
+    return typeof scripts?.test === "string";
 }
 
 /** What `opdk release` needs from the push flow: a check before anything changes, and the flow itself after the tag. */
@@ -132,9 +139,18 @@ export async function runRelease(input: ReleaseInput): Promise<number> {
             throw error;
         }
     }
-    const unpushed = unpushedWarning(facts);
-    if (unpushed !== undefined) {
-        reporter.warn("git", unpushed);
+    if (input.test !== undefined) {
+        if (!hasTestScript(files)) {
+            reporter.warn("test", 'package.json has no "test" script, so no tests ran before the release.');
+        } else {
+            reporter.info("test", "npm test (--no-test skips it)");
+            const exit = await input.test();
+            if (exit !== 0) {
+                reporter.failure("test", `npm test failed (exit ${String(exit)}). Nothing was changed.`, { hint: "Fix the tests and rerun. The release commit must not carry code that fails them." });
+                return 1;
+            }
+            reporter.success("test", "npm test passed");
+        }
     }
     reporter.info("bump", `${id}: ${current} -> ${version}${dryRun ? " (dry run)" : ""}`);
 

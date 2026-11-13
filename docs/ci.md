@@ -81,6 +81,34 @@ The workflow sets `permissions: {}` at the top and gives its one job `contents: 
 
 The npm cache is on in this workflow. Any job can write the Actions cache whatever its `permissions` say, so the read-only token is not the reason. The reasons are that nothing this job builds is shipped, and that npm checks cached tarballs against the hashes in `package-lock.json`. `release.yml`, whose build is attested and shipped, restores no cache. For the same reason, do not enable the npm cache in your own release or other privileged workflows.
 
+## Updating the kit
+
+A plugin pins the kit in three places that have to name one release: the tag in `package.json` (`github:Dimagious/obsidian-plugin-dev-kit#vX.Y.Z`), the commit the lockfile resolved it to, and the commit in every `uses: Dimagious/obsidian-plugin-dev-kit/.github/workflows/<file>@<sha> # vX.Y.Z` line of `.github/workflows/`. Moving one and forgetting another leaves CI running one kit version and the release workflow another, and nothing in either run says so.
+
+- **Learn about a release.** Watch the kit's repository on GitHub (Watch, Custom, Releases). Dependabot ignores the kit on purpose: it would bump the workflow pins and the dependency in separate pull requests, and a release workflow must never move without the matching `opdk`. Keep the `ignore` entries for `obsidian-plugin-dev-kit` and `Dimagious/obsidian-plugin-dev-kit*` in `.github/dependabot.yml`.
+- **Move to it.** From a clean tree on a branch:
+
+  ```bash
+  npx opdk kit upgrade --dry-run   # the lines that would change, and what the kit changed
+  npx opdk kit upgrade             # latest release; or: npx opdk kit upgrade v0.2.0
+  ```
+
+  The command finds the latest `vX.Y.Z` tag with `git ls-remote --tags` on the kit's repository (no GitHub login), resolves the tag to its commit, rewrites the tag in `package.json`, runs `npm install` for that one package so the lockfile follows (npm builds the kit, which takes a minute), rewrites every kit `uses:` line to the new commit with a `# vX.Y.Z` comment, and then runs the `kit` step of `opdk release check`. If `npm install` fails, `package.json` and the lockfile are put back and nothing else is touched. Before it writes anything it prints the kit's CHANGELOG sections between your version and the new one, read from the tag on GitHub (when GitHub cannot be reached it says so and goes on).
+- **Review and ship.** The command never commits or pushes. Look at `git diff`, read the changelog it printed, commit on a branch, open a pull request and let CI run: it is the first run with the new kit.
+- **The check.** `opdk release check`, and so the CI workflow's `release-check` step, fails when the places disagree. It needs no network: the lockfile's `version` stands for the tag. The failure names each place with the commit it holds and points at `opdk kit upgrade`; running the command again, with the tag you meant, repairs a plugin that drifted.
+
+```text
+✗ check   kit: the kit is not pinned to one release.
+            package.json asks for v0.2.0, but the lockfile holds kit version 0.1.0.
+            the places below name 2 different commits of the kit.
+            package.json (devDependencies): v0.2.0
+            package-lock.json: commit 6e33ca4, version 0.1.0
+            .github/workflows/ci.yml:18: commit a1b2c3d (# v0.2.0)
+          Run `opdk kit upgrade v0.2.0` to rewrite the lockfile and the workflow pins to one commit (`opdk kit upgrade` alone takes the latest release), then commit the result.
+```
+
+A plugin that does not call the kit's workflows has only `package.json` and the lockfile to compare, and a plugin that does not depend on the kit passes.
+
 ## Why ubuntu-24.04
 
 On 2026-11-11 the `ubuntu-latest` image (26.04) could not resolve the Ubuntu archive, and a CI job in the kit hung on `apt-get` until it timed out. Move to the next LTS on purpose, by passing `runs-on`, not by an alias that changes under you. The plugin's second job should pin the same label. The reusable `release.yml` takes the same `runs-on` input, with the same default.

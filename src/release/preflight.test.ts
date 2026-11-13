@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RepoFacts } from "./git.js";
-import { changelogPreflight, preflightProblems, unpushedWarning } from "./preflight.js";
+import { changelogPreflight, preflightProblems } from "./preflight.js";
 
 const READY: RepoFacts = {
     insideRepo: true,
@@ -64,11 +64,22 @@ describe("preflightProblems", () => {
     });
 });
 
-describe("unpushedWarning", () => {
-    it("warns about commits origin lacks, and only then", () => {
-        expect(unpushedWarning({ ...READY, ahead: 3 })).toContain("3 commit(s) ahead of origin/main");
-        expect(unpushedWarning(READY)).toBeUndefined();
-        expect(unpushedWarning({ ...READY, ahead: undefined })).toBeUndefined();
+describe("commits ahead of origin", () => {
+    it("refuses a default branch that origin has not seen, with the way out", () => {
+        const [problem, ...rest] = preflightProblems({ ...READY, ahead: 3 }, "1.1.0");
+        expect(rest).toEqual([]);
+        expect(problem?.message).toBe("main is 3 commit(s) ahead of origin/main: CI has not seen them, and the release would tag them.");
+        expect(problem?.hint).toContain("pull request");
+    });
+
+    it("says nothing when nothing is ahead, when the comparison is unknown, or when the fetch failed", () => {
+        expect(messages({ ahead: 0 })).toEqual([]);
+        expect(messages({ ahead: undefined })).toEqual([]);
+        expect(messages({ ahead: 2, fetchError: "offline" })).toEqual(["could not fetch origin: offline"]);
+    });
+
+    it("leaves a branch other than the default to the branch message", () => {
+        expect(messages({ branch: "feat/x", ahead: 4 })).toEqual(["releases are cut from main, but this is feat/x."]);
     });
 });
 
