@@ -316,7 +316,7 @@ await obsidian.editor().compose("hello world", { chunking: "word" });
 | `setTheme({ mode, theme? })` | Switches light or dark and, with `theme`, a community theme (`""` for the default); waits until the page carries the class. An uninstalled theme fails listing the installed ones. `await obsidian.setTheme({ mode: "dark" })` |
 | `waitForMetadataCache()` | Waits until every markdown file has its metadata cached. Returns at once for a vault with no markdown files |
 | `clearNotices()` | Removes the notices on screen and returns how many there were. `const removed = await obsidian.clearNotices()` |
-| `hideProperties()` | Hides the properties block of notes (a display setting; the notes are unchanged) |
+| `hideProperties()` | Hides the properties block of notes (a display setting; the notes are unchanged). Saved to app.json at once, so a later settings save does not bring the block back |
 | `scrollThrough(selector?)` | Scrolls a reading view from top to bottom so blocks that draw when visible are drawn. `await obsidian.scrollThrough()` |
 | `settle({ quietMs?, root? })` | Waits until the page stops changing: no DOM mutation for `quietMs` (150 ms), no font loading, every image in the viewport complete. `await obsidian.settle()` |
 

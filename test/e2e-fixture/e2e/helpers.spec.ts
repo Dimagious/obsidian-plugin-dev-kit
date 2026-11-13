@@ -242,12 +242,18 @@ test.describe("appearance and state", () => {
         expect(await obsidian.clearNotices()).toBe(0);
     });
 
-    test("hideProperties hides the properties block of a note, readingView shows the note in reading view", async ({ obsidian, win }) => {
+    test("hideProperties hides the properties block of a note, readingView shows the note in reading view", async ({ obsidian, win, vault, demo }) => {
         const block = win.locator(".workspace-leaf.mod-active .markdown-reading-view .metadata-container");
         await obsidian.readingView("Properties.md");
         // The control: the block is there before, so "hidden" below is the helper's doing.
         await expect(block).toBeVisible();
         await obsidian.hideProperties();
+        expect(await inPage(win, (page) => page.app.vault.getConfig("propertiesInDocument"))).toBe("hidden");
+        await expect(block).toBeHidden();
+        // Saved to app.json, not only held in memory.
+        expect(JSON.parse(vault.read(".obsidian/app.json"))).toMatchObject({ propertiesInDocument: "hidden" });
+        // A later settings save (cleanUi saves its settings) re-reads app.json: the setting has to survive it.
+        await demo.cleanUi();
         expect(await inPage(win, (page) => page.app.vault.getConfig("propertiesInDocument"))).toBe("hidden");
         await expect(block).toBeHidden();
         // With no path it takes the active note.

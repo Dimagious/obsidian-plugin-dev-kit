@@ -599,7 +599,10 @@ describe("appearance and state", () => {
     it("clears notices and reports the count, hides properties, scrolls", async () => {
         const { fake, helpers } = setUp();
         fake.onEvaluate(removeNotices, () => 2);
-        fake.onEvaluate(hideNoteProperties, () => fake.log.push("hidden"));
+        fake.onEvaluate(hideNoteProperties, () => {
+            fake.log.push("hidden");
+            return true;
+        });
         const selectors: unknown[] = [];
         fake.onEvaluate(scrollThroughElement, (selector) => {
             selectors.push(selector);
@@ -611,6 +614,12 @@ describe("appearance and state", () => {
         await helpers.scrollThrough(".custom");
         expect(fake.log).toEqual(["hidden"]);
         expect(selectors).toEqual([".workspace-leaf.mod-active .markdown-preview-view", ".custom"]);
+    });
+
+    it("hideProperties fails with a message when this Obsidian cannot save its config", async () => {
+        const { fake, helpers } = setUp();
+        fake.onEvaluate(hideNoteProperties, () => false);
+        await expect(helpers.hideProperties()).rejects.toThrow(/hideProperties\(\): this Obsidian has no app\.vault\.setConfig/);
     });
 
     it("scrollThrough fails when nothing matches", async () => {

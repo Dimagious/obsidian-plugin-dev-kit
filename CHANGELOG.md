@@ -15,6 +15,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- `obsidian.hideProperties()` is saved to `app.json` at once. It set the option in memory only, and Obsidian read `app.json` again after the next settings save (`demo.cleanUi()` does one), so the properties block came back. A spec no longer has to write `app.json` itself.
 - Docs: `opdk scan` reported 0 where the public scorecard flagged `moment(date).format(...)` (`moment` imported from `obsidian`) as `no-unsafe-call`, `-member-access` and `-return`. Reproduced: the cause is `esModuleInterop` (TypeScript 6 forces it on; TypeScript 5 with `esModuleInterop: true` behaves the same), under which the namespace import of an `export =` module such as `moment` is not callable. It is TS2349 in the plugin's own `tsc --noEmit` too. The live scanner very likely runs TypeScript 6 (inferred). [docs/scanner.md](docs/scanner.md) has the version table, how to see it (`typescript@6.0` for the check, which also breaks the plugin's typecheck until the call is fixed) and the plugin-side fix.
 
 ## [0.1.0] - 2026-11-12

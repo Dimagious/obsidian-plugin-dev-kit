@@ -71,6 +71,7 @@ interface PageApp {
         getMarkdownFiles?(): unknown[];
         getConfig?(key: string): unknown;
         setConfig?(key: string, value: unknown): void;
+        saveConfig?(): Promise<void>;
     };
     workspace?: {
         getLeaf?(newLeaf: boolean): PageLeaf;
@@ -342,8 +343,20 @@ export function removeNotices(): number {
     return notices.length;
 }
 
-export function hideNoteProperties(): void {
-    (globalThis as unknown as PageGlobals).app?.vault?.setConfig?.("propertiesInDocument", "hidden");
+/**
+ * Hides the properties block of notes and saves the setting to app.json at once. `setConfig` alone changes it in
+ * memory only: Obsidian reads app.json again after the next settings save (`cleanUi` does one) and the block came
+ * back (found in the Garmy pictures run). Returns false when this Obsidian cannot be configured, so the helper can
+ * fail with a message.
+ */
+export async function hideNoteProperties(): Promise<boolean> {
+    const vault = (globalThis as unknown as PageGlobals).app?.vault;
+    if (vault?.setConfig === undefined || vault.saveConfig === undefined) {
+        return false;
+    }
+    vault.setConfig("propertiesInDocument", "hidden");
+    await vault.saveConfig();
+    return true;
 }
 
 /**

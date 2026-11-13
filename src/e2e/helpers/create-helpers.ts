@@ -560,7 +560,11 @@ export function createHelpers(win: Page, options: HelperOptions): HelperKit {
             setTheme,
             waitForMetadataCache,
             clearNotices: () => win.evaluate(removeNotices),
-            hideProperties: () => win.evaluate(hideNoteProperties),
+            hideProperties: async () => {
+                if (!(await win.evaluate(hideNoteProperties))) {
+                    throw new Error("hideProperties(): this Obsidian has no app.vault.setConfig / saveConfig. The helper was verified on Obsidian 1.14.5.");
+                }
+            },
             scrollThrough,
             readingView,
             settle,

@@ -366,11 +366,30 @@ describe("appearance and state scripts", () => {
         expect(removeNotices()).toBe(0);
     });
 
-    it("hides properties through the vault config and reads config back", () => {
+    it("hides properties through the vault config, saves it to app.json at once and reads config back", async () => {
         const config = new Map<string, unknown>();
-        vi.stubGlobal("app", { vault: { setConfig: (k: string, v: unknown) => config.set(k, v), getConfig: (k: string) => config.get(k) } });
-        hideNoteProperties();
+        const saved: unknown[] = [];
+        vi.stubGlobal("app", {
+            vault: {
+                setConfig: (k: string, v: unknown) => config.set(k, v),
+                getConfig: (k: string) => config.get(k),
+                saveConfig: () => {
+                    saved.push(config.get("propertiesInDocument"));
+                    return Promise.resolve();
+                },
+            },
+        });
+        expect(await hideNoteProperties()).toBe(true);
         expect(readConfig("propertiesInDocument")).toBe("hidden");
+        // Saved after it was set: a setting that stays in memory is read over by the next settings save.
+        expect(saved).toEqual(["hidden"]);
+    });
+
+    it("reports false when the vault cannot set or save config", async () => {
+        vi.stubGlobal("app", { vault: { setConfig: () => undefined } });
+        expect(await hideNoteProperties()).toBe(false);
+        vi.stubGlobal("app", {});
+        expect(await hideNoteProperties()).toBe(false);
     });
 });
 
