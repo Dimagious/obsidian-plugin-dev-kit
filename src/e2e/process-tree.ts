@@ -58,20 +58,26 @@ export function isTreeAlive(pid: number, io: ProcessIo): boolean {
 }
 
 /**
- * Sends a signal to the group and treats "already gone" as success; any other error is real.
- * Gone is ESRCH, or EPERM with a signal-0 probe that then finds nothing: macOS answers EPERM for a group whose
- * last process exited between the liveness check and the signal. EPERM on a group that is still there stays an error.
+ * Sends a signal to the group. "Already gone" (ESRCH) is success; any other error is real, except EPERM, which is
+ * returned instead of thrown. On macOS a group whose members are all exited but not yet reaped zombies answers EPERM
+ * to every signal, signal 0 included, until the parent's event loop reaps them on a later turn. Deciding right here
+ * (a synchronous re-probe) would see the same EPERM, so the caller polls with `waitUntilGone`, whose sleeps let the
+ * reaping happen, and reports the returned error only if the group is still there afterwards.
  */
-function signalTree(pid: number, signal: NodeJS.Signals, io: ProcessIo): void {
+function signalTree(pid: number, signal: NodeJS.Signals, io: ProcessIo): Error | undefined {
     try {
         io.kill(targetFor(pid, io.platform), signal);
     } catch (error) {
         const code = errorCode(error);
-        if (code === "ESRCH" || (code === "EPERM" && !isTreeAlive(pid, io))) {
-            return;
+        if (code === "ESRCH") {
+            return undefined;
+        }
+        if (code === "EPERM" && error instanceof Error) {
+            return error;
         }
         throw error;
     }
+    return undefined;
 }
 
 /** `taskkill` exit code for "no such process": the tree is already gone, which is what we wanted. */
@@ -135,21 +141,24 @@ export async function terminateTree(
         }
         throw survivedError(pid, io);
     }
-    signalTree(pid, "SIGTERM", io);
+    let denied = signalTree(pid, "SIGTERM", io);
     if (await waitUntilGone(pid, io, polls, pollMs)) {
         return "terminated";
     }
-    signalTree(pid, "SIGKILL", io);
+    denied = signalTree(pid, "SIGKILL", io) ?? denied;
     if (await waitUntilGone(pid, io, polls, pollMs)) {
         return "killed";
     }
-    throw survivedError(pid, io);
+    throw survivedError(pid, io, denied);
 }
 
-function survivedError(pid: number, io: ProcessIo): Error {
+function survivedError(pid: number, io: ProcessIo, denied?: Error): Error {
+    const eperm =
+        denied === undefined ? "" : ` The system refused the signal (${denied.message}): the group is alive but not ours to signal.`;
     return new Error(
-        `Obsidian process ${String(pid)} (and its helpers) survived ${io.platform === "win32" ? "taskkill" : "SIGKILL"}. ` +
+        `Obsidian process ${String(pid)} (and its helpers) survived ${io.platform === "win32" ? "taskkill" : "SIGKILL"}.${eperm} ` +
             `Kill it by hand${io.platform === "win32" ? ` (taskkill /PID ${String(pid)} /T /F)` : ` (kill -9 -${String(pid)})`}.`,
+        denied === undefined ? undefined : { cause: denied },
     );
 }
 

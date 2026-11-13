@@ -22,7 +22,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
-- `opdk e2e`: closing the Obsidian process tree no longer fails with `kill EPERM` when the group had already exited. macOS answers EPERM, not ESRCH, for a signal sent to a group whose last process just went away; the teardown now probes with signal 0 and counts the tree as gone when nothing is left. EPERM on a group that is still alive is still an error.
+- `opdk e2e`: closing the Obsidian process tree no longer fails with `kill EPERM` when the group had already exited. On macOS a process group whose members have exited but not yet been reaped by the parent answers EPERM to every signal, signal 0 included, until the event loop reaps them. The teardown now treats EPERM as "maybe gone" and keeps polling; it fails only if the group still answers after the SIGTERM and SIGKILL waits, and the error then names EPERM and carries it as the cause.
 - Docs: `opdk scan` reported 0 where the public scorecard flagged `moment(date).format(...)` (`moment` imported from `obsidian`) as `no-unsafe-call`, `-member-access` and `-return`. Reproduced: the cause is `esModuleInterop` (TypeScript 6 forces it on; TypeScript 5 with `esModuleInterop: true` behaves the same), under which the namespace import of an `export =` module such as `moment` is not callable. It is TS2349 in the plugin's own `tsc --noEmit` too. The live scanner very likely runs TypeScript 6 (inferred). [docs/scanner.md](docs/scanner.md) has the version table, how to see it (`typescript@6.0` for the check, which also breaks the plugin's typecheck until the call is fixed) and the plugin-side fix.
 
 ## [0.1.0] - 2026-11-12
