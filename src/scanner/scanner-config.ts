@@ -12,11 +12,11 @@
  * What differs from the upstream text, each on purpose:
  * - `tsconfigRootDir` is the plugin root (upstream's snippet says `process.cwd()`), and the project service is on
  *   from the start, as the scanner has it.
- * - `typeAware: false` is the scanner's own treatment of "files no tsconfig covers": linted without type
- *   information, with typescript-eslint's type-aware rules and the obsidianmd rules that read the type checker
- *   switched off, and core `no-implied-eval` on for TypeScript in place of the type-aware rule. Upstream's
- *   snippet does not do this (ESLint reports "was not found by the project service"). A file that cannot be
- *   parsed fails the retry too, where upstream does not report it.
+ * - `typeAware: false` lints a file no tsconfig covers without type information (typescript-eslint's type-aware rules
+ *   and the obsidianmd rules that read the type checker switched off, and core `no-implied-eval` on for TypeScript
+ *   in place of the type-aware rule), where upstream's snippet reports "was not found by the project service". The
+ *   live scanner does not list such files at all (a site script with 36 findings here has none on its scorecard), so
+ *   `opdk scan` shows what this pass finds as advisory lines only. A file that cannot be parsed fails this pass too.
  * - The ignore list is upstream's `globalIgnores` (48 entries) with one change: `eslint` is removed from the
  *   `**\/{astro,babel,...}.config.*` group, so the plugin's `eslint.config.js` and `.ts` are linted (`.mjs`, `.cjs`,
  *   `.mts` and `.cts` stay ignored by their extension globs), with type information
@@ -28,6 +28,12 @@
  *   JavaScript should drop `main.js`, as upstream says.
  * - Upstream imports `defineConfig` and `globalIgnores` from "eslint/config"; plain arrays and `{ ignores }`
  *   objects do the same here and work on every ESLint the kit supports.
+ * - The preset exempts test and tooling files from the rules about code that runs inside Obsidian
+ *   (`no-nodejs-modules`, `prefer-active-doc`, `regex-lookbehind` and the like) with `ignores` lists that include
+ *   `global-setup.*`, `*.setup.*` and `test-setup.*`. The scanner's own ignore list does not name those, and the
+ *   live scanner reports `obsidianmd/no-nodejs-modules` for a `global-setup.ts` that imports `node:fs`. So the
+ *   exemptions are lifted (`withoutRuntimeExemptions`): every file the scanner reads gets those rules, and the
+ *   files it does not read are left out by `SCANNER_IGNORES`.
  * - Every finding counts, whatever its severity. The scanner turns most rules into warnings, and a warning still
  *   lowers the score; `opdk scan` fails on both. Upstream's note says the real scanner downgrades unlisted rules
  *   to `warn`, which does not change what is reported.
@@ -38,6 +44,7 @@
  * (see the block marked "newest" below); its other additions, the obsidianmd rules at `error`, are already
  * `error` in the recommended config for TypeScript. The older layers report less, so a clean scan here is clean in them too.
  */
+import "./use-typescript-six.js";
 import type { Linter } from "eslint";
 import obsidianmd from "eslint-plugin-obsidianmd";
 import tseslint from "typescript-eslint";
@@ -112,6 +119,20 @@ function typeAwareObsidianRules(): string[] {
         .map(([name]) => `obsidianmd/${name}`);
 }
 
+/**
+ * The blocks of the preset that carry `ignores` (its exemption of test and tooling files) as the same blocks without
+ * them. Later blocks override earlier ones, so putting these after the preset turns the rules back on for the files
+ * that the preset exempted but the scanner reads. Plugins and parsers stay with the original blocks.
+ */
+export function withoutRuntimeExemptions(blocks: readonly Linter.Config[]): Linter.Config[] {
+    return blocks.flatMap((block): Linter.Config[] => {
+        if (block.ignores === undefined || block.rules === undefined) {
+            return [];
+        }
+        return [{ files: block.files, rules: block.rules }];
+    });
+}
+
 export interface ScannerConfigOptions {
     /** Plugin root: where `tsconfig.json` is looked up from. */
     readonly cwd: string;
@@ -140,6 +161,7 @@ export function createScannerConfig({ cwd, typeAware, allowDefaultProject = true
         },
 
         ...obsidianmd.configs.recommended,
+        ...withoutRuntimeExemptions(obsidianmd.configs.recommended),
 
         {
             files: CODE_FILES,

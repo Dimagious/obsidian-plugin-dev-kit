@@ -47,14 +47,8 @@ export interface BuildConfig {
     readonly css?: BuildCssConfig | false;
 }
 
-/** `scan` section. Every key is optional. */
-export interface ScanConfig {
-    /**
-     * Globs relative to the plugin root (`*`, `**` and `?` only). Tracked files that match are skipped by every
-     * scan check. Default none: the scanner may well read `site/`, so leaving a folder out has to be a decision.
-     */
-    readonly ignore?: readonly string[];
-}
+/** `scan` section. It has no keys: every file the scanner reads counts (`scan.ignore` was removed). */
+export type ScanConfig = Readonly<Record<string, never>>;
 
 /** `release` section. Every key is optional. */
 export interface ReleaseConfig {

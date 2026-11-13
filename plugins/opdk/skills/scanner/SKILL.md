@@ -10,7 +10,7 @@ Run all commands from the plugin root: `eslint-plugin-obsidianmd` reads `manifes
 ## Commands
 
 - `opdk scan`: no flags. Runs four steps over the files `git ls-files` lists in the plugin folder and exits 1 if any step has a finding (warnings from the scanner's ESLint config count):
-  - `lint`: the scanner's own ESLint configuration (mirror of `eslint-plugin-obsidianmd` 0.5.1 `docs/configuration.md`, "Community plugin scanner configuration"). Files no tsconfig covers are linted without type information. The scanner's ignore list leaves out `*.cjs`, `*.mjs`, `*.cts`, `*.mts`, tests, `scripts/`, `docs/`, locale folders and build output here.
+  - `lint`: the scanner's own ESLint configuration (mirror of `eslint-plugin-obsidianmd` 0.5.1 `docs/configuration.md`, "Community plugin scanner configuration"). Type information comes from the kit's own TypeScript 6 (`typescript-6`), whatever TypeScript the plugin has. A file no tsconfig covers prints one advisory `!` line (`outside-tsconfig`) and does not fail: the scorecard does not list it. A script that imports `obsidian-plugin-dev-kit` is linted as if the kit had no `dist/`, as on the scanner. `global-setup.*`, `*.setup.*` and `test-setup.*` get the Node-module rule the preset exempts them from. The scanner's ignore list leaves out `*.cjs`, `*.mjs`, `*.cts`, `*.mts`, tests, `scripts/`, `docs/`, locale folders and build output here.
   - `css`: every tracked `.css`: `!important`, `:has()`, and features Chrome 142 (Obsidian 1.11.4) lacks or supports partly (doiuse).
   - `code`: script files under `src/` (`.mjs`/`.cjs` included, unlike `lint`), tests excluded: a host assembled from `["a","b"].join(".")` (or `"/"`); `@ts-ignore`/`@ts-expect-error`/`@ts-nocheck` print as `!` and do not fail.
   - `meta`: `manifest.json` description must not start with the plugin name.
@@ -20,18 +20,9 @@ Run all commands from the plugin root: `eslint-plugin-obsidianmd` reads `manifes
 
 Not a git repository, or nothing tracked: the command fails and says to `git init` / `git add`. Untracked files are not scanned: stage new files first. Build output is untracked, so it is skipped, as the scanner skips it.
 
-## Config (`opdk.config.mjs`, `scan` section, optional)
+## Config
 
-| Key | Default | Meaning |
-|---|---|---|
-| `ignore` | `[]` | Globs relative to the plugin root (`*`, `**`, `?` only; whole-path match, so `**/*.min.js` for any depth). Matching tracked files are skipped by every step |
-
-```js
-import { defineConfig } from "obsidian-plugin-dev-kit";
-export default defineConfig({ scan: { ignore: ["site/**"] } });
-```
-
-Nothing is ignored by default. Whether the public scanner reads `site/` is unconfirmed, so ignoring it is an explicit choice; say so in the plugin's changelog.
+There is none: the `scan` section of `opdk.config.mjs` has no keys. `scan.ignore` was removed because a skipped file was still on the public scorecard; a config that has it fails with `"scan.ignore" was removed`. To clear a finding, fix it or stop tracking the file (`git rm --cached`).
 
 ## `obsidianPlugin()` for the plugin's own lint
 
@@ -51,9 +42,10 @@ Options: `rootDir` (default `process.cwd()`), `tsconfig` (default `./tsconfig.js
 - A Node module on mobile: a dynamic `import()` guarded by `Platform.isDesktop`, never a static import. The preset leaves `@typescript-eslint/no-require-imports` off, like upstream.
 - `obsidianmd/prefer-create-el`: `el.createEl("div", {...})` becomes `el.createDiv({...})`.
 - `no-domain-assembly`: write the URL as one string literal.
-- `css-no-important`: raise the selector's specificity. `css-no-has`: put a class on the element from TS. `css-browser-feature/<name>`: check the feature on caniuse for Chrome 142; "partially supported" is reported on the public scorecard too. `@typescript-eslint/no-unsafe-*`: an `any` or unresolved type flows into the value; type it. If the public scorecard shows these on `moment(...)` imported from `obsidian` and `opdk scan` does not, the scorecard type-checks under `esModuleInterop` (TypeScript 6 forces it on; TS2349 in the plugin's own `tsc --noEmit` too): run the scan with `typescript@6.0` installed (that breaks the plugin's typecheck until the call is fixed) and cast `moment` to a small typed function (see "Differences from the public scorecard" in docs/scanner.md).
+- `css-no-important`: raise the selector's specificity. `css-no-has`: put a class on the element from TS. `css-browser-feature/<name>`: check the feature on caniuse for Chrome 142; "partially supported" is reported on the public scorecard too. `@typescript-eslint/no-unsafe-*`: an `any` or unresolved type flows into the value; type it. On `moment(...)` imported from `obsidian` the scan reports call, member access and return, as the scorecard does: it type-checks under TypeScript 6, which forces `esModuleInterop` on (the plugin's own TypeScript 5 compiles the line). Cast `moment` to a small typed function (see "Differences from the public scorecard" in docs/scanner.md). If the scan prints a `!` line that it ran on a TypeScript older than 6, the Node is older than 22.15: upgrade it.
+- `@typescript-eslint/no-unsafe-call` and `no-unsafe-assignment` on a line in `eslint.config.js` that calls `obsidianPlugin()` from the kit: the scanner installs without building the kit, so the import is unresolved there. Silence both rules in that file with a disable comment, which the scanner honours, or keep the kit out of the file.
 - `manifest-description-no-name-prefix`: reword the description so it does not begin with the plugin name.
-- The scan does not know which tracked files are plugin code: web assets a repository keeps besides the plugin (a docs site, demos) are checked by the same rules. Fixing them, moving them out or listing them under `scan.ignore` is each plugin's choice.
+- The scan does not know which tracked files are plugin code: stylesheets a repository keeps besides the plugin (a docs site, demos) are checked by the same rules, because the scanner reads every tracked `.css`. Fix them, or move them out of the repository.
 
 ## Migrating a plugin's scripts
 
@@ -64,5 +56,5 @@ Options: `rootDir` (default `process.cwd()`), `tsconfig` (default `./tsconfig.js
 2. Replace `"scorecard:check": "node scripts/scorecard-check.cjs"` with `"scorecard:check": "opdk scan"`; delete `scripts/scorecard-check.cjs`, and `scripts/scanner.eslint.config.mjs` if present.
 3. Replace the plugin's `eslint.config.js` with `obsidianPlugin(...)` plus its own extra blocks; set `lint` to `eslint . --max-warnings=0`. `DEFAULT_IGNORES` is only what three real plugins all left out (12 paths: `node_modules`, `coverage`, `dist`, `main.js`, `scripts`, `src/**/*.test.ts`, `vitest.config.ts`, `e2e`, `e2e-vault.pristine`, `playwright.config.ts`, `.obsidian-unpacked`, `design`). Pass the rest through `ignores`, taken from the plugin's current `eslint.config.js`. Typical extras are `site/**` and `_site/**` (a docs site), `.preview/**` and `.capture/**` (generated folders), `test-results/**` and `playwright-report/**` (Playwright output), `tools/**`, and `src/test/**` (test stubs; keeping the preset off them avoids hundreds of problems in code that never ships).
    Then (after step 1 (a) and (b)) run `npm explain eslint`. A nested ESLint 9 under eslint-plugin-obsidianmd is fixed by adding `"overrides": { "eslint": "$eslint" }` to `package.json` and running `npm install` again (`npm dedupe` does not help). Removing the plugin's own obsidianmd (step (a)) stays the first step but is not always enough: one plugin still had the nested 9 after it and needed the override, another did not. The alternative is a `js.configs.recommended` block in the plugin's own config, which needs `@eslint/js` kept or added back (`opdk scan` warns about the mismatch too).
-4. Differences to expect: see the "Scanner" entries in the kit's CHANGELOG. In short: the regex checks that an ESLint rule now covers are gone, `site/` is no longer skipped unless listed in `scan.ignore`, and a plugin with no CSS no longer fails. If your plugin had no ESLint scanner step before, expect it to report findings on the committed tree (see the CHANGELOG for examples).
+4. Differences to expect: see the "Scanner" entries in the kit's CHANGELOG. In short: the regex checks that an ESLint rule now covers are gone, `site/` stylesheets are scanned, and a plugin with no CSS no longer fails. If your plugin had no ESLint scanner step before, expect it to report findings on the committed tree (see the CHANGELOG for examples).
 5. Run `opdk scan` and fix or consciously ignore each finding before releasing.

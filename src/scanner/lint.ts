@@ -1,3 +1,5 @@
+import "./use-typescript-six.js";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { ESLint } from "eslint";
@@ -82,38 +84,101 @@ export function toFindings(results: readonly ESLint.LintResult[], cwd: string): 
     });
 }
 
+/**
+ * The scanner installs a plugin's dependencies without running their install scripts, so a package that only builds
+ * itself in `prepare` has no `dist/` there, and what it exports is unresolved: an `eslint.config.js` that calls
+ * `obsidianPlugin()` from the kit gets `no-unsafe-call` and `no-unsafe-assignment` (the spread of the result) on the
+ * live scorecard. Inferred from one plugin's 1.7.2 scorecard, where exactly those two warnings sit on the line
+ * that calls the kit's helper; reproduced by deleting the kit's `dist/eslint`. It is not confirmed by the scanner's
+ * authors. The module specifiers keep their line, so the findings point at the right place.
+ */
+const KIT_SPECIFIER = /(\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)(["'])obsidian-plugin-dev-kit((?:\/[^"']*)?)\2/g;
+
+/** `text` with every import of the kit pointed at a package that does not exist. Pure. */
+export function hideKitImports(text: string): string {
+    return text.replace(KIT_SPECIFIER, (_match, lead: string, quote: string, subpath: string) => `${lead}${quote}obsidian-plugin-dev-kit-not-built${subpath}${quote}`);
+}
+
+const SCRIPT_FILE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
+
+/** Lints `files` (absolute paths); a script that imports the kit is linted from text where that import cannot resolve. */
+async function lintFilePaths(eslint: ESLint, files: readonly string[]): Promise<ESLint.LintResult[]> {
+    const importsKit = new Map<string, string>();
+    for (const file of files.filter((candidate) => SCRIPT_FILE.test(candidate))) {
+        const text = readFileSync(file, "utf8");
+        if (hideKitImports(text) !== text) {
+            importsKit.set(file, hideKitImports(text));
+        }
+    }
+    const plain = files.filter((file) => !importsKit.has(file));
+    const results = plain.length === 0 ? [] : await eslint.lintFiles(plain);
+    for (const [filePath, text] of importsKit) {
+        results.push(...(await eslint.lintText(text, { filePath })));
+    }
+    return results;
+}
+
+/**
+ * One advisory finding per file the scanner does not report: the lint findings of a file that no tsconfig covers.
+ * The live scanner type-checks with the project service and reports nothing for a file outside every project (a
+ * plugin's `site/assets/site.js` has 36 findings here and none on its scorecard). They stay visible as a `!` line,
+ * and do not fail the scan. Inferred from that one scorecard, not confirmed.
+ */
+export function summariseOutsideProject(results: readonly ESLint.LintResult[], cwd: string): Finding[] {
+    const byFile = new Map<string, Finding[]>();
+    for (const finding of toFindings(results, cwd)) {
+        byFile.set(finding.file, [...(byFile.get(finding.file) ?? []), finding]);
+    }
+    const summaries: Finding[] = [];
+    for (const [file, own] of byFile) {
+        const first = own[0];
+        if (first !== undefined) {
+            summaries.push({
+                check: "lint",
+                file,
+                line: first.line,
+                rule: "outside-tsconfig",
+                message: `${String(own.length)} lint finding${own.length === 1 ? "" : "s"} in a file no tsconfig covers (first: ${first.rule}). The scorecard does not list files outside every tsconfig project, and would if a tsconfig covered this one.`,
+                advisory: true,
+            });
+        }
+    }
+    return summaries;
+}
+
 export interface LintOutcome {
     readonly findings: Finding[];
     /** Files linted at all (ignored ones excluded). */
     readonly linted: number;
-    /** Files no tsconfig covers, linted without type information. */
+    /** Files no tsconfig covers: their findings are advisory, the scanner does not report them. */
     readonly untyped: number;
 }
 
 /**
  * The scanner's ESLint pass over `files` (paths relative to `cwd`), with its own configuration. Files no tsconfig
- * covers are linted again without type information, as the scanner does, instead of failing to parse, and an
- * `eslint.config.*` that a tsconfig covers is linted again with types and without `allowDefaultProject`.
+ * covers are linted again without type information instead of failing to parse, but only as advisory lines (the
+ * live scanner does not report them), and an `eslint.config.*` that a tsconfig covers is linted again with types and
+ * without `allowDefaultProject`.
  */
 export async function runScannerLint(cwd: string, files: readonly string[]): Promise<LintOutcome> {
-    const typed = await newEslint(cwd, true).lintFiles([...files]);
+    const typed = await lintFilePaths(newEslint(cwd, true), files.map((file) => path.join(cwd, file)));
     const outside = typed.filter(isOutsideProject);
     const clashing = typed.filter(isDefaultProjectClash);
-    const untypedResults = outside.length === 0 ? [] : await newEslint(cwd, false).lintFiles(outside.map((result) => result.filePath));
+    const untypedResults = outside.length === 0 ? [] : await lintFilePaths(newEslint(cwd, false), outside.map((result) => result.filePath));
     let retypedResults: ESLint.LintResult[] = [];
     if (clashing.length > 0) {
         clearTypescriptEslintCaches();
         try {
-            retypedResults = await newEslint(cwd, true, false).lintFiles(clashing.map((result) => result.filePath));
+            retypedResults = await lintFilePaths(newEslint(cwd, true, false), clashing.map((result) => result.filePath));
         } finally {
             // The service built for this pass has no default project; later passes in this process start fresh.
             clearTypescriptEslintCaches();
         }
     }
-    const results = [
-        ...typed.filter((result) => !isOutsideProject(result) && !isDefaultProjectClash(result)),
-        ...untypedResults,
-        ...retypedResults,
-    ];
-    return { findings: toFindings(results, cwd), linted: results.length, untyped: untypedResults.length };
+    const reported = [...typed.filter((result) => !isOutsideProject(result) && !isDefaultProjectClash(result)), ...retypedResults];
+    return {
+        findings: [...toFindings(reported, cwd), ...summariseOutsideProject(untypedResults, cwd)],
+        linted: reported.length + untypedResults.length,
+        untyped: untypedResults.length,
+    };
 }

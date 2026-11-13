@@ -1,34 +1,24 @@
 import type { ScanConfig } from "../config/types.js";
-import { describeGlobProblem } from "./glob.js";
 
-const SCAN_KEYS = ["ignore"];
-
-/** Checks and copies the `scan` section of `opdk.config.mjs`. Every error names the offending key. */
+/**
+ * Checks and copies the `scan` section of `opdk.config.mjs`. It has no keys. `ignore` used to skip tracked files, and
+ * a skipped file hid findings that the public scorecard still shows, so it was removed; the error says what to do
+ * instead of only naming the key.
+ */
 export function validateScanConfig(value: unknown, source: string): ScanConfig {
     if (!isRecord(value)) {
         throw new Error(`${source}: "scan" must be an object.`);
     }
-    const unknown = Object.keys(value).filter((key) => !SCAN_KEYS.includes(key));
-    if (unknown.length > 0) {
+    if (Object.hasOwn(value, "ignore")) {
         throw new Error(
-            `${source}: unknown key(s) in "scan": ${unknown.join(", ")}. Allowed keys: ${SCAN_KEYS.join(", ")}.`,
+            `${source}: "scan.ignore" was removed. The community scanner reads every tracked stylesheet and every script a tsconfig covers, so a path listed there still lowers the scorecard while \`opdk scan\` stayed silent. Delete the key and fix what \`opdk scan\` reports, or untrack the file.`,
         );
     }
-    const ignore = Object.hasOwn(value, "ignore") ? value.ignore : undefined;
-    if (ignore === undefined) {
-        return {};
+    const unknown = Object.keys(value);
+    if (unknown.length > 0) {
+        throw new Error(`${source}: unknown key(s) in "scan": ${unknown.join(", ")}. The "scan" section has no keys.`);
     }
-    if (!Array.isArray(ignore) || !ignore.every((item) => typeof item === "string")) {
-        throw new Error(`${source}: "scan.ignore" must be an array of glob strings such as ["site/**"].`);
-    }
-    const patterns = ignore.map(String);
-    for (const pattern of patterns) {
-        const problem = describeGlobProblem(pattern);
-        if (problem !== undefined) {
-            throw new Error(`${source}: "scan.ignore" pattern ${JSON.stringify(pattern)} ${problem}.`);
-        }
-    }
-    return { ignore: patterns };
+    return {};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

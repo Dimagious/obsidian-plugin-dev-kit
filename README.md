@@ -33,7 +33,7 @@ npm install -D "github:Dimagious/obsidian-plugin-dev-kit#v0.2.0"
 npx opdk --help
 ```
 
-Install size, measured on 2026-11-12: the package is 260 KB packed and 1.4 MB installed. In an empty project it brings about 100 MB with its required dependencies, mostly TypeScript, esbuild and the ESLint stack a plugin usually has already. Electron, Playwright, Vitest, `@vitest/coverage-v8` and jsdom are not dependencies of the kit at all: the plugin installs them for end-to-end tests, demo films and unit tests, and the kit checks their versions when it runs and fails with the install command. ESLint and TypeScript are the only peer dependencies.
+Install size, measured on 2026-11-12: the package is 260 KB packed and 1.4 MB installed. In an empty project it brings about 100 MB with its required dependencies, mostly TypeScript, esbuild and the ESLint stack a plugin usually has already. Electron, Playwright, Vitest, `@vitest/coverage-v8` and jsdom are not dependencies of the kit at all: the plugin installs them for end-to-end tests, demo films and unit tests, and the kit checks their versions when it runs and fails with the install command. ESLint and TypeScript are the only peer dependencies. `opdk scan` type-checks with a TypeScript 6 of its own (`typescript-6`, 24 MB measured on 2026-11-13), so a plugin on another TypeScript holds two copies.
 
 ## Build
 
@@ -49,7 +49,7 @@ Quick start: `npx opdk build`. Details: [docs/build.md](docs/build.md).
 
 ## Scanner
 
-`opdk scan` runs the community plugin scanner's own ESLint configuration (published upstream), a CSS check and a few source checks that reproduce findings seen on plugin listings, over the files git tracks. It fails when a step has a finding; the scanner's ESLint warnings count as findings, advisory `!` lines do not. A plugin lost three points of its public score to a joined domain string that no local check saw; this catches that kind of thing before the tag.
+`opdk scan` runs the community plugin scanner's own ESLint configuration (published upstream), a CSS check and a few source checks that reproduce findings seen on plugin listings, over the files git tracks. It fails when a step has a finding; the scanner's ESLint warnings count as findings, advisory `!` lines do not. It type-checks with its own TypeScript 6, as the scanner does, and reads every tracked stylesheet; there is no way to ignore a file the scorecard shows. A plugin lost three points of its public score to a joined domain string that no local check saw; this catches that kind of thing before the tag.
 
 ![Terminal: opdk scan prints lint, css, code and meta with 0 findings each, then the summary and exit code 0](docs/media/scan.gif)
 

@@ -66,6 +66,7 @@
     "esbuild": "0.28.2",
     "eslint-plugin-obsidianmd": "0.5.1",
     "postcss": "8.5.32",
+    "typescript-6": "npm:typescript@6.0.3",
     "typescript-eslint": "8.72.2"
   },
   "peerDependencies": {

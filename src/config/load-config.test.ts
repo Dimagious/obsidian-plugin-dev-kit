@@ -31,9 +31,9 @@ describe("loadConfig", () => {
         expect(await loadConfig(dir)).toEqual({ build: { minify: false, loader: { ".png": "dataurl" } } });
     });
 
-    it("loads and validates the scan section", async () => {
-        write('export default { scan: { ignore: ["site/**"] } };\n');
-        expect(await loadConfig(dir)).toEqual({ scan: { ignore: ["site/**"] } });
+    it("loads the empty scan section", async () => {
+        write("export default { scan: {} };\n");
+        expect(await loadConfig(dir)).toEqual({ scan: {} });
     });
 
     it("loads and validates the release section", async () => {
@@ -47,8 +47,8 @@ describe("loadConfig", () => {
     });
 
     it("loads build and scan together", async () => {
-        write('export default { build: { minify: false }, scan: { ignore: ["design/**"] } };\n');
-        expect(await loadConfig(dir)).toEqual({ build: { minify: false }, scan: { ignore: ["design/**"] } });
+        write("export default { build: { minify: false }, scan: {} };\n");
+        expect(await loadConfig(dir)).toEqual({ build: { minify: false }, scan: {} });
     });
 
     it("loads and validates the demo section", async () => {
@@ -62,8 +62,8 @@ describe("loadConfig", () => {
     });
 
     it("names the config file and the key of an invalid scan section", async () => {
-        write('export default { scan: { ignore: [1] } };\n');
-        await expect(loadConfig(dir)).rejects.toThrow(`${path.join(dir, "opdk.config.mjs")}: "scan.ignore" must be an array of glob strings`);
+        write('export default { scan: { ignore: ["site/**"] } };\n');
+        await expect(loadConfig(dir)).rejects.toThrow(`${path.join(dir, "opdk.config.mjs")}: "scan.ignore" was removed.`);
     });
 
     it("names the config file and the key of an invalid build section", async () => {

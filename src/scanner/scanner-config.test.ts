@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import type { Linter } from "eslint";
 import obsidianmd from "eslint-plugin-obsidianmd";
 import { describe, expect, it } from "vitest";
-import { createScannerConfig, MIRRORED_OBSIDIANMD_VERSION, SCANNER_IGNORES } from "./scanner-config.js";
+import { createScannerConfig, MIRRORED_OBSIDIANMD_VERSION, SCANNER_IGNORES, withoutRuntimeExemptions } from "./scanner-config.js";
 
 function kitDependency(name: string): unknown {
     const text = readFileSync(new URL("../../package.json", import.meta.url), "utf8");
@@ -29,9 +29,9 @@ function peerRange(manifest: Record<string, unknown>, name: string): unknown {
     return typeof peers === "object" && peers !== null && name in peers ? Object.entries(peers).find(([key]) => key === name)?.[1] : undefined;
 }
 
-/** What the kit adds after the preset: the first entry (parser options) and the preset itself are skipped. */
+/** What the kit adds after the preset: the first entry (parser options), the preset and its re-applied runtime rules are skipped. */
 function ownBlocks(config: readonly Linter.Config[]): Linter.Config[] {
-    return config.slice(1 + obsidianmd.configs.recommended.length);
+    return config.slice(1 + obsidianmd.configs.recommended.length + withoutRuntimeExemptions(obsidianmd.configs.recommended).length);
 }
 
 function parserOptions(entry: Linter.Config | undefined): Record<string, unknown> {
@@ -167,5 +167,29 @@ describe("createScannerConfig", () => {
         const block = ownBlocks(untyped).find((entry) => entry.files?.flat().includes("**/*.{ts,cts,mts,tsx}") === true && entry.rules?.["no-implied-eval"] === "error");
         expect(block).toBeDefined();
         expect(typed.some((entry) => entry.rules?.["no-implied-eval"] === "error" && entry.files?.flat().includes("**/*.{ts,cts,mts,tsx}") === true)).toBe(false);
+    });
+});
+
+describe("withoutRuntimeExemptions", () => {
+    it("keeps only blocks that carry ignores, as the same rules for the same files without them", () => {
+        const blocks: Linter.Config[] = [
+            { files: ["**/*.js"], rules: { "a/plain": "error" } },
+            { files: ["**/*.js"], ignores: ["**/global-setup.*"], rules: { "a/runtime": "warn" } },
+            { ignores: ["x"] },
+        ];
+        expect(withoutRuntimeExemptions(blocks)).toEqual([{ files: ["**/*.js"], rules: { "a/runtime": "warn" } }]);
+    });
+
+    it("exists in the installed preset: the exemption of test and tooling files is the thing it lifts", () => {
+        const exempting = obsidianmd.configs.recommended.filter((block) => block.ignores !== undefined && block.rules?.["obsidianmd/no-nodejs-modules"] !== undefined);
+        expect(exempting.length, "the preset no longer exempts files from no-nodejs-modules; re-check this module").toBeGreaterThan(0);
+        expect(exempting.some((block) => block.ignores?.some((pattern) => pattern.includes("global-setup")) === true)).toBe(true);
+    });
+
+    it("puts the runtime rules back after the preset, so a global-setup file gets no-nodejs-modules", () => {
+        const config = createScannerConfig({ cwd: "/p", typeAware: true });
+        const lifted = withoutRuntimeExemptions(obsidianmd.configs.recommended);
+        expect(config.slice(1 + obsidianmd.configs.recommended.length, 1 + obsidianmd.configs.recommended.length + lifted.length)).toEqual(lifted);
+        expect(lifted.some((block) => block.rules?.["obsidianmd/no-nodejs-modules"] === "warn")).toBe(true);
     });
 });
