@@ -49,7 +49,7 @@ Options: `rootDir` (default `process.cwd()`), `tsconfig` (default `./tsconfig.js
 
 ## Migrating a plugin's scripts
 
-1. `npm install --save-dev github:Dimagious/obsidian-plugin-dev-kit#v0.3.0` (exact tag). Keep `eslint` as the plugin's own devDependency (peer of the kit, `^9.19.0 || ^10.0.0`) and `typescript` (peer, `>=6.0.0 <6.1.0`; `npm install -D typescript@6`, then fix what `tsc` reports). Add `eslint` explicitly: without an `eslint` devDependency npm installs ESLint 9 on its own, because the plugins nested under obsidianmd peer on `^9`. Then, in order:
+1. `npm install --save-dev github:Dimagious/obsidian-plugin-dev-kit#v0.3.1` (exact tag). Keep `eslint` as the plugin's own devDependency (peer of the kit, `^9.19.0 || ^10.0.0`) and `typescript` (peer, `>=6.0.0 <6.1.0`; `npm install -D typescript@6`, then fix what `tsc` reports). Add `eslint` explicitly: without an `eslint` devDependency npm installs ESLint 9 on its own, because the plugins nested under obsidianmd peer on `^9`. Then, in order:
    - (a) Remove the plugin's own `eslint-plugin-obsidianmd`, `typescript-eslint`, `@eslint/js` (unused once `obsidianPlugin()` replaces its config), `postcss`, `doiuse`, and `esbuild` if no script calls it directly. The kit pins them.
    - (b) Run `npm install`. On ESLint 10 it may print `ERESOLVE overriding peer dependency` warnings and `npm ls` exits 1. Both come from obsidianmd's own peers, cannot be fixed in the kit, and the install works. `loglevel=error` in the plugin's `.npmrc` quiets them but hides other warnings too.
    - (c) Run `npm explain eslint`, see step 3.
