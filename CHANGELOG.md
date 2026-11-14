@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- `opdk scan` ignored the `e2e/` folder, which the live scanner does not. A plugin's 1.1.1 scorecard lists 21 findings in `e2e/fixtures.ts`, `e2e/demo-*.ts` and `e2e/live-key.ts` (`no-unsafe-*`, `prefer-window-timers`, `no-global-this`, `no-nodejs-modules`) after it added `e2e/tsconfig.json`; its 1.1.0, with no e2e tsconfig, listed nothing from `e2e/`. The scan now lints `e2e/` with the runtime rules the preset exempts it from, except `prefer-active-doc`, which that scorecard does not list for its one `document` use there; `*.spec.*` files, `e2e-tests/` and `*.e2e.*` stay ignored. As everywhere, only files a `tsconfig.json` covers can show findings, so a plugin that type-checks `e2e/` through `e2e/tsconfig.json` or the root `tsconfig.json` will now see its `e2e/` findings, and one that keeps a root `tsconfig.e2e.json` sees an advisory `!` line for each such file that has findings. If a scan now fails on `e2e/`, fix the runtime findings in the code (`window.setTimeout`, `activeWindow`), or move the e2e type-checking to a root `tsconfig.e2e.json`. The `no-unsafe-*` findings there (14 of the 21) come from the kit's own imports, which the scanner cannot resolve because it installs the kit without building it, so a typed `evaluate` result does not remove them; only keeping the files out of every `tsconfig.json` does, and the hint on those findings now says so. Whether `prefer-active-doc` is exempt in `e2e/` is open: the scorecard may simply never report it. Inferred from two scorecards, which also support the "kit not built" inference; [docs/scanner.md](docs/scanner.md#differences-from-the-public-scorecard) has the evidence.
+
 ## [0.3.0] - 2026-11-13
 
 ### Changed

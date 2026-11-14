@@ -17,15 +17,30 @@
  *   in place of the type-aware rule), where upstream's snippet reports "was not found by the project service". The
  *   live scanner does not list such files at all (a site script with 36 findings here has none on its scorecard), so
  *   `opdk scan` shows what this pass finds as advisory lines only. A file that cannot be parsed fails this pass too.
- * - The ignore list is upstream's `globalIgnores` (48 entries) with one change: `eslint` is removed from the
+ * - The ignore list is upstream's `globalIgnores` (48 entries) with two changes. First, `eslint` is removed from the
  *   `**\/{astro,babel,...}.config.*` group, so the plugin's `eslint.config.js` and `.ts` are linted (`.mjs`, `.cjs`,
  *   `.mts` and `.cts` stay ignored by their extension globs), with type information
  *   (`allowDefaultProject`, above). 0.5.1's text ignores it, but the live scanner lints it: one plugin's public
  *   scorecard reports four `no-unsafe-*` warnings in its `eslint.config.js`. The kit follows the live scanner
- *   (owner decision, 2026-11-11). Re-check this on every bump of the package. Its first three, `main.js`,
+ *   (owner decision, 2026-11-11). Re-check this on every bump of the package. Second, `**\/e2e/**` is removed: see
+ *   the next entry. Of upstream's list, its first three, `main.js`,
  *   `**\/*.min.js` and `**\/{dist,build,out,release}/**`, are upstream's stand-ins for bundled and minified
  *   output (the scanner recognises it by name and, in a TypeScript project, by content). A plugin written in
  *   JavaScript should drop `main.js`, as upstream says.
+ * - e2e folders. Upstream ignores `**\/e2e/**` and the preset exempts it from the runtime rules, but the live scanner
+ *   lints the files in `e2e/` that a `tsconfig.json` covers. One plugin's release added `e2e/tsconfig.json` (it
+ *   extends the root one and includes `./**\/*.ts`) and its scorecard lists 21 findings in three files of `e2e/`:
+ *   `no-unsafe-*`, and also `prefer-window-timers`, `no-global-this` and `no-nodejs-modules`, so the runtime
+ *   exemption does not apply there either. The `no-unsafe-*` ones all come from imports of the kit, unresolved on
+ *   the scanner (see `hideKitImports`); only keeping the files out of every tsconfig removes them. The release
+ *   before, with no e2e tsconfig, listed nothing from `e2e/`, and another plugin (helpers only in a root
+ *   `tsconfig.e2e.json`, which the project service does not read) lists nothing: a file outside every
+ *   `tsconfig.json` is not reported, as the entry above says. The two scorecards agree with the "kit not built"
+ *   inference of `hideKitImports`. `*.spec.*` files in `e2e/` are not listed either; `**\/*.spec.*` ignores them. So the folder is no longer
+ *   ignored, and its exemption is lifted (`E2E_FILE_PATTERNS`, in `withoutRuntimeExemptions`), except for
+ *   `obsidianmd/prefer-active-doc`: that scorecard has none for the one `document` use in `e2e/fixtures.ts`, so it stays
+ *   off there (`E2E_EXEMPT_RULE`; one data point, see its comment for the three explanations). `**\/e2e-tests/**` and
+ *   `**\/*.e2e.*` stay ignored, and stay exempt in the preset: no scorecard shows a plugin with either.
  * - Upstream imports `defineConfig` and `globalIgnores` from "eslint/config"; plain arrays and `{ ignores }`
  *   objects do the same here and work on every ESLint the kit supports.
  * - The preset exempts test, worker and tooling files from the rules about code that runs inside Obsidian
@@ -53,7 +68,7 @@ export const MIRRORED_OBSIDIANMD_VERSION = "0.5.1";
 
 const CODE_FILES = ["**/*.{ts,cts,mts,tsx,js,cjs,mjs,jsx}"];
 
-/** The paths the scanner leaves out: upstream's `globalIgnores` list (48 entries, with `eslint` removed from the tool-config group), so the root `eslint.config.js` and `.ts` are linted, as the live scanner does. */
+/** The paths the scanner leaves out: upstream's `globalIgnores` list (upstream's 48 less the `e2e` folder, with `eslint` removed from the tool-config group), so the root `eslint.config.js` and `.ts` and the files of `e2e/` are linted, as the live scanner does. */
 export const SCANNER_IGNORES: readonly string[] = [
     // Upstream marks these three "Not in the scanner's list": its stand-ins for bundled and minified output, which
     // the scanner recognises by name and, in a TypeScript project, by content. Upstream says to drop `main.js`
@@ -96,7 +111,7 @@ export const SCANNER_IGNORES: readonly string[] = [
     "**/*.spec.ts",
     "**/testUtils**",
     "automation/**",
-    "**/e2e/**",
+    // Upstream also lists `**/e2e/**`, which the kit does not: see "e2e folders" in the header comment.
     "**/e2e-tests/**",
     "**/*.e2e.*",
     "**/wdio.conf.*",
@@ -119,8 +134,26 @@ function typeAwareObsidianRules(): string[] {
 }
 
 /**
- * The files whose exemption from the preset's runtime rules is lifted: the test-setup files. The scanner's ignore list
- * names none of them, and the one scorecard that shows it has a `global-setup.ts` with three `no-nodejs-modules`
+ * The e2e folder, whose exemption from the preset's runtime rules is lifted as well: one plugin's scorecard has
+ * `prefer-window-timers`, `no-global-this` and `no-nodejs-modules` for files in `e2e/`. Only the folder `e2e`, not
+ * `e2e-tests` or `*.e2e.*` (no evidence). Files under it that the scanner's list names (`*.spec.*`) stay out.
+ */
+export const E2E_FILE_PATTERNS: readonly string[] = ["**/e2e/**"];
+
+/**
+ * The runtime rule that stays off in `E2E_FILE_PATTERNS` after the lift. one plugin's scorecard has no
+ * `prefer-active-doc` for the `document.querySelector(...)` in `e2e/fixtures.ts` (inside a `win.evaluate` callback,
+ * the only non-spec use of `document` in its `e2e/`), while the same file has `prefer-window-timers` in the same
+ * callback. The preset puts these rules in one block, so the kit switches this one off for the folder. One data point, and three
+ * explanations fit it: the scanner exempts the rule in `e2e/`, it skips `document` inside such a callback, or it does
+ * not report the rule on any tsconfig-covered file (no scorecard seen has shown it on one). The kit cannot tell them
+ * apart, and keeps the off scoped to `e2e/`.
+ */
+export const E2E_EXEMPT_RULE = "obsidianmd/prefer-active-doc";
+
+/**
+ * The test-setup files, whose exemption from the preset's runtime rules is lifted (as is the e2e folder's,
+ * `E2E_FILE_PATTERNS`). The scanner's ignore list names none of them, and the one scorecard that shows it has a `global-setup.ts` with three `no-nodejs-modules`
  * warnings. The other names are the same family in the preset's own list (`*-global-setup.*`, `test-setup.*`,
  * `setupTests.*`, `*.setup.*`), run by a test runner in Node like that file, and the scanner's list does not name them
  * either; they are inferred from that one scorecard, not seen on their own. Everything else the preset exempts stays
@@ -130,12 +163,14 @@ function typeAwareObsidianRules(): string[] {
  */
 export const SETUP_FILE_PATTERNS: readonly string[] = ["**/{global-setup,*-global-setup,test-setup,setupTests}.*", "**/*.setup.*"];
 
+const LIFTED_FILE_PATTERNS: readonly string[] = [...SETUP_FILE_PATTERNS, ...E2E_FILE_PATTERNS];
+
 /**
  * The blocks of the preset that carry `ignores` (its exemption of test, worker and tooling files) as the same blocks
- * that apply only to `SETUP_FILE_PATTERNS`, without `ignores`. Later blocks override earlier ones, so putting these
- * after the preset turns the rules back on for the setup files and no other exempted file. Plugins and parsers stay
- * with the original blocks. Flat config reads a nested `files` array as "all of these", so each pattern of the block
- * is paired with each setup pattern.
+ * that apply only to `SETUP_FILE_PATTERNS` and `E2E_FILE_PATTERNS`, without `ignores`. Later blocks override earlier
+ * ones, so putting these after the preset turns the rules back on for the setup files and the e2e folder and no other
+ * exempted file. Plugins and parsers stay with the original blocks. Flat config reads a nested `files` array as "all
+ * of these", so each pattern of the block is paired with each lifted pattern.
  */
 export function withoutRuntimeExemptions(blocks: readonly Linter.Config[]): Linter.Config[] {
     return blocks.flatMap((block): Linter.Config[] => {
@@ -143,7 +178,7 @@ export function withoutRuntimeExemptions(blocks: readonly Linter.Config[]): Lint
             return [];
         }
         const own = (block.files ?? ["**/*"]).map((pattern) => [pattern].flat());
-        return [{ files: own.flatMap((pattern) => SETUP_FILE_PATTERNS.map((setup) => [...pattern, setup])), rules: block.rules }];
+        return [{ files: own.flatMap((pattern) => LIFTED_FILE_PATTERNS.map((lifted) => [...pattern, lifted])), rules: block.rules }];
     });
 }
 
@@ -176,6 +211,11 @@ export function createScannerConfig({ cwd, typeAware, allowDefaultProject = true
 
         ...obsidianmd.configs.recommended,
         ...withoutRuntimeExemptions(obsidianmd.configs.recommended),
+        {
+            // The one runtime rule the e2e exemption keeps: see "e2e folders" in the header comment.
+            files: [...E2E_FILE_PATTERNS],
+            rules: { [E2E_EXEMPT_RULE]: "off" },
+        },
 
         {
             files: CODE_FILES,

@@ -68,7 +68,8 @@ export function toFindings(results: readonly ESLint.LintResult[], cwd: string): 
  * itself in `prepare` has no `dist/` there, and what it exports is unresolved: an `eslint.config.js` that calls
  * `obsidianPlugin()` from the kit gets `no-unsafe-call` and `no-unsafe-assignment` (the spread of the result) on the
  * live scorecard. Inferred from one plugin's 1.7.2 scorecard, where exactly those two warnings sit on the line
- * that calls the kit's helper; reproduced by deleting the kit's `dist/eslint`. It is not confirmed by the scanner's
+ * that calls the kit's helper, and supported by a second plugin's scorecard, where the `no-unsafe-*` warnings of
+ * `e2e/` sit on the lines that use the kit's e2e helpers; reproduced by deleting the kit's `dist/eslint`. It is not confirmed by the scanner's
  * authors. The module specifiers keep their line, so the findings point at the right place.
  */
 const KIT_SPECIFIER = /(\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)(["'])obsidian-plugin-dev-kit((?:\/[^"']*)?)\2/g;
@@ -81,21 +82,32 @@ export function hideKitImports(text: string): string {
 const SCRIPT_FILE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 
 /**
- * What the two `no-unsafe-*` findings of a script that imports the kit come from, and the fix. A block
+ * What the `no-unsafe-call` and `no-unsafe-assignment` findings of a script that imports the kit come from, and the fix. A block
  * `eslint-disable` comment in the file is not one: it fails the plugin's own lint (unused directive,
- * `eslint-comments/disable-enable-pair`) and the scan then reports `disable-enable-pair` instead. Renaming the config
- * to `eslint.config.mjs` takes the file off the scanner's list (`**\/*.mjs` is ignored), and `obsidianPlugin()` works
- * from it.
+ * `eslint-comments/disable-enable-pair`) and the scan then reports `disable-enable-pair` instead. For a config,
+ * renaming it to `eslint.config.mjs` takes the file off the scanner's list (`**\/*.mjs` is ignored), and
+ * `obsidianPlugin()` works from it. Any other file has no such way out: only a tsconfig that does not cover it does.
  */
 export const KIT_IMPORT_HINT =
     "The scanner installs the kit without building it, so this import is unresolved there. Name the file with the .mjs extension (eslint.config.mjs): the scanner ignores .mjs files.";
+
+/** The hint for a file that is not an `eslint.config.*`: the `.mjs` remedy does not apply to it. */
+export const KIT_IMPORT_FILE_HINT =
+    "The scanner installs the kit without building it, so this import is unresolved there. Keep the file out of every tsconfig.json (type-check e2e through a root tsconfig.e2e.json, which the scanner does not look for).";
+
+const CONFIG_FILE = /^eslint\.config\.[^/]+$/;
+
+/** The hint for a finding in `filePath` (absolute or relative): the `.mjs` rename only for an `eslint.config.*`. Pure. */
+export function kitImportHint(filePath: string): string {
+    return CONFIG_FILE.test(path.basename(filePath)) ? KIT_IMPORT_HINT : KIT_IMPORT_FILE_HINT;
+}
 
 /** `results` of a script that imports the kit, with the hint added to the unresolved-import findings. */
 function withKitHint(results: readonly ESLint.LintResult[]): ESLint.LintResult[] {
     return results.map((result) => ({
         ...result,
         messages: result.messages.map((message) =>
-            message.ruleId === "@typescript-eslint/no-unsafe-call" || message.ruleId === "@typescript-eslint/no-unsafe-assignment" ? { ...message, message: `${message.message} ${KIT_IMPORT_HINT}` } : message,
+            message.ruleId === "@typescript-eslint/no-unsafe-call" || message.ruleId === "@typescript-eslint/no-unsafe-assignment" ? { ...message, message: `${message.message} ${kitImportHint(result.filePath)}` } : message,
         ),
     }));
 }

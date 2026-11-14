@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import type { Linter } from "eslint";
 import obsidianmd from "eslint-plugin-obsidianmd";
 import { describe, expect, it } from "vitest";
-import { createScannerConfig, MIRRORED_OBSIDIANMD_VERSION, SCANNER_IGNORES, SETUP_FILE_PATTERNS, withoutRuntimeExemptions } from "./scanner-config.js";
+import { createScannerConfig, E2E_EXEMPT_RULE, E2E_FILE_PATTERNS, MIRRORED_OBSIDIANMD_VERSION, SCANNER_IGNORES, SETUP_FILE_PATTERNS, withoutRuntimeExemptions } from "./scanner-config.js";
 
 function kitDependency(name: string): unknown {
     const text = readFileSync(new URL("../../package.json", import.meta.url), "utf8");
@@ -68,13 +68,18 @@ describe("the mirrored scanner configuration", () => {
         expect(obsidianmd.meta.version).toBe(MIRRORED_OBSIDIANMD_VERSION);
     });
 
-    it("keeps upstream's 48 ignore entries (0.5.1) except that eslint.config.* is linted, as the live scanner does", () => {
-        expect(SCANNER_IGNORES).toHaveLength(48);
+    it("keeps upstream's 48 ignore entries (0.5.1) except that eslint.config.* and the e2e folder are linted, as the live scanner does", () => {
+        expect(SCANNER_IGNORES).toHaveLength(47);
         const configGroup = SCANNER_IGNORES.find((entry) => entry.includes("esbuild,"));
         expect(configGroup).toBeDefined();
         expect(configGroup).not.toMatch(/[{,]eslint[,}]/);
         expect(configGroup).toContain("jest");
-        expect(SCANNER_IGNORES).toEqual(expect.arrayContaining(["main.js", "**/scripts/**", "**/docs/**", "**/*.test.*", "**/e2e/**"]));
+        expect(SCANNER_IGNORES).toEqual(expect.arrayContaining(["main.js", "**/scripts/**", "**/docs/**", "**/*.test.*", "**/*.spec.*"]));
+    });
+
+    it("does not ignore the e2e folder (Garmy 1.1.1's scorecard lists its files) but keeps e2e-tests and *.e2e.*, which no scorecard shows", () => {
+        expect(SCANNER_IGNORES).not.toContain("**/e2e/**");
+        expect(SCANNER_IGNORES).toEqual(expect.arrayContaining(["**/e2e-tests/**", "**/*.e2e.*", "**/*.spec.*"]));
     });
 });
 
@@ -185,12 +190,28 @@ describe("withoutRuntimeExemptions", () => {
         expect(lifted[0]?.rules).toEqual({ "a/runtime": "warn" });
         expect(lifted[0]?.ignores).toBeUndefined();
         // "all of these" in flat config: the block's own glob and one setup glob.
-        expect(lifted[0]?.files).toEqual(SETUP_FILE_PATTERNS.map((setup) => ["**/*.js", setup]));
+        expect(lifted[0]?.files).toEqual([...SETUP_FILE_PATTERNS, ...E2E_FILE_PATTERNS].map((pattern) => ["**/*.js", pattern]));
     });
 
     it("pairs every pattern of a block with every setup pattern", () => {
         const [block] = withoutRuntimeExemptions([{ files: ["**/*.ts", "**/*.tsx"], ignores: ["x"], rules: { "a/r": "warn" } }]);
-        expect(block?.files).toHaveLength(2 * SETUP_FILE_PATTERNS.length);
+        expect(block?.files).toHaveLength(2 * (SETUP_FILE_PATTERNS.length + E2E_FILE_PATTERNS.length));
+    });
+
+    it("lifts the exemption of the folder e2e only, not e2e-tests or *.e2e.*", () => {
+        expect(E2E_FILE_PATTERNS).toEqual(["**/e2e/**"]);
+    });
+
+    it("keeps prefer-active-doc off in the e2e folder after the lift, and only there", () => {
+        const config = createScannerConfig({ cwd: "/p", typeAware: true });
+        const offBlocks = config.filter((block) => block.rules?.[E2E_EXEMPT_RULE] === "off");
+        expect(offBlocks).toHaveLength(1);
+        expect(offBlocks[0]?.files).toEqual([...E2E_FILE_PATTERNS]);
+        const lifted = withoutRuntimeExemptions(obsidianmd.configs.recommended).length;
+        // After the lifted blocks, so the "off" wins; before the kit's own rules.
+        const [off] = offBlocks;
+        expect(off).toBeDefined();
+        expect(config.findIndex((block) => block === off)).toBe(1 + obsidianmd.configs.recommended.length + lifted);
     });
 
     it("does not name workers, test helper folders or tool configs among the files that lose the exemption", () => {
