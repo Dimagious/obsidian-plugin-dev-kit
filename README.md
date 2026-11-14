@@ -29,7 +29,7 @@ Your plugin keeps only what is its own: specs, the seed vault and demo scenes.
 The kit is installed from a git tag on GitHub; it is not published to npm.
 
 ```bash
-npm install -D "github:Dimagious/obsidian-plugin-dev-kit#v0.3.0"
+npm install -D "github:Dimagious/obsidian-plugin-dev-kit#v0.3.1"
 npx opdk --help
 ```
 
@@ -122,10 +122,10 @@ A plugin pins the kit in three places: the tag in `package.json`, the commit in 
 
 ```bash
 npx opdk kit upgrade --dry-run   # what would change, and the kit's CHANGELOG since your version
-npx opdk kit upgrade             # latest release; or: npx opdk kit upgrade v0.3.0
+npx opdk kit upgrade             # latest release; or: npx opdk kit upgrade v0.3.1
 ```
 
-On v0.1.0, which has no `kit` command, run it once as `npx -y -p github:Dimagious/obsidian-plugin-dev-kit#v0.3.0 opdk kit upgrade v0.3.0`. It needs a clean git tree, never commits or pushes, and puts `package.json` and the lockfile back if `npm install` fails (run `npm ci` if `node_modules` looks off). Review the diff and open a pull request. Configure Dependabot to ignore the kit (a lone bump of one pin breaks the check; the `ignore` entries are in the docs) and watch the kit's releases on GitHub. Details: [docs/ci.md](docs/ci.md#updating-the-kit).
+On v0.1.0, which has no `kit` command, run it once as `npx -y -p github:Dimagious/obsidian-plugin-dev-kit#v0.3.1 opdk kit upgrade v0.3.1`. It needs a clean git tree, never commits or pushes, and puts `package.json` and the lockfile back if `npm install` fails (run `npm ci` if `node_modules` looks off). Review the diff and open a pull request. Configure Dependabot to ignore the kit (a lone bump of one pin breaks the check; the `ignore` entries are in the docs) and watch the kit's releases on GitHub. Details: [docs/ci.md](docs/ci.md#updating-the-kit).
 
 ## Unit tests
 
@@ -205,7 +205,7 @@ npm run e2e:smoke  # the kit's own e2e specs against a real Obsidian; by hand be
 
 `dist/` is not committed. `npm install` from a git tag runs `prepare`, which builds it, so a broken build breaks every plugin install. CI runs the same checks plus the smoke on every pull request.
 
-Releasing: bump `version` in `package.json`, move the `[Unreleased]` entries in `CHANGELOG.md` under the new version, merge, then the owner tags `vX.Y.Z` and pushes the tag. A workflow fails the tag if it differs from `package.json`. Plugins pin the tag, for example `github:Dimagious/obsidian-plugin-dev-kit#v0.3.0`.
+Releasing: bump `version` in `package.json`, move the `[Unreleased]` entries in `CHANGELOG.md` under the new version, merge, then the owner tags `vX.Y.Z` and pushes the tag. A workflow fails the tag if it differs from `package.json`. Plugins pin the tag, for example `github:Dimagious/obsidian-plugin-dev-kit#v0.3.1`.
 
 ## Credits
 

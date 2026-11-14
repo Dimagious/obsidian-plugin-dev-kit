@@ -62,7 +62,7 @@ How to read it:
 
 ## Migrating a plugin's build scripts
 
-1. `npm install --save-dev github:Dimagious/obsidian-plugin-dev-kit#v0.3.0` (pin an exact tag).
+1. `npm install --save-dev github:Dimagious/obsidian-plugin-dev-kit#v0.3.1` (pin an exact tag).
 2. Replace the scripts:
 
 | Before | After |
