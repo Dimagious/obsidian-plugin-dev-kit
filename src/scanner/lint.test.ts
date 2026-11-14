@@ -1,7 +1,7 @@
 import { ESLint } from "eslint";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPluginFixture, type PluginFixture } from "../test-support/plugin-fixture.js";
-import { DEFAULT_PROJECT_CLASH_MESSAGE, hideKitImports, isDefaultProjectClash, KIT_IMPORT_HINT, runScannerLint, summariseOutsideProject, toFindings } from "./lint.js";
+import { DEFAULT_PROJECT_CLASH_MESSAGE, hideKitImports, isDefaultProjectClash, KIT_IMPORT_FILE_HINT, KIT_IMPORT_HINT, kitImportHint, runScannerLint, summariseOutsideProject, toFindings } from "./lint.js";
 import { isOutsideProject, NO_INPUTS_MESSAGE, PROJECT_SERVICE_MESSAGE } from "./outside-project.js";
 import { createScannerConfig } from "./scanner-config.js";
 
@@ -187,6 +187,69 @@ describe("runScannerLint", () => {
         expect(outcome.findings.some((finding) => finding.file === "src/parse.worker.ts" && finding.rule === "obsidianmd/no-nodejs-modules")).toBe(true);
     });
 
+    // Garmy 1.1.1 added e2e/tsconfig.json and its scorecard lists the runtime rules and the no-unsafe-* warnings for
+    // e2e/*.ts, spec files excepted. Version 1.1.0, with no e2e tsconfig, listed nothing from e2e/.
+    describe("the e2e folder", () => {
+        const HELPER = ['import "node:child_process";', "export const wait = (): void => {", "    setTimeout(() => undefined, 1);", "};", "export const g = globalThis;", ""].join("\n");
+        const EVAL = 'export const e = eval("1");\n';
+        const E2E_TSCONFIG = JSON.stringify({ extends: "../tsconfig.json", include: ["./**/*.ts"] });
+
+        it("is linted when a tsconfig.json covers it, with the runtime rules the preset exempts it from", async () => {
+            plugin.write("src/main.ts", "export const a = 1;\n");
+            plugin.write("e2e/tsconfig.json", E2E_TSCONFIG);
+            plugin.write("e2e/helpers.ts", HELPER);
+            plugin.write("e2e/deep/more.ts", HELPER);
+            const outcome = await runScannerLint(plugin.dir, ["src/main.ts", "e2e/helpers.ts", "e2e/deep/more.ts"]);
+            expect(outcome.untyped).toBe(0);
+            expect(outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`).sort()).toEqual([
+                "e2e/deep/more.ts:1 obsidianmd/no-nodejs-modules",
+                "e2e/deep/more.ts:3 obsidianmd/prefer-window-timers",
+                "e2e/deep/more.ts:5 obsidianmd/no-global-this",
+                "e2e/helpers.ts:1 obsidianmd/no-nodejs-modules",
+                "e2e/helpers.ts:3 obsidianmd/prefer-window-timers",
+                "e2e/helpers.ts:5 obsidianmd/no-global-this",
+            ]);
+        });
+
+        it("does not report prefer-active-doc there, as the scorecard has none for a `document` in an evaluate callback, but still does in src", async () => {
+            const read = "export const root = (sel: string): Element | null => document.querySelector(sel);\n";
+            plugin.write("src/main.ts", read);
+            plugin.write("e2e/tsconfig.json", E2E_TSCONFIG);
+            plugin.write("e2e/helpers.ts", read);
+            const outcome = await runScannerLint(plugin.dir, ["src/main.ts", "e2e/helpers.ts"]);
+            expect(outcome.findings.map((finding) => `${finding.file}:${String(finding.line)} ${finding.rule}`)).toEqual(["src/main.ts:1 obsidianmd/prefer-active-doc"]);
+        });
+
+        it("reports the type-aware warnings too: an untyped value flowing out of a helper", async () => {
+            plugin.write("src/main.ts", "export const a = 1;\n");
+            plugin.write("e2e/tsconfig.json", E2E_TSCONFIG);
+            plugin.write("e2e/helpers.ts", "export const read = (value: unknown): string => (value as any).name;\n");
+            const outcome = await runScannerLint(plugin.dir, ["e2e/helpers.ts"]);
+            expect(outcome.findings.map((finding) => finding.rule)).toContain("@typescript-eslint/no-unsafe-return");
+        });
+
+        it("leaves out spec files in it, which the scanner's list names, and the e2e-tests folder and *.e2e.* files, which no scorecard shows", async () => {
+            plugin.write("src/main.ts", "export const a = 1;\n");
+            // `no-eval` is not one of the exempted runtime rules, so only the ignore list can keep these quiet.
+            plugin.write("e2e/tsconfig.json", JSON.stringify({ extends: "../tsconfig.json", include: ["./**/*.ts", "../e2e-tests/**/*.ts", "../src/**/*.ts"] }));
+            plugin.write("e2e/helpers.spec.ts", EVAL);
+            plugin.write("e2e-tests/helpers.ts", EVAL);
+            plugin.write("src/flow.e2e.ts", EVAL);
+            const outcome = await runScannerLint(plugin.dir, ["src/main.ts", "e2e/helpers.spec.ts", "e2e-tests/helpers.ts", "src/flow.e2e.ts"]);
+            expect(outcome.findings).toEqual([]);
+        });
+
+        it("is not reported when no tsconfig.json covers it: a root tsconfig.e2e.json does not count, the file prints as outside every project", async () => {
+            plugin.write("src/main.ts", "export const a = 1;\n");
+            plugin.write("tsconfig.e2e.json", JSON.stringify({ extends: "./tsconfig.json", include: ["e2e/**/*.ts"] }));
+            plugin.write("e2e/helpers.ts", "export const read = (value: unknown): string => (value as any).name;\n");
+            const outcome = await runScannerLint(plugin.dir, ["src/main.ts", "e2e/helpers.ts"]);
+            expect(outcome.untyped).toBe(1);
+            // Only the advisory pass saw it: the typed warnings are absent, as on the scorecard.
+            expect(outcome.findings.some((finding) => finding.file === "e2e/helpers.ts" && finding.rule.includes("no-unsafe"))).toBe(false);
+        });
+    });
+
     it("still leaves out the files the scanner's own ignore list names", async () => {
         plugin.write("src/main.ts", "export const a = 1;\n");
         plugin.write("src/main.test.ts", 'import { readFileSync } from "node:fs";\nexport const read = readFileSync;\n');
@@ -216,6 +279,28 @@ describe("runScannerLint", () => {
             expect(finding.message).toContain(KIT_IMPORT_HINT);
         }
         expect(KIT_IMPORT_HINT).toContain("eslint.config.mjs");
+    });
+
+    it("does not tell an e2e file covered by a tsconfig to use .mjs: the hint says to keep it out of every tsconfig", async () => {
+        writeKitStub();
+        plugin.write("tsconfig.json", TSCONFIG);
+        plugin.write("src/main.ts", "export const a = 1;\n");
+        plugin.write("e2e/tsconfig.json", JSON.stringify({ extends: "../tsconfig.json", include: ["./**/*.ts"] }));
+        plugin.write("e2e/fixtures.ts", 'import { obsidianPlugin } from "obsidian-plugin-dev-kit/e2e";\nexport const config = obsidianPlugin({ rootDir: "." });\n');
+        const { findings } = await runScannerLint(plugin.dir, ["e2e/fixtures.ts"]);
+        const hinted = findings.filter((finding) => finding.message.includes("installs the kit without building it"));
+        expect(hinted.length).toBeGreaterThan(0);
+        for (const finding of hinted) {
+            expect(finding.message).toContain(KIT_IMPORT_FILE_HINT);
+            expect(finding.message).not.toContain(".mjs");
+        }
+    });
+
+    it("picks the .mjs hint for eslint.config.* in any folder depth and the tsconfig hint for the rest", () => {
+        expect(kitImportHint("/p/eslint.config.js")).toBe(KIT_IMPORT_HINT);
+        expect(kitImportHint("eslint.config.ts")).toBe(KIT_IMPORT_HINT);
+        expect(kitImportHint("/p/e2e/fixtures.ts")).toBe(KIT_IMPORT_FILE_HINT);
+        expect(kitImportHint("/p/my-eslint.config.js.ts")).toBe(KIT_IMPORT_FILE_HINT);
     });
 
     it("does not scan an eslint.config.mjs that imports the kit: the scanner ignores .mjs, so nothing is unresolved there", async () => {
