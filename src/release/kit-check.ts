@@ -36,7 +36,7 @@ export function checkKit(files: ProjectFiles, workflows: readonly WorkflowFile[]
         const hint =
             readNpmPins(valueOf(files.packageJson)).length > 0
                 ? `Run \`opdk kit upgrade v${version}\` to point every \`uses:\` line of the kit's workflows at the commit of v${version} (\`# v${version}\`) and to set package.json and the lockfile to that exact version; name another vX.Y.Z, or none for the latest release, to move to it instead. Then commit the result.`
-                : `package.json asks for the kit with a spec \`opdk kit upgrade\` does not take (it takes an exact, ^ or ~ version or a GitHub tag). Install the release the workflows name with \`npm install -D -E obsidian-plugin-dev-kit@X.Y.Z\`, or set the commit of v${version} and the comment \`# v${version}\` in every \`uses:\` line of the kit's workflows. Then commit the result.`;
+                : `package.json asks for the kit with a spec \`opdk kit upgrade\` does not take (it takes an exact, ^ or ~ version or a GitHub tag). Install the release the workflows name with \`npm install -D -E obsidian-plugin-dev-kit@X.Y.Z\`, or set the commit of v${version} (\`git ls-remote https://github.com/Dimagious/obsidian-plugin-dev-kit 'refs/tags/v${version}^{}'\`; without \`^{}\` it prints the tag object) and the comment \`# v${version}\` in every \`uses:\` line of the kit's workflows. Then commit the result.`;
         return { group: "kit", passed: "", problems: [errorProblem("kit", "the kit is not pinned to one release.", hint, [...verdict.reasons, ...verdict.places])] };
     }
     // `opdk kit upgrade` only takes vX.Y.Z; a branch or other ref in package.json cannot be named there.
