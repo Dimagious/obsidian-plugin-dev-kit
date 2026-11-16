@@ -37,7 +37,7 @@ Reading failures:
 - `api` reports nothing for a plugin that surely uses new API: a tsconfig `paths` entry may point `obsidian` at a stub, which the rule cannot see through.
 - `versions.json` missing: create it in the multi-line format the kit writes (two-space indent, one entry per line, final newline; `opdk release <bump>` creates it when missing, but `check` fails without it). An existing entry is never rewritten.
 - A changelog problem: entries belong under `## [Unreleased]` before a release; `opdk release <bump>` moves them.
-- `kit: the kit is not pinned to one release`: the output lists each place with the commit it names. Run `opdk kit upgrade <tag from package.json>` (or without a tag for the latest release); a workflow pinned to a tag or branch instead of a full SHA is fixed the same way. A plugin that does not call the kit's workflows is not affected.
+- `kit: the kit is not pinned to one release`: the output lists each place with the commit it names. Run `opdk kit upgrade <tag from package.json>` (or without a tag for the latest release); a workflow pinned to a tag or branch instead of a full SHA is fixed the same way. A kit installed from npm (a plain version in package.json) is not handled by `opdk kit upgrade`: follow the steps in the failure's hint. A plugin that does not call the kit's workflows is not affected.
 - `ahead of origin` at the start of `opdk release`: the commits have not run CI. Push them through a pull request, wait for green, pull, rerun.
 - `npm test failed`: nothing was changed. Fix the tests; `--no-test` only when they are known to be covered elsewhere.
 

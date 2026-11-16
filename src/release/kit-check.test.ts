@@ -32,6 +32,26 @@ function pluginWith(layout: Layout): PluginFixture {
     return created;
 }
 
+/** A plugin that installed kit 0.3.2 from the npm registry and calls the kit's CI workflow at a commit with `# <comment>`. */
+function npmInstall(comment: string): PluginFixture {
+    const created = createPluginFixture();
+    plugin = created;
+    writePluginFiles(created);
+    created.write("package.json", `${JSON.stringify({ name: "fixture-release", version: "1.0.0", scripts: { build: "opdk build" }, devDependencies: { "obsidian-plugin-dev-kit": "0.3.2" } }, null, 2)}\n`);
+    const lock = {
+        name: "fixture-release",
+        version: "1.0.0",
+        lockfileVersion: 3,
+        packages: {
+            "": { name: "fixture-release", version: "1.0.0", devDependencies: { "obsidian-plugin-dev-kit": "0.3.2" } },
+            "node_modules/obsidian-plugin-dev-kit": { version: "0.3.2", resolved: "https://registry.npmjs.org/obsidian-plugin-dev-kit/-/obsidian-plugin-dev-kit-0.3.2.tgz", dev: true },
+        },
+    };
+    created.write("package-lock.json", `${JSON.stringify(lock, null, 2)}\n`);
+    created.write(".github/workflows/ci.yml", workflowText("plugin-ci.yml", OLD_SHA, comment));
+    return created;
+}
+
 async function check(created: PluginFixture): Promise<{ code: number; out: string; err: string }> {
     const ctx = createContext(created.dir);
     const code = await runReleaseCheck({ cwd: created.dir, config: {}, tag: undefined, flags: { ...ALL_CHECKS, build: false, api: false }, reporter: ctx.reporter });
@@ -99,6 +119,22 @@ describe("release check, kit step", () => {
         const result = await check(pluginWith({ workflows: { "ci.yml": ["v0.1.0", undefined] } }));
         expect(result.code).toBe(1);
         expect(result.err).toContain('pins the kit\'s workflow to "v0.1.0", not to a full commit SHA.');
+    });
+
+    it("passes for a kit installed from npm when the workflow comments name the lockfile's version", async () => {
+        const result = await check(npmInstall("v0.3.2"));
+        expect(result.code).toBe(0);
+        expect(result.out).toContain("✓ check   kit: the kit is 0.3.2 (6e33ca4) in package-lock.json, 1 workflow line");
+    });
+
+    it("fails for a kit installed from npm when a workflow comment names another version", async () => {
+        const result = await check(npmInstall("v0.3.1"));
+        expect(result.code).toBe(1);
+        expect(result.err).toContain("ci.yml:");
+        expect(result.err).toContain("says # v0.3.1, but the kit is at 0.3.2.");
+        expect(result.err).toContain("installed from npm, which `opdk kit upgrade` does not handle yet");
+        expect(result.err).toContain("'refs/tags/v0.3.2^{}'");
+        expect(result.err).not.toContain("Run `opdk kit upgrade`");
     });
 
     it("runs in the --no-build --no-api mode CI uses", async () => {

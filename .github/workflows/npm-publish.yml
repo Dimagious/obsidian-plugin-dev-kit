@@ -1,0 +1,65 @@
+name: npm publish
+
+# Publishes the tagged version to npm through trusted publishing (OIDC): no token is stored in the repository, and npm
+# adds a provenance statement that ties the package to this workflow and commit. Only a tag on a commit of main
+# publishes. A version that is already on npm is skipped, so 0.3.2, published by hand before trusted publishing could
+# be configured, leaves its tag run green. npm drops a new trusted-publisher configuration that has not published within
+# 2 days: add or renew it on npmjs.com right before pushing a tag that publishes.
+on:
+  push:
+    tags: ['v*']
+
+permissions: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Compare tag with package.json version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).version")"
+          if [ "$TAG" != "v$version" ]; then
+            echo "Tag $TAG does not match package.json version $version (expected v$version)." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Require the tagged commit to be on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "The tagged commit $GITHUB_SHA is not on main; only a release commit merged to main is published." >&2
+            exit 1
+          fi
+      - name: Skip a version that is already on npm
+        id: published
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if npm view "obsidian-plugin-dev-kit@$VERSION" version >/dev/null 2>&1; then
+            echo "obsidian-plugin-dev-kit@$VERSION is already on npm; nothing to publish."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      # Dependencies' install scripts do not run in the job that can publish. `npm publish` still runs the kit's own
+      # `prepare`, which builds dist/.
+      - if: steps.published.outputs.skip != 'true'
+        run: npm ci --ignore-scripts
+      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
+      - if: steps.published.outputs.skip != 'true'
+        run: npm install -g npm@11.5.1
+      - if: steps.published.outputs.skip != 'true'
+        run: npm publish --access public

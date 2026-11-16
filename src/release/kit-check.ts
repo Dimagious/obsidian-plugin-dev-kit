@@ -4,8 +4,9 @@ import type { ProjectFiles } from "./project-files.js";
 import { valueOf } from "./project-files.js";
 
 /** What the places agree on, as a sentence for the `✓` line. */
-function agreement(verdict: ReturnType<typeof judgePins>, hasPackageJson: boolean, hasLock: boolean): string {
-    const named = verdict.tag ?? (verdict.commit === undefined ? "one release" : shortSha(verdict.commit));
+function agreement(verdict: ReturnType<typeof judgePins>, hasPackageJson: boolean, lockVersion: string | undefined, hasLock: boolean): string {
+    // An npm install names no tag in package.json; the lockfile's version, when there is a lockfile, is the release then.
+    const named = verdict.tag ?? lockVersion ?? (verdict.commit === undefined ? "one release" : shortSha(verdict.commit));
     const where = [
         ...(hasPackageJson ? ["package.json"] : []),
         ...(hasLock ? ["package-lock.json"] : []),
@@ -26,7 +27,23 @@ export function checkKit(files: ProjectFiles, workflows: readonly WorkflowFile[]
         return { group: "kit", passed: "obsidian-plugin-dev-kit is not a git dependency and no workflow calls it", problems: [] };
     }
     if (verdict.reasons.length === 0) {
-        return { group: "kit", passed: agreement(verdict, pins.packageJson.length > 0, pins.lock !== undefined), problems: [] };
+        return { group: "kit", passed: agreement(verdict, pins.packageJson.length > 0, pins.lock?.version, pins.lock !== undefined), problems: [] };
+    }
+    if (pins.packageJson.length === 0 && pins.lock?.version !== undefined) {
+        // Installed from npm: `opdk kit upgrade` handles only git-tag installs, so name the manual steps.
+        const version = pins.lock.version;
+        return {
+            group: "kit",
+            passed: "",
+            problems: [
+                errorProblem(
+                    "kit",
+                    "the kit is not pinned to one release.",
+                    `The kit is installed from npm, which \`opdk kit upgrade\` does not handle yet. Point every \`uses:\` line of the kit's workflows at the commit of v${version} with the comment \`# v${version}\` (the commit: \`git ls-remote https://github.com/Dimagious/obsidian-plugin-dev-kit 'refs/tags/v${version}^{}'\`; without \`^{}\` it prints the tag object, not the commit), or install the version the workflows name with \`npm install -D -E obsidian-plugin-dev-kit@X.Y.Z\`. Then commit the result.`,
+                    [...verdict.reasons, ...verdict.places],
+                ),
+            ],
+        };
     }
     // `opdk kit upgrade` only takes vX.Y.Z; a branch or other ref in package.json cannot be named there.
     const named = verdict.tag !== undefined && /^v\d+\.\d+\.\d+$/.test(verdict.tag) ? verdict.tag : undefined;

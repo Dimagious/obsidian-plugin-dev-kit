@@ -2,7 +2,21 @@
   "name": "obsidian-plugin-dev-kit",
   "version": "0.3.1",
   "description": "Build, lint, release, test and film Obsidian plugins from one shared dev dependency.",
-  "private": true,
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "obsidian-md",
+    "esbuild",
+    "eslint",
+    "playwright",
+    "vitest",
+    "release",
+    "cli"
+  ],
+  "homepage": "https://github.com/Dimagious/obsidian-plugin-dev-kit#readme",
+  "bugs": {
+    "url": "https://github.com/Dimagious/obsidian-plugin-dev-kit/issues"
+  },
   "type": "module",
   "license": "MIT",
   "author": "Dmitriy Yurkin",
