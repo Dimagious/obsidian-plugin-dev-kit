@@ -49,10 +49,13 @@ jobs:
         id: published
         env:
           VERSION: ${{ steps.version.outputs.version }}
+        # npm's answer is printed, so a run that publishes shows why it did not skip.
         run: |
-          if npm view "obsidian-plugin-dev-kit@$VERSION" version >/dev/null 2>&1; then
+          if npm view "obsidian-plugin-dev-kit@$VERSION" version; then
             echo "obsidian-plugin-dev-kit@$VERSION is already on npm; nothing to publish."
             echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "npm view did not find obsidian-plugin-dev-kit@$VERSION (see above); publishing it."
           fi
       # Dependencies' install scripts do not run in the job that can publish. `npm publish` still runs the kit's own
       # `prepare`, which builds dist/.

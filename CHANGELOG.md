@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- The npm publish step on the v0.3.2 tag hid what `npm view` answered. That run started before the hand publish of 0.3.2 reached the registry (09:37:03Z, about 10 s after the run ended), so the check rightly found nothing and the publish got E404, because no trusted publisher was configured yet. The check now prints npm's answer.
+
 ## [0.3.2] - 2026-11-16
 
 ### Added
