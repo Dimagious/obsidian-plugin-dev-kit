@@ -66,3 +66,37 @@ jobs:
         run: npm install -g npm@11.5.1
       - if: steps.published.outputs.skip != 'true'
         run: npm publish --access public
+
+  # A GitHub Release for the tag, so "Watch > Releases" notifies. Its notes are the version's CHANGELOG section. A job
+  # of its own: the write token for releases never shares a job with the npm publish credential.
+  github-release:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Create the release unless it exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists."
+            exit 0
+          fi
+          version="${TAG#v}"
+          awk -v v="$version" '
+            index($0, "## [" v "] ") == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "CHANGELOG.md has no section for $version." >&2
+            exit 1
+          fi
+          printf "\n---\nnpm: https://www.npmjs.com/package/obsidian-plugin-dev-kit/v/%s · \`npm install -D -E obsidian-plugin-dev-kit@%s\`\n" "$version" "$version" >> notes.md
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md

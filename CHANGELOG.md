@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- Every kit tag now gets a GitHub Release whose notes are that version's CHANGELOG section, made by `npm-publish.yml` after the npm publish, so "Watch > Custom > Releases" on the repository notifies about new versions. Releases for v0.1.0 to v0.3.3 were created by hand on 2026-11-16.
+
 ## [0.3.3] - 2026-11-16
 
 ### Fixed
