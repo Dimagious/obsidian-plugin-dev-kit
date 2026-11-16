@@ -99,4 +99,4 @@ jobs:
             exit 1
           fi
           printf '\n---\nnpm: https://www.npmjs.com/package/obsidian-plugin-dev-kit/v/%s · `npm install -D -E obsidian-plugin-dev-kit@%s`\n' "$version" "$version" >> notes.md
-          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md --latest
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md
