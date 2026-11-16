@@ -71,7 +71,7 @@ export async function runKitUpgrade(input: UpgradeInput): Promise<number> {
     }
     const [spec] = readPackageJsonPins(pkg.value);
     if (spec === undefined) {
-        return fail(reporter, "package.json does not depend on obsidian-plugin-dev-kit through GitHub.", "Install it with `npm install --save-dev github:Dimagious/obsidian-plugin-dev-kit#vX.Y.Z`. A kit linked from a folder is not upgraded by opdk.");
+        return fail(reporter, "package.json does not depend on obsidian-plugin-dev-kit through GitHub.", "opdk kit upgrade moves only a git-tag install. From npm, run `npm install -D -E obsidian-plugin-dev-kit@X.Y.Z` and point the workflow `uses:` lines at that tag's commit by hand; `opdk release check` shows what disagrees. A kit linked from a folder is not upgraded by opdk.");
     }
     const { owner } = spec.parsed;
 

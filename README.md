@@ -28,13 +28,13 @@ Your plugin keeps only what is its own: specs, the seed vault and demo scenes.
 ## Install
 
 ```bash
-npm install -D obsidian-plugin-dev-kit
+npm install -D -E obsidian-plugin-dev-kit
 npx opdk --help
 ```
 
-From v0.3.2 the kit is on npm, published from GitHub Actions with provenance. A git tag works too: `npm install -D "github:Dimagious/obsidian-plugin-dev-kit#v0.3.1"`. `opdk kit upgrade` (below) moves only a git-tag install for now; with npm, run `npm install -D obsidian-plugin-dev-kit@X.Y.Z` and update the commit in the `uses:` lines of the kit's workflows by hand, and `opdk release check` tells you when they disagree.
+From v0.3.2 the kit is on npm (`-E` pins the exact version). Versions from 0.3.3 on are published by a GitHub workflow and carry npm provenance; 0.3.2 was published by hand. A git tag works too: `npm install -D "github:Dimagious/obsidian-plugin-dev-kit#v0.3.1"`. `opdk kit upgrade` (below) moves only a git-tag install for now. With npm, run `npm install -D -E obsidian-plugin-dev-kit@X.Y.Z`, then in each `uses:` line of the kit's workflows set the commit of that tag (`git ls-remote https://github.com/Dimagious/obsidian-plugin-dev-kit refs/tags/vX.Y.Z`) and the comment `# vX.Y.Z`. `opdk release check` compares the comments with the installed version; it cannot check the commit of an npm install, so update the two together.
 
-Install size, measured on 2026-11-12: the package is 260 KB packed and 1.4 MB installed. In an empty project it brings about 100 MB with its required dependencies, mostly TypeScript, esbuild and the ESLint stack a plugin usually has already. Electron, Playwright, Vitest, `@vitest/coverage-v8` and jsdom are not dependencies of the kit at all: the plugin installs them for end-to-end tests, demo films and unit tests, and the kit checks their versions when it runs and fails with the install command. ESLint and TypeScript 6 are the only peer dependencies; `opdk scan` fails on an older TypeScript, because the community scanner type-checks with 6.
+Install size, measured on 2026-11-16: the package is 396 KB packed and 1.3 MB unpacked. In an empty project it brings about 100 MB with its required dependencies, mostly TypeScript, esbuild and the ESLint stack a plugin usually has already. Electron, Playwright, Vitest, `@vitest/coverage-v8` and jsdom are not dependencies of the kit at all: the plugin installs them for end-to-end tests, demo films and unit tests, and the kit checks their versions when it runs and fails with the install command. ESLint and TypeScript 6 are the only peer dependencies; `opdk scan` fails on an older TypeScript, because the community scanner type-checks with 6.
 
 ## Build
 

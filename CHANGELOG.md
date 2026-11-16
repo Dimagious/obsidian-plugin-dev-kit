@@ -6,12 +6,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
-- The kit is on npm as `obsidian-plugin-dev-kit`: `npm install -D obsidian-plugin-dev-kit`. A `vX.Y.Z` tag publishes that version from GitHub Actions through trusted publishing, with provenance (`.github/workflows/npm-publish.yml`). Installing from a git tag still works. `opdk kit upgrade` moves only a git-tag install for now; with npm, install the new version and update the commit in the workflow `uses:` lines by hand.
+- The kit is on npm as `obsidian-plugin-dev-kit`: `npm install -D -E obsidian-plugin-dev-kit`. 0.3.2 is published by hand; from the next version a `vX.Y.Z` tag on `main` publishes that version from GitHub Actions through trusted publishing, with provenance (`.github/workflows/npm-publish.yml`). Installing from a git tag still works. `opdk kit upgrade` moves only a git-tag install for now; with npm, install the new version and set the commit and `# vX.Y.Z` comment in the workflow `uses:` lines by hand. When they disagree, `opdk release check` now says how instead of pointing at `opdk kit upgrade`.
 
 ### Fixed
 
 - The README listed an integration-tests preset for obsidian-integration-testing that the kit does not have. The row is gone, and the roadmap says the preset is not planned.
-- `opdk release check` printed the commit twice for a kit installed from npm (`the kit is 6e33ca4 (6e33ca4)`); it now names the lockfile's version (`the kit is 0.3.2 (6e33ca4)`).
+- `opdk release check` printed the commit twice for a kit installed from npm (`the kit is 6e33ca4 (6e33ca4)`); with a lockfile it now names the lockfile's version (`the kit is 0.3.2 (6e33ca4)`).
 
 ## [0.3.1] - 2026-11-14
 
