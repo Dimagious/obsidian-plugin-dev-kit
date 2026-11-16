@@ -33,11 +33,11 @@ function pluginWith(layout: Layout): PluginFixture {
 }
 
 /** A plugin that installed kit 0.3.2 from the npm registry and calls the kit's CI workflow at a commit with `# <comment>`. */
-function npmInstall(comment: string): PluginFixture {
+function npmInstall(comment: string, spec = "0.3.2"): PluginFixture {
     const created = createPluginFixture();
     plugin = created;
     writePluginFiles(created);
-    created.write("package.json", `${JSON.stringify({ name: "fixture-release", version: "1.0.0", scripts: { build: "opdk build" }, devDependencies: { "obsidian-plugin-dev-kit": "0.3.2" } }, null, 2)}\n`);
+    created.write("package.json", `${JSON.stringify({ name: "fixture-release", version: "1.0.0", scripts: { build: "opdk build" }, devDependencies: { "obsidian-plugin-dev-kit": spec } }, null, 2)}\n`);
     const lock = {
         name: "fixture-release",
         version: "1.0.0",
@@ -132,9 +132,27 @@ describe("release check, kit step", () => {
         expect(result.code).toBe(1);
         expect(result.err).toContain("ci.yml:");
         expect(result.err).toContain("says # v0.3.1, but the kit is at 0.3.2.");
-        expect(result.err).toContain("installed from npm, which `opdk kit upgrade` does not handle yet");
-        expect(result.err).toContain("'refs/tags/v0.3.2^{}'");
-        expect(result.err).not.toContain("Run `opdk kit upgrade`");
+        expect(result.err).toContain("Run `opdk kit upgrade v0.3.2` to point every `uses:` line");
+        expect(result.err).toContain("or none for the latest release");
+        expect(result.err).not.toContain("does not handle");
+    });
+
+    it("points a ^ or ~ npm install at opdk kit upgrade too", async () => {
+        for (const spec of ["^0.3.2", "~0.3.2"]) {
+            const result = await check(npmInstall("v0.3.1", spec));
+            expect(result.err, spec).toContain("Run `opdk kit upgrade v0.3.2`");
+        }
+    });
+
+    it("keeps a manual hint when the npm spec is one opdk kit upgrade refuses", async () => {
+        for (const spec of ["file:../kit", "latest", ">=0.3.2", "npm:obsidian-plugin-dev-kit@0.3.2"]) {
+            const result = await check(npmInstall("v0.3.1", spec));
+            expect(result.code, spec).toBe(1);
+            expect(result.err, spec).toContain("says # v0.3.1, but the kit is at 0.3.2.");
+            expect(result.err, spec).toContain("a spec `opdk kit upgrade` does not take");
+            expect(result.err, spec).toContain("npm install -D -E obsidian-plugin-dev-kit@X.Y.Z");
+            expect(result.err, spec).not.toContain("Run `opdk kit upgrade v0.3.2`");
+        }
     });
 
     it("runs in the --no-build --no-api mode CI uses", async () => {

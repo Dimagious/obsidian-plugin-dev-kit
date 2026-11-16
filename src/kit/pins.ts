@@ -17,6 +17,12 @@ const USES_LINE = new RegExp(`^(\\s*(?:-\\s+)?uses:\\s+)${OWNER}/obsidian-plugin
 /** A release tag in a workflow comment: `v0.1.0` or `0.1.0`, followed by nothing or by more text. */
 const COMMENT_TAG = /^(v?\d+\.\d+\.\d+)(?![\w.])/;
 
+/** What package.json holds for a kit from the npm registry: a plain version, or one with a `^` or `~` range. */
+const NPM_SPEC = /^[\^~]?(\d+\.\d+\.\d+)$/;
+
+/** The owner of the kit's repository when no workflow names one: where the tags and the CHANGELOG of an npm install are read. */
+export const DEFAULT_KIT_OWNER = "Dimagious";
+
 const DEPENDENCY_SECTIONS = ["dependencies", "devDependencies", "optionalDependencies"] as const;
 
 export function isFullSha(value: string): boolean {
@@ -51,6 +57,14 @@ export interface PackageJsonPin {
     readonly section: string;
     readonly spec: string;
     readonly parsed: KitSpec;
+}
+
+/** The kit as package.json declares it when it comes from the npm registry. */
+export interface NpmPin {
+    readonly section: string;
+    readonly spec: string;
+    /** The version inside the spec, without `^` or `~`. */
+    readonly version: string;
 }
 
 /** The kit as the lockfile resolved it. */
@@ -91,6 +105,37 @@ export function readPackageJsonPins(packageJson: unknown): PackageJsonPin[] {
         const parsed = typeof spec === "string" ? parseKitSpec(spec) : undefined;
         return typeof spec === "string" && parsed !== undefined ? [{ section, spec, parsed }] : [];
     });
+}
+
+export function readNpmPins(packageJson: unknown): NpmPin[] {
+    const root = asRecord(packageJson);
+    return DEPENDENCY_SECTIONS.flatMap((section) => {
+        const spec = asRecord(root?.[section])?.[KIT_PACKAGE];
+        const version = typeof spec === "string" ? NPM_SPEC.exec(spec)?.[1] : undefined;
+        return typeof spec === "string" && version !== undefined ? [{ section, spec, version }] : [];
+    });
+}
+
+/** The first spec package.json holds for the kit, whatever it is (for a message about a spec that is refused). */
+export function readKitSpec(packageJson: unknown): string | undefined {
+    const root = asRecord(packageJson);
+    for (const section of DEPENDENCY_SECTIONS) {
+        const spec = asRecord(root?.[section])?.[KIT_PACKAGE];
+        if (typeof spec === "string") {
+            return spec;
+        }
+    }
+    return undefined;
+}
+
+/**
+ * The repository owner for a kit that comes from npm, which names none: the owner of the kit's `uses:` lines when
+ * they all agree (GitHub names are case-insensitive), else the default. A workflow of another owner is then left
+ * alone, and the `kit` check names it.
+ */
+export function npmKitOwner(uses: readonly UsesPin[]): string {
+    const first = uses[0]?.owner;
+    return first !== undefined && uses.every((use) => use.owner.toLowerCase() === first.toLowerCase()) ? first : DEFAULT_KIT_OWNER;
 }
 
 export function readLockPin(lock: unknown): LockPin | undefined {
@@ -210,24 +255,35 @@ export interface Rewritten {
     readonly changes: readonly TextChange[];
 }
 
-/** Points every kit dependency spec in package.json at `tag`, keeping the rest of the text as it is. */
-export function rewritePackageJson(text: string, tag: string): Rewritten {
+/** Rewrites every line that declares the kit in package.json with the spec `replace` returns for it; undefined leaves the line. The rest of the text stays as it is. */
+function rewriteKitSpecs(text: string, replace: (spec: string) => string | undefined): Rewritten {
     const changes: TextChange[] = [];
     const lines = text.split("\n").map((raw, index) => {
         const cr = raw.endsWith("\r") ? "\r" : "";
         const line = cr === "" ? raw : raw.slice(0, -1);
         const match = /^(\s*"obsidian-plugin-dev-kit"\s*:\s*")([^"]*)(".*)$/.exec(line);
         const spec = match?.[2];
-        if (match?.[1] === undefined || spec === undefined || match[3] === undefined || parseKitSpec(spec) === undefined) {
+        const next = spec === undefined ? undefined : replace(spec);
+        if (match?.[1] === undefined || match[3] === undefined || next === undefined) {
             return raw;
         }
-        const after = `${match[1]}${spec.slice(0, spec.lastIndexOf("#") + 1)}${tag}${match[3]}`;
+        const after = `${match[1]}${next}${match[3]}`;
         if (after !== line) {
             changes.push({ line: index + 1, before: line, after });
         }
         return `${after}${cr}`;
     });
     return { text: lines.join("\n"), changes };
+}
+
+/** Points every kit dependency spec in package.json at `tag`, keeping the rest of the text as it is. */
+export function rewritePackageJson(text: string, tag: string): Rewritten {
+    return rewriteKitSpecs(text, (spec) => (parseKitSpec(spec) === undefined ? undefined : `${spec.slice(0, spec.lastIndexOf("#") + 1)}${tag}`));
+}
+
+/** Sets every npm kit spec in package.json (`0.3.3`, `^0.3.3`, `~0.3.3`) to exactly `version`, keeping the rest of the text as it is. */
+export function rewritePackageJsonNpm(text: string, version: string): Rewritten {
+    return rewriteKitSpecs(text, (spec) => (NPM_SPEC.test(spec) ? version : undefined));
 }
 
 /**
