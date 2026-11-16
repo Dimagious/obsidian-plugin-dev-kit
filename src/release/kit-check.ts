@@ -39,7 +39,7 @@ export function checkKit(files: ProjectFiles, workflows: readonly WorkflowFile[]
                 errorProblem(
                     "kit",
                     "the kit is not pinned to one release.",
-                    `The kit is installed from npm, which \`opdk kit upgrade\` does not handle yet. Point every \`uses:\` line of the kit's workflows at the commit of v${version} with the comment \`# v${version}\` (the commit: \`git ls-remote https://github.com/Dimagious/obsidian-plugin-dev-kit refs/tags/v${version}\`), or install the version the workflows name with \`npm install -D -E obsidian-plugin-dev-kit@X.Y.Z\`. Then commit the result.`,
+                    `The kit is installed from npm, which \`opdk kit upgrade\` does not handle yet. Point every \`uses:\` line of the kit's workflows at the commit of v${version} with the comment \`# v${version}\` (the commit: \`git ls-remote https://github.com/Dimagious/obsidian-plugin-dev-kit 'refs/tags/v${version}^{}'\`; without \`^{}\` it prints the tag object, not the commit), or install the version the workflows name with \`npm install -D -E obsidian-plugin-dev-kit@X.Y.Z\`. Then commit the result.`,
                     [...verdict.reasons, ...verdict.places],
                 ),
             ],

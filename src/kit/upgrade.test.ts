@@ -326,6 +326,7 @@ describe("opdk kit upgrade refuses", () => {
         const result = await upgrade(created);
         expect(result.code).toBe(1);
         expect(result.err).toContain("package.json does not depend on obsidian-plugin-dev-kit through GitHub.");
+        expect(result.err).toContain("opdk kit upgrade moves only a git-tag install.");
     });
 
     it("a lockfile that is not valid JSON", async () => {
