@@ -4,8 +4,9 @@ import type { ProjectFiles } from "./project-files.js";
 import { valueOf } from "./project-files.js";
 
 /** What the places agree on, as a sentence for the `✓` line. */
-function agreement(verdict: ReturnType<typeof judgePins>, hasPackageJson: boolean, hasLock: boolean): string {
-    const named = verdict.tag ?? (verdict.commit === undefined ? "one release" : shortSha(verdict.commit));
+function agreement(verdict: ReturnType<typeof judgePins>, hasPackageJson: boolean, lockVersion: string | undefined, hasLock: boolean): string {
+    // An npm install names no tag in package.json; the lockfile's version is the release then.
+    const named = verdict.tag ?? lockVersion ?? (verdict.commit === undefined ? "one release" : shortSha(verdict.commit));
     const where = [
         ...(hasPackageJson ? ["package.json"] : []),
         ...(hasLock ? ["package-lock.json"] : []),
@@ -26,7 +27,7 @@ export function checkKit(files: ProjectFiles, workflows: readonly WorkflowFile[]
         return { group: "kit", passed: "obsidian-plugin-dev-kit is not a git dependency and no workflow calls it", problems: [] };
     }
     if (verdict.reasons.length === 0) {
-        return { group: "kit", passed: agreement(verdict, pins.packageJson.length > 0, pins.lock !== undefined), problems: [] };
+        return { group: "kit", passed: agreement(verdict, pins.packageJson.length > 0, pins.lock?.version, pins.lock !== undefined), problems: [] };
     }
     // `opdk kit upgrade` only takes vX.Y.Z; a branch or other ref in package.json cannot be named there.
     const named = verdict.tag !== undefined && /^v\d+\.\d+\.\d+$/.test(verdict.tag) ? verdict.tag : undefined;

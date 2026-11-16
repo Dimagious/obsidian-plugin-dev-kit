@@ -1,8 +1,10 @@
 # obsidian-plugin-dev-kit
 
+[![npm](https://img.shields.io/npm/v/obsidian-plugin-dev-kit)](https://www.npmjs.com/package/obsidian-plugin-dev-kit) [![CI](https://github.com/Dimagious/obsidian-plugin-dev-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/Dimagious/obsidian-plugin-dev-kit/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 Build, lint, release, test and film [Obsidian](https://obsidian.md/) plugins from one dev dependency.
 
-> **Status: released. It installs by git tag (see [Install](#install)); the newest `vX.Y.Z` tag is the current release.** The code was moved here from three plugins that each kept their own copy: [Snipsy](https://github.com/Dimagious/snipsidian), [Dashy](https://github.com/Dimagious/dashsidian) and [Garmy](https://github.com/Dimagious/garmidian). The roadmap below shows what is done and what is planned.
+> **Status: released. It installs from npm or by git tag (see [Install](#install)); the newest `vX.Y.Z` tag is the current release.** The code was moved here from three plugins that each kept their own copy: [Snipsy](https://github.com/Dimagious/snipsidian), [Dashy](https://github.com/Dimagious/dashsidian) and [Garmy](https://github.com/Dimagious/garmidian). The roadmap below shows what is done and what is planned.
 
 ## Why
 
@@ -19,19 +21,18 @@ Every Obsidian plugin needs the same tooling around its code: a bundle that also
 | Unit tests | `defineUnitConfig()`, a Vitest config with v8 coverage and a 90/80 gate, an `obsidian` alias, and a split that runs only the files that need a DOM in jsdom; plus the DOM helpers Obsidian adds (`createEl`, `createDiv`, `setText`, `addClass`, `activeDocument` and more) for jsdom |
 | End-to-end tests | Playwright in a real Obsidian through Electron: an isolated vault per test, the trust dialog never shown, readiness by plugin state instead of sleeps, a check of which Obsidian version ran, a trace and a video of the Obsidian window for failures, and helpers for settings, commands, the editor, IME composition, the mobile layout and fakes. Launch over CDP and a mode for recording tests by hand with the Playwright Inspector are planned |
 | Demo films | Films of stills from the real Obsidian: a frozen UI, a visible cursor or tap dot, captions, slow typing, light and dark themes, and a privacy guard that refuses to film a vault that is not the plugin's own; `opdk demo` encodes them to MP4, GIF and poster with ffmpeg, can put a phone film beside its captions, and copies stills (shot at a fixed density) for the README and listings. No audio |
-| Integration tests | A preset for [obsidian-integration-testing](https://github.com/mnaoumov/obsidian-integration-testing): the same smoke tests on the latest public and catalyst builds, and on Android |
 | Agent skills | One Claude Code skill per module, so a coding agent working in your plugin knows how to use the kit |
 
 Your plugin keeps only what is its own: specs, the seed vault and demo scenes.
 
 ## Install
 
-The kit is installed from a git tag on GitHub; it is not published to npm.
-
 ```bash
-npm install -D "github:Dimagious/obsidian-plugin-dev-kit#v0.3.1"
+npm install -D obsidian-plugin-dev-kit
 npx opdk --help
 ```
+
+From v0.3.2 the kit is on npm, published from GitHub Actions with provenance. A git tag works too: `npm install -D "github:Dimagious/obsidian-plugin-dev-kit#v0.3.1"`. `opdk kit upgrade` (below) moves only a git-tag install for now; with npm, run `npm install -D obsidian-plugin-dev-kit@X.Y.Z` and update the commit in the `uses:` lines of the kit's workflows by hand, and `opdk release check` tells you when they disagree.
 
 Install size, measured on 2026-11-12: the package is 260 KB packed and 1.4 MB installed. In an empty project it brings about 100 MB with its required dependencies, mostly TypeScript, esbuild and the ESLint stack a plugin usually has already. Electron, Playwright, Vitest, `@vitest/coverage-v8` and jsdom are not dependencies of the kit at all: the plugin installs them for end-to-end tests, demo films and unit tests, and the kit checks their versions when it runs and fails with the install command. ESLint and TypeScript 6 are the only peer dependencies; `opdk scan` fails on an older TypeScript, because the community scanner type-checks with 6.
 
@@ -180,7 +181,7 @@ The plugin version follows the kit version, and installed copies update when it 
   - [x] Release: `opdk release check`, `opdk release <bump>`, `opdk release publish`, `opdk release notes`, the reusable `release.yml`
   - [x] Unit-test preset: `defineUnitConfig()`, the DOM helpers for jsdom
   - [x] Reusable CI: `plugin-ci.yml`
-- [ ] Wave 3: integration tests preset
+- Wave 3, an integration tests preset, is not planned: only one of the three plugins runs integration tests, and it keeps its own setup
 - [ ] Wave 4: CDP launch mode, if a plugin needs the shipped Obsidian binary
 - [x] Agent skills for build, scanner, e2e, demo, release and unit, installable as a Claude Code plugin
 - [x] An audit skill for plugins already on the kit
