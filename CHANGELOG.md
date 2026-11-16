@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-16
+
 ### Added
 
 - `opdk kit upgrade [vX.Y.Z]` now upgrades a kit installed from the npm registry (`0.3.3` or `^0.3.3` in `package.json`), not only a git-tag install. It sets `package.json` to the exact version, runs `npm install --save-exact obsidian-plugin-dev-kit@X.Y.Z` with the save flag of the section the kit is in (put back on failure, like the git path), and moves the `uses:` lines of the kit's workflows to the commit of the tag, with the `# vX.Y.Z` comment. The kit stays in the `package.json` section it was in (`--save-prod`, `--save-dev` or `--save-optional`). The tags and the CHANGELOG come from the owner the `uses:` lines name when they agree, `Dimagious` otherwise; lines of another owner are left alone.
