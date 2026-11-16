@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
-- The npm publish workflow failed on the v0.3.2 tag: about a minute after that version was published by hand, its check still got E404 from the registry, so the job tried to publish again. The check now prints what npm answers, and a failed publish passes when the version is on npm and was built from the tagged commit.
+- The npm publish step on the v0.3.2 tag hid what `npm view` answered. That run started while npm was still processing the hand publish of 0.3.2 (it became visible about a minute after the run ended), so the check rightly found nothing and the publish got E404, because no trusted publisher was configured yet. The check now prints npm's answer.
 
 ## [0.3.2] - 2026-11-16
 

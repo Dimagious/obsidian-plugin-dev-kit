@@ -49,13 +49,13 @@ jobs:
         id: published
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        # The answer is printed: right after a publish by hand the registry can still answer E404 here (tag v0.3.2).
+        # npm's answer is printed, so a run that publishes shows why it did not skip.
         run: |
           if npm view "obsidian-plugin-dev-kit@$VERSION" version; then
             echo "obsidian-plugin-dev-kit@$VERSION is already on npm; nothing to publish."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
-            echo "obsidian-plugin-dev-kit@$VERSION is not on npm yet (the E404 above); publishing it."
+            echo "npm view did not find obsidian-plugin-dev-kit@$VERSION (see above); publishing it."
           fi
       # Dependencies' install scripts do not run in the job that can publish. `npm publish` still runs the kit's own
       # `prepare`, which builds dist/.
@@ -64,22 +64,5 @@ jobs:
       # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
       - if: steps.published.outputs.skip != 'true'
         run: npm install -g npm@11.5.1
-      # A failed publish is checked once more against the registry: when the version is there and was built from this
-      # commit, it was published a moment earlier, and the run passes.
       - if: steps.published.outputs.skip != 'true'
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          if npm publish --access public; then
-            exit 0
-          fi
-          for attempt in 1 2 3; do
-            sleep 20
-            head="$(npm view "obsidian-plugin-dev-kit@$VERSION" gitHead 2>/dev/null || true)"
-            if [ "$head" = "$GITHUB_SHA" ]; then
-              echo "obsidian-plugin-dev-kit@$VERSION is on npm, built from $GITHUB_SHA; the failed publish was a second attempt."
-              exit 0
-            fi
-          done
-          echo "npm publish failed and obsidian-plugin-dev-kit@$VERSION from $GITHUB_SHA is not on npm." >&2
-          exit 1
+        run: npm publish --access public
