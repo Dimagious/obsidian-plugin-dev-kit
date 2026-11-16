@@ -132,9 +132,9 @@ describe("release check, kit step", () => {
         expect(result.code).toBe(1);
         expect(result.err).toContain("ci.yml:");
         expect(result.err).toContain("says # v0.3.1, but the kit is at 0.3.2.");
-        expect(result.err).toContain("installed from npm, which `opdk kit upgrade` does not handle yet");
-        expect(result.err).toContain("'refs/tags/v0.3.2^{}'");
-        expect(result.err).not.toContain("Run `opdk kit upgrade`");
+        expect(result.err).toContain("Run `opdk kit upgrade v0.3.2` to point every `uses:` line");
+        expect(result.err).toContain("or none for the latest release");
+        expect(result.err).not.toContain("does not handle");
     });
 
     it("runs in the --no-build --no-api mode CI uses", async () => {

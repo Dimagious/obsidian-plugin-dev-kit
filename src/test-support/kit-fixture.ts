@@ -24,6 +24,28 @@ export function lockText(sha: string, version: string): string {
     )}\n`;
 }
 
+/** package.json of a plugin that installs the kit from the npm registry; `spec` is `0.1.0`, `^0.1.0` and so on. */
+export function npmPackageJsonText(spec: string): string {
+    return `${JSON.stringify({ name: "fixture-plugin", version: "1.0.0", devDependencies: { "obsidian-plugin-dev-kit": spec, typescript: "^5.6.0" } }, null, 2)}\n`;
+}
+
+/** The lockfile npm writes for that install: a registry tarball, no commit. */
+export function npmLockText(version: string, spec: string): string {
+    return `${JSON.stringify(
+        {
+            name: "fixture-plugin",
+            version: "1.0.0",
+            lockfileVersion: 3,
+            packages: {
+                "": { name: "fixture-plugin", version: "1.0.0", devDependencies: { "obsidian-plugin-dev-kit": spec } },
+                "node_modules/obsidian-plugin-dev-kit": { version, resolved: `https://registry.npmjs.org/obsidian-plugin-dev-kit/-/obsidian-plugin-dev-kit-${version}.tgz`, dev: true },
+            },
+        },
+        null,
+        2,
+    )}\n`;
+}
+
 /** A plugin workflow with the kit's `uses:` line, optionally followed by a comment. */
 export function workflowText(workflow: string, sha: string, comment: string | undefined): string {
     return [

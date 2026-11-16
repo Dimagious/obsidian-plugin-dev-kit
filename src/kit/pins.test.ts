@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { lockText, NEW_SHA, OLD_SHA, packageJsonText, workflowText } from "../test-support/kit-fixture.js";
-import { isFullSha, judgePins, parseKitSpec, readKitPins, readLockPin, readPackageJsonPins, readUsesPins, rewritePackageJson, rewriteWorkflow, shortSha, stripV } from "./pins.js";
+import { lockText, NEW_SHA, npmPackageJsonText, OLD_SHA, packageJsonText, workflowText } from "../test-support/kit-fixture.js";
+import { isFullSha, judgePins, npmKitOwner, parseKitSpec, readKitPins, readLockPin, readNpmPins, readPackageJsonPins, readUsesPins, rewritePackageJson, rewritePackageJsonNpm, rewriteWorkflow, shortSha, stripV } from "./pins.js";
 
 const ci = (sha: string, comment: string | undefined) => ({ file: ".github/workflows/ci.yml", text: workflowText("plugin-ci.yml", sha, comment) });
 
@@ -194,5 +194,51 @@ describe("rewriteWorkflow", () => {
         expect(after).toContain(`someone-else/obsidian-plugin-dev-kit/.github/workflows/plugin-ci.yml@${OLD_SHA} # v0.1.0`);
         expect(after).toContain(`some-org/shared-ci/.github/workflows/x.yml@${OLD_SHA} # v1.2.3`);
         expect(readUsesPins([{ file: "w.yml", text }]).map((pin) => pin.owner)).toEqual(["Dimagious", "someone-else"]);
+    });
+});
+
+describe("readNpmPins", () => {
+    it("reads a plain version and a ^ or ~ range, in any dependency section", () => {
+        for (const [spec, version] of [["0.3.3", "0.3.3"], ["^0.3.3", "0.3.3"], ["~1.2.3", "1.2.3"]] as const) {
+            expect(readNpmPins({ devDependencies: { "obsidian-plugin-dev-kit": spec } }), spec).toEqual([{ section: "devDependencies", spec, version }]);
+        }
+        expect(readNpmPins({ dependencies: { "obsidian-plugin-dev-kit": "0.3.3" } })[0]?.section).toBe("dependencies");
+    });
+
+    it("ignores git specs, other protocols, tags and ranges it cannot make exact", () => {
+        for (const spec of ["github:Dimagious/obsidian-plugin-dev-kit#v0.1.0", "file:../kit", "link:../kit", "workspace:*", "latest", ">=0.3.0", "0.3", "0.3.x", "1.0.0-beta.1"]) {
+            expect(readNpmPins({ devDependencies: { "obsidian-plugin-dev-kit": spec } }), spec).toEqual([]);
+        }
+        expect(readNpmPins({ devDependencies: { typescript: "^5.6.0" } })).toEqual([]);
+        expect(readNpmPins(null)).toEqual([]);
+    });
+});
+
+describe("npmKitOwner", () => {
+    const use = (owner: string): { file: string; line: number; owner: string; ref: string; commentTag: undefined } => ({ file: "ci.yml", line: 1, owner, ref: OLD_SHA, commentTag: undefined });
+
+    it("takes the owner every kit workflow line names, ignoring case", () => {
+        expect(npmKitOwner([use("fork-owner"), use("Fork-Owner")])).toBe("fork-owner");
+    });
+
+    it("falls back to Dimagious with no workflow line or with two owners", () => {
+        expect(npmKitOwner([])).toBe("Dimagious");
+        expect(npmKitOwner([use("a"), use("b")])).toBe("Dimagious");
+    });
+});
+
+describe("rewritePackageJsonNpm", () => {
+    it("sets a range to the exact version and reports the line", () => {
+        const result = rewritePackageJsonNpm(npmPackageJsonText("^0.1.0"), "0.2.0");
+        expect(result.text).toBe(npmPackageJsonText("0.2.0"));
+        expect(result.changes).toEqual([{ line: 5, before: '    "obsidian-plugin-dev-kit": "^0.1.0",', after: '    "obsidian-plugin-dev-kit": "0.2.0",' }]);
+    });
+
+    it("changes nothing when the version is already exact, and leaves git specs and CRLF alone", () => {
+        expect(rewritePackageJsonNpm(npmPackageJsonText("0.2.0"), "0.2.0").changes).toEqual([]);
+        const git = packageJsonText("v0.1.0");
+        expect(rewritePackageJsonNpm(git, "0.2.0")).toEqual({ text: git, changes: [] });
+        const crlf = npmPackageJsonText("~0.1.0").replaceAll("\n", "\r\n");
+        expect(rewritePackageJsonNpm(crlf, "0.2.0").text).toBe(npmPackageJsonText("0.2.0").replaceAll("\n", "\r\n"));
     });
 });

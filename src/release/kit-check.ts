@@ -30,7 +30,7 @@ export function checkKit(files: ProjectFiles, workflows: readonly WorkflowFile[]
         return { group: "kit", passed: agreement(verdict, pins.packageJson.length > 0, pins.lock?.version, pins.lock !== undefined), problems: [] };
     }
     if (pins.packageJson.length === 0 && pins.lock?.version !== undefined) {
-        // Installed from npm: `opdk kit upgrade` handles only git-tag installs, so name the manual steps.
+        // Installed from npm: package.json names no tag, so the lockfile's version is the release the upgrade command is told to settle on.
         const version = pins.lock.version;
         return {
             group: "kit",
@@ -39,7 +39,7 @@ export function checkKit(files: ProjectFiles, workflows: readonly WorkflowFile[]
                 errorProblem(
                     "kit",
                     "the kit is not pinned to one release.",
-                    `The kit is installed from npm, which \`opdk kit upgrade\` does not handle yet. Point every \`uses:\` line of the kit's workflows at the commit of v${version} with the comment \`# v${version}\` (the commit: \`git ls-remote https://github.com/Dimagious/obsidian-plugin-dev-kit 'refs/tags/v${version}^{}'\`; without \`^{}\` it prints the tag object, not the commit), or install the version the workflows name with \`npm install -D -E obsidian-plugin-dev-kit@X.Y.Z\`. Then commit the result.`,
+                    `Run \`opdk kit upgrade v${version}\` to point every \`uses:\` line of the kit's workflows at the commit of v${version} (\`# v${version}\`) and to set package.json and the lockfile to that exact version; name another vX.Y.Z, or none for the latest release, to move to it instead. Then commit the result.`,
                     [...verdict.reasons, ...verdict.places],
                 ),
             ],

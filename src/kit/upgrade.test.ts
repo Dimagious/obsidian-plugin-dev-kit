@@ -1,7 +1,7 @@
 import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { LS_REMOTE, lockText, NEW_SHA, OLD_SHA, packageJsonText, workflowText } from "../test-support/kit-fixture.js";
+import { LS_REMOTE, lockText, NEW_SHA, npmLockText, npmPackageJsonText, OLD_SHA, packageJsonText, workflowText } from "../test-support/kit-fixture.js";
 import { createContext, createPluginFixture, type PluginFixture } from "../test-support/plugin-fixture.js";
 import { parseUpgradeArgs } from "./args.js";
 import { runKitUpgrade, type UpgradeDeps } from "./upgrade.js";
@@ -316,7 +316,7 @@ describe("opdk kit upgrade refuses", () => {
         expect(named.err).toContain("Check the spelling.");
     });
 
-    it("a package.json that is missing, invalid or does not use the kit through GitHub", async () => {
+    it("a package.json that is missing, invalid or does not use the kit through GitHub or npm", async () => {
         const created = createPluginFixture();
         plugin = created;
         expect((await upgrade(created)).err).toContain("package.json is missing in");
@@ -325,8 +325,12 @@ describe("opdk kit upgrade refuses", () => {
         created.write("package.json", JSON.stringify({ devDependencies: { "obsidian-plugin-dev-kit": "file:../kit" } }));
         const result = await upgrade(created);
         expect(result.code).toBe(1);
-        expect(result.err).toContain("package.json does not depend on obsidian-plugin-dev-kit through GitHub.");
-        expect(result.err).toContain("opdk kit upgrade moves only a git-tag install.");
+        expect(result.err).toContain("package.json does not depend on obsidian-plugin-dev-kit through a GitHub tag or the npm registry.");
+        expect(result.err).toContain("A kit linked from a folder or a workspace is not upgraded by opdk.");
+        for (const spec of ["link:../kit", "workspace:*", "latest", ">=0.3.0"]) {
+            created.write("package.json", JSON.stringify({ devDependencies: { "obsidian-plugin-dev-kit": spec } }));
+            expect((await upgrade(created)).code, spec).toBe(1);
+        }
     });
 
     it("a lockfile that is not valid JSON", async () => {
@@ -335,5 +339,156 @@ describe("opdk kit upgrade refuses", () => {
         const result = await upgrade(created);
         expect(result.code).toBe(1);
         expect(result.err).toContain("package-lock.json is not valid JSON");
+    });
+});
+
+/** A plugin that installs kit 0.1.0 from the npm registry; its workflows name the kit's commit like any other. */
+function pluginOnNpm(spec: string): PluginFixture {
+    const created = createPluginFixture();
+    plugin = created;
+    created.write("package.json", npmPackageJsonText(spec));
+    created.write("package-lock.json", npmLockText("0.1.0", spec));
+    created.write(".github/workflows/ci.yml", workflowText("plugin-ci.yml", OLD_SHA, "v0.1.0"));
+    created.write(".github/workflows/release.yml", workflowText("release.yml", OLD_SHA, undefined));
+    return created;
+}
+
+/** What npm does to the lockfile when it installs 0.2.0 from the registry. */
+const npmRewritesRegistryLock = (created: PluginFixture): undefined => {
+    created.write("package-lock.json", npmLockText("0.2.0", "0.2.0"));
+    return undefined;
+};
+
+describe("opdk kit upgrade of a kit installed from npm", () => {
+    it("installs the exact version, resolves the tag to its peeled commit and rewrites the workflow pins", async () => {
+        const created = pluginOnNpm("0.1.0");
+        const result = await upgrade(created, { npm: npmRewritesRegistryLock });
+
+        expect(result.err).toBe("");
+        expect(result.code).toBe(0);
+        expect(result.recorded.npmCalls).toEqual([["install", "--no-audit", "--no-fund", "--save-dev", "--save-exact", "obsidian-plugin-dev-kit@0.2.0"]]);
+        expect(read(created, "package.json")).toBe(npmPackageJsonText("0.2.0"));
+        expect(read(created, ".github/workflows/ci.yml")).toBe(workflowText("plugin-ci.yml", NEW_SHA, "v0.2.0"));
+        expect(read(created, ".github/workflows/release.yml")).toBe(workflowText("release.yml", NEW_SHA, "v0.2.0"));
+        expect(result.out).toContain("· kit     kit 0.1.0 -> v0.2.0 (a1b2c3d)");
+        expect(result.out).toContain("✓ kit     package.json, package-lock.json and 2 workflow files updated to v0.2.0 (a1b2c3d)");
+        expect(result.out).toContain("✓ check   kit: the kit is 0.2.0 (a1b2c3d) in package-lock.json, 2 workflow lines");
+        expect(result.recorded.gitCalls[2]).toEqual(["ls-remote", "--tags", "https://github.com/Dimagious/obsidian-plugin-dev-kit.git"]);
+    });
+
+    it("moves the workflows to the commit of an annotated tag, not to the tag object", async () => {
+        const created = pluginOnNpm("0.2.0");
+        created.write("package-lock.json", npmLockText("0.2.0", "0.2.0"));
+        const result = await upgrade(created, {
+            target: "v0.1.0",
+            npm: (target) => {
+                target.write("package-lock.json", npmLockText("0.1.0", "0.1.0"));
+                return undefined;
+            },
+        });
+        expect(result.code).toBe(0);
+        const workflow = read(created, ".github/workflows/ci.yml");
+        expect(workflow).toContain(`@${OLD_SHA} # v0.1.0`);
+        expect(workflow).not.toContain("1111111111111111111111111111111111111111");
+        expect(result.out).toContain("! kit     v0.1.0 is older than 0.2.0: this is a downgrade.");
+    });
+
+    it("rewrites a range to the exact version", async () => {
+        for (const spec of ["^0.1.0", "~0.1.0"]) {
+            const created = pluginOnNpm(spec);
+            const result = await upgrade(created, { npm: npmRewritesRegistryLock });
+            expect(result.code, spec).toBe(0);
+            expect(read(created, "package.json"), spec).toBe(npmPackageJsonText("0.2.0"));
+            expect(result.printed, spec).toContain(`package.json:5\n- "obsidian-plugin-dev-kit": "${spec}",\n+ "obsidian-plugin-dev-kit": "0.2.0",`);
+            created.cleanup();
+        }
+    });
+
+    it("takes the tag it is given and reads tags and changelog from the owner the workflows name", async () => {
+        const created = pluginOnNpm("0.1.0");
+        created.write(".github/workflows/ci.yml", workflowText("plugin-ci.yml", OLD_SHA, "v0.1.0").replace("Dimagious/", "fork-owner/"));
+        created.write(".github/workflows/release.yml", workflowText("release.yml", OLD_SHA, "v0.1.0").replace("Dimagious/", "fork-owner/"));
+        const result = await upgrade(created, { target: "v0.2.0", npm: npmRewritesRegistryLock });
+        expect(result.code).toBe(0);
+        expect(result.recorded.gitCalls.at(-1)).toEqual(["ls-remote", "--tags", "https://github.com/fork-owner/obsidian-plugin-dev-kit.git"]);
+        expect(result.recorded.fetched).toEqual(["https://raw.githubusercontent.com/fork-owner/obsidian-plugin-dev-kit/v0.2.0/CHANGELOG.md"]);
+        expect(read(created, ".github/workflows/ci.yml")).toContain(`fork-owner/obsidian-plugin-dev-kit/.github/workflows/plugin-ci.yml@${NEW_SHA} # v0.2.0`);
+    });
+
+    it("prints the changes and the kit changelog with --dry-run, and writes nothing", async () => {
+        const created = pluginOnNpm("^0.1.0");
+        const before = snapshot(created);
+        const result = await upgrade(created, { dryRun: true, status: " M src/main.ts\n" });
+
+        expect(result.code).toBe(0);
+        expect(snapshot(created)).toEqual(before);
+        expect(result.recorded.npmCalls).toEqual([]);
+        expect(result.recorded.gitCalls.map((call) => call[0])).toEqual(["ls-remote"]);
+        expect(result.out).toContain("· kit     kit 0.1.0 -> v0.2.0 (a1b2c3d) (dry run)");
+        expect(result.out).toContain("· kit     package-lock.json: 0.1.0 -> 0.2.0, rewritten by `npm install`");
+        expect(result.printed).toContain(`.github/workflows/ci.yml:6\n- uses: Dimagious/obsidian-plugin-dev-kit/.github/workflows/plugin-ci.yml@${OLD_SHA} # v0.1.0\n+ uses: Dimagious/obsidian-plugin-dev-kit/.github/workflows/plugin-ci.yml@${NEW_SHA} # v0.2.0`);
+        expect(result.printed).toContain("## [0.2.0] - 2026-11-20");
+        expect(result.printed).not.toContain("First release");
+    });
+
+    it("reports nothing to change when the version, the lockfile and the workflows are already at the tag", async () => {
+        const created = pluginOnNpm("0.1.0");
+        const result = await upgrade(created, { target: "v0.1.0" });
+        expect(result.code).toBe(0);
+        expect(result.recorded.npmCalls).toEqual([]);
+        expect(result.out).toContain("nothing to change.");
+    });
+
+    it("repairs workflow drift without npm when the lockfile already holds the version", async () => {
+        const created = pluginOnNpm("0.2.0");
+        created.write("package-lock.json", npmLockText("0.2.0", "0.2.0"));
+        const result = await upgrade(created, { target: "v0.2.0" });
+        expect(result.code).toBe(0);
+        expect(result.recorded.npmCalls).toEqual([]);
+        expect(read(created, ".github/workflows/ci.yml")).toBe(workflowText("plugin-ci.yml", NEW_SHA, "v0.2.0"));
+    });
+
+    it("still runs npm when only the range in package.json differs from the lockfile's version", async () => {
+        const created = pluginOnNpm("^0.2.0");
+        created.write("package-lock.json", npmLockText("0.2.0", "^0.2.0"));
+        const result = await upgrade(created, { target: "v0.2.0", npm: npmRewritesRegistryLock });
+        expect(result.code).toBe(0);
+        expect(result.recorded.npmCalls).toHaveLength(1);
+        expect(read(created, "package.json")).toBe(npmPackageJsonText("0.2.0"));
+    });
+
+    it("puts package.json and the lockfile back when npm fails, and names the manual command", async () => {
+        const created = pluginOnNpm("^0.1.0");
+        const before = snapshot(created);
+        const result = await upgrade(created, {
+            npm: (target) => {
+                target.write("package-lock.json", "{ half written");
+                return new Error("npm install failed: E404 obsidian-plugin-dev-kit@0.2.0");
+            },
+        });
+        expect(result.code).toBe(1);
+        expect(snapshot(created)).toEqual(before);
+        expect(result.err).toContain("npm install failed; package.json and package-lock.json were put back, no workflow file was touched: npm install failed: E404");
+        expect(result.err).toContain("npm install --save-dev --save-exact obsidian-plugin-dev-kit@0.2.0");
+        expect(result.err).toContain("opdk kit upgrade v0.2.0` for the workflow pins");
+    });
+
+    it("says npm did not run when there is no lockfile", async () => {
+        const created = pluginOnNpm("0.1.0");
+        rmSync(path.join(created.dir, "package-lock.json"));
+        const result = await upgrade(created);
+        expect(result.code).toBe(0);
+        expect(result.recorded.npmCalls).toEqual([]);
+        expect(result.out).toContain("there is no package-lock.json, so npm will not run");
+        expect(read(created, "package.json")).toBe(npmPackageJsonText("0.2.0"));
+    });
+
+    it("refuses a dirty tree and a tag the kit does not have", async () => {
+        const dirty = await upgrade(pluginOnNpm("0.1.0"), { status: "?? notes.txt\n" });
+        expect(dirty.code).toBe(1);
+        expect(dirty.err).toContain("the working tree is not clean");
+        const unknown = await upgrade(pluginOnNpm("0.1.0"), { target: "v9.9.9" });
+        expect(unknown.code).toBe(1);
+        expect(unknown.err).toContain("the kit has no release tag v9.9.9.");
     });
 });
