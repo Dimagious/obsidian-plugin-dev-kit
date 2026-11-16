@@ -32,7 +32,7 @@ npm install -D -E obsidian-plugin-dev-kit
 npx opdk --help
 ```
 
-From v0.3.2 the kit is on npm (`-E` pins the exact version). Versions from 0.3.3 on are published by a GitHub workflow and carry npm provenance; 0.3.2 was published by hand. A git tag works too: `npm install -D "github:Dimagious/obsidian-plugin-dev-kit#v0.3.2"`. `opdk kit upgrade` (below) moves only a git-tag install for now. With npm, run `npm install -D -E obsidian-plugin-dev-kit@X.Y.Z`, then in each `uses:` line of the kit's workflows set the commit of that tag (`git ls-remote https://github.com/Dimagious/obsidian-plugin-dev-kit 'refs/tags/vX.Y.Z^{}'`; the tags are annotated, and without `^{}` it prints the tag object) and the comment `# vX.Y.Z`. `opdk release check` compares the comments with the installed version; it cannot check the commit of an npm install, so update the two together.
+From v0.3.2 the kit is on npm (`-E` pins the exact version). Versions from 0.3.3 on are published by a GitHub workflow and carry npm provenance; 0.3.2 was published by hand. A git tag works too: `npm install -D "github:Dimagious/obsidian-plugin-dev-kit#v0.3.3"`. `opdk kit upgrade` (below) moves only a git-tag install for now. With npm, run `npm install -D -E obsidian-plugin-dev-kit@X.Y.Z`, then in each `uses:` line of the kit's workflows set the commit of that tag (`git ls-remote https://github.com/Dimagious/obsidian-plugin-dev-kit 'refs/tags/vX.Y.Z^{}'`; the tags are annotated, and without `^{}` it prints the tag object) and the comment `# vX.Y.Z`. `opdk release check` compares the comments with the installed version; it cannot check the commit of an npm install, so update the two together.
 
 Install size, measured on 2026-11-16: the package is 396 KB packed and 1.3 MB unpacked. In an empty project it brings about 100 MB with its required dependencies, mostly TypeScript, esbuild and the ESLint stack a plugin usually has already. Electron, Playwright, Vitest, `@vitest/coverage-v8` and jsdom are not dependencies of the kit at all: the plugin installs them for end-to-end tests, demo films and unit tests, and the kit checks their versions when it runs and fails with the install command. ESLint and TypeScript 6 are the only peer dependencies; `opdk scan` fails on an older TypeScript, because the community scanner type-checks with 6.
 
@@ -123,10 +123,10 @@ A plugin pins the kit in three places: the tag in `package.json`, the commit in 
 
 ```bash
 npx opdk kit upgrade --dry-run   # what would change, and the kit's CHANGELOG since your version
-npx opdk kit upgrade             # latest release; or: npx opdk kit upgrade v0.3.2
+npx opdk kit upgrade             # latest release; or: npx opdk kit upgrade v0.3.3
 ```
 
-On v0.1.0, which has no `kit` command, run it once as `npx -y -p github:Dimagious/obsidian-plugin-dev-kit#v0.3.2 opdk kit upgrade v0.3.2`. It needs a clean git tree, never commits or pushes, and puts `package.json` and the lockfile back if `npm install` fails (run `npm ci` if `node_modules` looks off). Review the diff and open a pull request. Configure Dependabot to ignore the kit (a lone bump of one pin breaks the check; the `ignore` entries are in the docs) and watch the kit's releases on GitHub. Details: [docs/ci.md](docs/ci.md#updating-the-kit).
+On v0.1.0, which has no `kit` command, run it once as `npx -y -p github:Dimagious/obsidian-plugin-dev-kit#v0.3.3 opdk kit upgrade v0.3.3`. It needs a clean git tree, never commits or pushes, and puts `package.json` and the lockfile back if `npm install` fails (run `npm ci` if `node_modules` looks off). Review the diff and open a pull request. Configure Dependabot to ignore the kit (a lone bump of one pin breaks the check; the `ignore` entries are in the docs) and watch the kit's releases on GitHub. Details: [docs/ci.md](docs/ci.md#updating-the-kit).
 
 ## Unit tests
 
@@ -206,7 +206,7 @@ npm run e2e:smoke  # the kit's own e2e specs against a real Obsidian; by hand be
 
 `dist/` is not committed. `npm install` from a git tag runs `prepare`, which builds it, so a broken build breaks every plugin install. CI runs the same checks plus the smoke on every pull request.
 
-Releasing: bump `version` in `package.json`, move the `[Unreleased]` entries in `CHANGELOG.md` under the new version, merge, then the owner tags `vX.Y.Z` and pushes the tag. A workflow fails the tag if it differs from `package.json`, and another publishes that version to npm with provenance. Plugins pin the version, for example `obsidian-plugin-dev-kit@0.3.2` from npm or `github:Dimagious/obsidian-plugin-dev-kit#v0.3.2`.
+Releasing: bump `version` in `package.json`, move the `[Unreleased]` entries in `CHANGELOG.md` under the new version, merge, then the owner tags `vX.Y.Z` and pushes the tag. A workflow fails the tag if it differs from `package.json`, and another publishes that version to npm with provenance. Plugins pin the version, for example `obsidian-plugin-dev-kit@0.3.3` from npm or `github:Dimagious/obsidian-plugin-dev-kit#v0.3.3`.
 
 ## Credits
 
