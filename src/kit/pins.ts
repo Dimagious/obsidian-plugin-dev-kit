@@ -116,6 +116,18 @@ export function readNpmPins(packageJson: unknown): NpmPin[] {
     });
 }
 
+/** The first spec package.json holds for the kit, whatever it is (for a message about a spec that is refused). */
+export function readKitSpec(packageJson: unknown): string | undefined {
+    const root = asRecord(packageJson);
+    for (const section of DEPENDENCY_SECTIONS) {
+        const spec = asRecord(root?.[section])?.[KIT_PACKAGE];
+        if (typeof spec === "string") {
+            return spec;
+        }
+    }
+    return undefined;
+}
+
 /**
  * The repository owner for a kit that comes from npm, which names none: the owner of the kit's `uses:` lines when
  * they all agree (GitHub names are case-insensitive), else the default. A workflow of another owner is then left

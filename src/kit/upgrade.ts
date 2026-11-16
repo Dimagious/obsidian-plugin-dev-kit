@@ -9,7 +9,7 @@ import { checkKit } from "../release/kit-check.js";
 import { loadProjectFiles } from "../release/project-files.js";
 import { compareVersions } from "../release/semver.js";
 import { loadWorkflows } from "./files.js";
-import { isFullSha, npmKitOwner, readLockPin, readNpmPins, readPackageJsonPins, readUsesPins, rewritePackageJson, rewritePackageJsonNpm, rewriteWorkflow, shortSha, stripV, type TextChange } from "./pins.js";
+import { isFullSha, npmKitOwner, readLockPin, readKitSpec, readNpmPins, readPackageJsonPins, readUsesPins, rewritePackageJson, rewritePackageJsonNpm, rewriteWorkflow, shortSha, stripV, type TextChange } from "./pins.js";
 import { kitChangelogUrl, kitRepositoryUrl, latestTag, parseKitTags, sortedTags } from "./remote.js";
 import { stripTerminalControls } from "./terminal-text.js";
 
@@ -44,16 +44,21 @@ interface FileChange {
     readonly changes: readonly TextChange[];
 }
 
-/** The arguments of the `npm install` that moves the kit to `tag`. */
-function npmArgs(fromRegistry: boolean, owner: string, tag: string): string[] {
+/** The npm flag that keeps the kit in the section of package.json it is in; `--save-dev` alone would move it. */
+function saveFlag(section: string | undefined): string {
+    return section === "dependencies" ? "--save-prod" : section === "optionalDependencies" ? "--save-optional" : "--save-dev";
+}
+
+/** The arguments of the `npm install` that moves the kit to `tag`. `section` is where an npm install keeps the kit. */
+function npmArgs(section: string | undefined, fromRegistry: boolean, owner: string, tag: string): string[] {
     return fromRegistry
-        ? ["install", "--no-audit", "--no-fund", "--save-dev", "--save-exact", `obsidian-plugin-dev-kit@${stripV(tag)}`]
+        ? ["install", "--no-audit", "--no-fund", saveFlag(section), "--save-exact", `obsidian-plugin-dev-kit@${stripV(tag)}`]
         : ["install", "--no-audit", "--no-fund", `obsidian-plugin-dev-kit@github:${owner}/obsidian-plugin-dev-kit#${tag}`];
 }
 
 /** The command a person can run by hand when the upgrade's `npm install` failed. */
-const manualInstall = (fromRegistry: boolean, owner: string, tag: string): string =>
-    fromRegistry ? `npm install --save-dev --save-exact obsidian-plugin-dev-kit@${stripV(tag)}` : `npm install --save-dev github:${owner}/obsidian-plugin-dev-kit#${tag}`;
+const manualInstall = (section: string | undefined, fromRegistry: boolean, owner: string, tag: string): string =>
+    fromRegistry ? `npm install ${saveFlag(section)} --save-exact obsidian-plugin-dev-kit@${stripV(tag)}` : `npm install --save-dev github:${owner}/obsidian-plugin-dev-kit#${tag}`;
 
 /** The changed lines as a diff: file, line number, the old line and the new one. */
 function renderChanges(changes: readonly FileChange[]): string {
@@ -84,7 +89,12 @@ export async function runKitUpgrade(input: UpgradeInput): Promise<number> {
     const [spec] = readPackageJsonPins(pkg.value);
     const [npmSpec] = spec === undefined ? readNpmPins(pkg.value) : [];
     if (spec === undefined && npmSpec === undefined) {
-        return fail(reporter, "package.json does not depend on obsidian-plugin-dev-kit through a GitHub tag or the npm registry.", "opdk kit upgrade moves a kit installed as `github:owner/obsidian-plugin-dev-kit#vX.Y.Z` or as a plain version (`0.3.3`, `^0.3.3`). A kit linked from a folder or a workspace is not upgraded by opdk.");
+        const found = readKitSpec(pkg.value);
+        return fail(
+            reporter,
+            found === undefined ? "package.json does not list obsidian-plugin-dev-kit." : `package.json asks for obsidian-plugin-dev-kit "${found}", which is neither a GitHub tag nor an exact, ^ or ~ npm version.`,
+            "opdk kit upgrade moves a kit installed as `github:owner/obsidian-plugin-dev-kit#vX.Y.Z` or as an exact, ^ or ~ version (`0.3.3`, `^0.3.3`, `~0.3.3`). Any other spec (a folder, a workspace, another range, `latest`) is not upgraded by opdk: set the version by hand, then run `opdk kit upgrade`.",
+        );
     }
     // An npm install names no owner: the tags are read from the owner the kit's workflow lines name, else from the default.
     const owner = spec?.parsed.owner ?? npmKitOwner(readUsesPins(loadWorkflows(cwd)));
@@ -160,11 +170,11 @@ export async function runKitUpgrade(input: UpgradeInput): Promise<number> {
     if (runNpm) {
         reporter.info(STEP, spec === undefined ? `npm install obsidian-plugin-dev-kit@${version}` : `npm install obsidian-plugin-dev-kit@${tag} (builds the kit, can take a minute)`);
         try {
-            await deps.npm(npmArgs(spec === undefined, owner, tag));
+            await deps.npm(npmArgs(npmSpec?.section, spec === undefined, owner, tag));
         } catch (error) {
             writeFileSync(packagePath, pkg.text);
             writeFileSync(lockPath, lockText);
-            return fail(reporter, `npm install failed; package.json and package-lock.json were put back, no workflow file was touched: ${message(error)}`, `npm may have left node_modules half installed: run \`npm ci\` if it looks off. Then fix npm, or run \`${manualInstall(spec === undefined, owner, tag)}\` yourself and then \`opdk kit upgrade ${tag}\` for the workflow pins.`);
+            return fail(reporter, `npm install failed; package.json and package-lock.json were put back, no workflow file was touched: ${message(error)}`, `npm may have left node_modules half installed: run \`npm ci\` if it looks off. Then fix npm, or run \`${manualInstall(npmSpec?.section, spec === undefined, owner, tag)}\` yourself and then \`opdk kit upgrade ${tag}\` for the workflow pins.`);
         }
     }
     for (const file of workflowChanges) {

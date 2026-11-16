@@ -15,7 +15,10 @@ network and no GitHub login). It:
   - rewrites the tag in package.json and runs \`npm install\` for that one package, so the lockfile follows (npm
     builds the kit, which takes a minute); if npm fails, package.json and the lockfile are put back (run \`npm ci\`
     if node_modules looks off); without a lockfile npm does not run and node_modules keeps the old kit;
-  - rewrites every kit workflow line of the package.json owner to the new commit and sets its "# vX.Y.Z" comment;
+  - for a kit installed from npm (an exact, ^ or ~ version in package.json) it sets the exact version and runs
+    \`npm install --save-exact\` in the section the kit is in (seconds, the package is already built); the
+    owner of the tags is the one the kit's workflow lines name, else Dimagious;
+  - rewrites every kit workflow line of that owner to the new commit and sets its "# vX.Y.Z" comment;
   - runs the "kit" step of \`opdk release check\` on the result;
   - prints the kit's CHANGELOG sections between the old and the new version, read from the tag on GitHub (a
     failure to read them is only reported).

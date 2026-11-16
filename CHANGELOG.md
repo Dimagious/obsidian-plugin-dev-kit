@@ -6,13 +6,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
-- `opdk kit upgrade [vX.Y.Z]` now upgrades a kit installed from the npm registry (`0.3.3` or `^0.3.3` in `package.json`), not only a git-tag install. It sets `package.json` to the exact version, runs `npm install --save-dev --save-exact obsidian-plugin-dev-kit@X.Y.Z` (put back on failure, like the git path), and moves every `uses:` line of the kit's workflows to the commit of the tag, with the `# vX.Y.Z` comment. The tags and the CHANGELOG come from the owner of the workflow lines, `Dimagious` when they name none.
+- `opdk kit upgrade [vX.Y.Z]` now upgrades a kit installed from the npm registry (`0.3.3` or `^0.3.3` in `package.json`), not only a git-tag install. It sets `package.json` to the exact version, runs `npm install --save-dev --save-exact obsidian-plugin-dev-kit@X.Y.Z` (put back on failure, like the git path), and moves the `uses:` lines of the kit's workflows to the commit of the tag, with the `# vX.Y.Z` comment. The kit stays in the `package.json` section it was in (`--save-prod`, `--save-dev` or `--save-optional`). The tags and the CHANGELOG come from the owner the `uses:` lines name when they agree, `Dimagious` otherwise; lines of another owner are left alone.
 - Every kit tag now gets a GitHub Release whose notes are that version's CHANGELOG section, made by `npm-publish.yml` after the npm publish, so "Watch > Custom > Releases" on the repository notifies about new versions. Releases for v0.1.0 to v0.3.3 were created by hand on 2026-11-16.
 
 ### Changed
 
-- The `kit` check of `opdk release check` now points a plugin installed from npm at `opdk kit upgrade vX.Y.Z` instead of listing manual steps.
-- `opdk kit upgrade` refuses only a kit that is neither a GitHub tag nor a plain version (`file:`, `link:`, `workspace:`), and the message says so.
+- The `kit` check of `opdk release check` now points a plugin installed from npm with an exact, `^` or `~` version at `opdk kit upgrade vX.Y.Z` instead of listing manual steps.
+- `opdk kit upgrade` refuses a kit that is neither a GitHub tag nor an exact, `^` or `~` version (`file:`, `link:`, `workspace:`, `latest`, `>=0.3.3`, an `npm:` alias), and the message quotes the spec it found.
+- For a kit installed from npm with such a spec, the `kit` check keeps a manual hint instead of pointing at `opdk kit upgrade`.
 
 ## [0.3.3] - 2026-11-16
 

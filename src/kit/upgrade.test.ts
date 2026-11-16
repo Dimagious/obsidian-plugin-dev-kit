@@ -325,12 +325,16 @@ describe("opdk kit upgrade refuses", () => {
         created.write("package.json", JSON.stringify({ devDependencies: { "obsidian-plugin-dev-kit": "file:../kit" } }));
         const result = await upgrade(created);
         expect(result.code).toBe(1);
-        expect(result.err).toContain("package.json does not depend on obsidian-plugin-dev-kit through a GitHub tag or the npm registry.");
-        expect(result.err).toContain("A kit linked from a folder or a workspace is not upgraded by opdk.");
-        for (const spec of ["link:../kit", "workspace:*", "latest", ">=0.3.0"]) {
+        expect(result.err).toContain('package.json asks for obsidian-plugin-dev-kit "file:../kit", which is neither a GitHub tag nor an exact, ^ or ~ npm version.');
+        expect(result.err).toContain("is not upgraded by opdk");
+        for (const spec of ["link:../kit", "workspace:*", "latest", ">=0.3.0", "npm:other@1.0.0"]) {
             created.write("package.json", JSON.stringify({ devDependencies: { "obsidian-plugin-dev-kit": spec } }));
-            expect((await upgrade(created)).code, spec).toBe(1);
+            const refused = await upgrade(created);
+            expect(refused.code, spec).toBe(1);
+            expect(refused.err, spec).toContain(`asks for obsidian-plugin-dev-kit "${spec}"`);
         }
+        created.write("package.json", JSON.stringify({ devDependencies: {} }));
+        expect((await upgrade(created)).err).toContain("package.json does not list obsidian-plugin-dev-kit.");
     });
 
     it("a lockfile that is not valid JSON", async () => {
@@ -360,6 +364,26 @@ const npmRewritesRegistryLock = (created: PluginFixture): undefined => {
 };
 
 describe("opdk kit upgrade of a kit installed from npm", () => {
+    it.each([
+        ["dependencies", "--save-prod"],
+        ["devDependencies", "--save-dev"],
+        ["optionalDependencies", "--save-optional"],
+    ])("keeps the kit in %s with %s, in the command and in the manual hint", async (section, flag) => {
+        const created = pluginOnNpm("0.1.0");
+        created.write("package.json", `${JSON.stringify({ name: "fixture-plugin", version: "1.0.0", [section]: { "obsidian-plugin-dev-kit": "0.1.0" } }, null, 2)}\n`);
+        const ok = await upgrade(created, { npm: npmRewritesRegistryLock });
+        expect(ok.code).toBe(0);
+        expect(ok.recorded.npmCalls).toEqual([["install", "--no-audit", "--no-fund", flag, "--save-exact", "obsidian-plugin-dev-kit@0.2.0"]]);
+
+        const failing = pluginOnNpm("0.1.0");
+        failing.write("package.json", `${JSON.stringify({ name: "fixture-plugin", version: "1.0.0", [section]: { "obsidian-plugin-dev-kit": "0.1.0" } }, null, 2)}\n`);
+        const failed = await upgrade(failing, {
+            npm: () => new Error("npm install failed: E404"),
+        });
+        expect(failed.code).toBe(1);
+        expect(failed.err).toContain(`npm install ${flag} --save-exact obsidian-plugin-dev-kit@0.2.0`);
+    });
+
     it("installs the exact version, resolves the tag to its peeled commit and rewrites the workflow pins", async () => {
         const created = pluginOnNpm("0.1.0");
         const result = await upgrade(created, { npm: npmRewritesRegistryLock });
