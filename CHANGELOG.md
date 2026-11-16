@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Added
 
 - `opdk kit upgrade [vX.Y.Z]` now upgrades a kit installed from the npm registry (`0.3.3` or `^0.3.3` in `package.json`), not only a git-tag install. It sets `package.json` to the exact version, runs `npm install --save-dev --save-exact obsidian-plugin-dev-kit@X.Y.Z` (put back on failure, like the git path), and moves every `uses:` line of the kit's workflows to the commit of the tag, with the `# vX.Y.Z` comment. The tags and the CHANGELOG come from the owner of the workflow lines, `Dimagious` when they name none.
+- Every kit tag now gets a GitHub Release whose notes are that version's CHANGELOG section, made by `npm-publish.yml` after the npm publish, so "Watch > Custom > Releases" on the repository notifies about new versions. Releases for v0.1.0 to v0.3.3 were created by hand on 2026-11-16.
 
 ### Changed
 
