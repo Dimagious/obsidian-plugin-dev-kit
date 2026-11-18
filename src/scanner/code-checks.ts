@@ -35,6 +35,9 @@ export function stripComments(text: string): string {
 
 const JOIN_DOT = /\[\s*["'][^"']+["'][\s\S]*?\]\s*\.\s*join\s*\(\s*["']\.["']\s*\)/;
 const JOIN_SLASH = /\[\s*["'][^"']+["'][\s\S]*?\]\s*\.\s*join\s*\(\s*["']\/["']\s*\)/;
+// `createElement(` called on an object: `document.`, `activeDocument.`, `el.ownerDocument.`, `doc?.`. Not
+// `createElementNS(` (the parenthesis must follow the name) and not a declaration such as `function createElement(`.
+const CREATE_ELEMENT = /\.\s*createElement\s*\(/;
 const TS_DIRECTIVE = /(?:\/\/|\/\*+)\s*@ts-(?:expect-error|ignore|nocheck)\b/;
 
 /**
@@ -66,6 +69,35 @@ export function checkDomainAssembly(file: SourceFile): Finding[] {
 }
 
 /**
+ * Scorecard warning: "Uses document.createElement instead of Obsidian's createEl helpers."
+ *
+ * `obsidianmd/prefer-create-el` covers part of this, but it reports a call only when it can offer the helper on that
+ * document's window, and `obsidian.d.ts` types `Document.win` as a plain `Window`. So
+ * `view.dom.ownerDocument.createElement("span")` (a CodeMirror widget's `toDOM`) passes the ESLint step while the
+ * scorecard flags it: one plugin's review grade dropped for exactly that call. The scorecard's own check is not
+ * published; this one flags every `createElement(` call on an object, with any arguments, which covers the call seen
+ * on the scorecard. `createElementNS` is not flagged: no scorecard has shown it.
+ */
+export function checkCreateElement(file: SourceFile): Finding[] {
+    const findings: Finding[] = [];
+    stripComments(file.text)
+        .split("\n")
+        .forEach((line, index) => {
+            if (CREATE_ELEMENT.test(line)) {
+                findings.push({
+                    check: "code",
+                    file: file.path,
+                    line: index + 1,
+                    rule: "no-create-element",
+                    message:
+                        "createElement() call: the scorecard flags it. Use Obsidian's createEl(), createDiv() or createSpan(), or parentEl.createEl() to create the element in place.",
+                });
+            }
+        });
+    return findings;
+}
+
+/**
  * `@ts-expect-error`, `@ts-ignore` and `@ts-nocheck` against Obsidian's API: prefer augmenting its types in the
  * plugin. Advisory: the scanner's ESLint configuration leaves `ban-ts-comment` off, and nothing found shows the
  * scorecard counts these, so they are printed but do not fail the scan. Reads the raw text, because the
@@ -88,9 +120,9 @@ export function checkTsSuppressions(file: SourceFile): Finding[] {
     return findings;
 }
 
-/** Both checks over every shipped source file. */
+/** Every check over every shipped source file. */
 export function checkCode(files: readonly SourceFile[]): Finding[] {
     return files
         .filter((file) => isShippedSource(file.path))
-        .flatMap((file) => [...checkDomainAssembly(file), ...checkTsSuppressions(file)]);
+        .flatMap((file) => [...checkDomainAssembly(file), ...checkCreateElement(file), ...checkTsSuppressions(file)]);
 }

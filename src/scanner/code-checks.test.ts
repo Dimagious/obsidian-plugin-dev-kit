@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     checkCode,
+    checkCreateElement,
     checkDomainAssembly,
     checkTsSuppressions,
     isShippedSource,
@@ -103,6 +104,40 @@ describe("checkDomainAssembly", () => {
     });
 });
 
+describe("checkCreateElement", () => {
+    it.each([
+        'const el = view.dom.ownerDocument.createElement("span");',
+        'const el = document.createElement("div");',
+        'const el = activeDocument.createElement("a");',
+        'const el = doc?.createElement("p");',
+        "const el = document.createElement(tag, { is: \"x-y\" });",
+        "const el = document\n    .createElement(\"div\");",
+        "const el = document. createElement (\"div\");",
+    ])("flags %j", (text) => {
+        const findings = checkCreateElement(file(`${text}\n`));
+        expect(findings).toHaveLength(1);
+        expect(findings[0]).toMatchObject({ check: "code", rule: "no-create-element", file: "src/a.ts" });
+        expect(findings[0]?.advisory).toBeUndefined();
+    });
+
+    it.each([
+        'const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");',
+        'const el = createEl("div");',
+        "const el = parentEl.createSpan();",
+        "function createElement(tag: string): HTMLElement { return createEl(tag); }",
+        "// document.createElement is what we avoid here",
+        "/** Calls document.createElement(tag). */",
+        'const name = "createElement";',
+    ])("lets %j pass", (text) => {
+        expect(checkCreateElement(file(`${text}\n`))).toEqual([]);
+    });
+
+    it("reports the line of each call", () => {
+        const text = '/**\n * doc\n */\nconst a = document.createElement("a");\nconst b = 1;\nconst c = el.ownerDocument.createElement("b");\n';
+        expect(checkCreateElement(file(text)).map((finding) => finding.line)).toEqual([4, 6]);
+    });
+});
+
 describe("checkTsSuppressions", () => {
     it.each([
         "// @ts-ignore",
@@ -129,11 +164,12 @@ describe("checkTsSuppressions", () => {
 });
 
 describe("checkCode", () => {
-    it("runs both checks over shipped sources only", () => {
-        const bad = '// @ts-ignore\nconst h = ["a", "b"].join(".");\n';
+    it("runs every check over shipped sources only", () => {
+        const bad = '// @ts-ignore\nconst h = ["a", "b"].join(".");\nconst s = activeDocument.createElement("span");\n';
         const findings = checkCode([file(bad, "src/a.ts"), file(bad, "src/a.test.ts"), file(bad, "scripts/x.js")]);
         expect(findings.map((finding) => `${finding.file}:${String(finding.line)}:${finding.rule}`)).toEqual([
             "src/a.ts:2:no-domain-assembly",
+            "src/a.ts:3:no-create-element",
             "src/a.ts:1:ts-suppression",
         ]);
     });
