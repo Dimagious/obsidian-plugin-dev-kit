@@ -20,6 +20,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # Node 22 ships npm 10, whose dependency resolver crashed on 2026-11-18 ("Cannot read properties of null (reading
+      # 'edgesOut')") when the smoke step installed vitest next to @playwright/test, kit or no kit; npm 11 installs it.
+      # Node stays at 22, the oldest version the kit supports. An exact version, published at least 7 days before it was
+      # chosen; Dependabot does not bump it.
+      - name: Install npm 11
+        run: npm install --global npm@11.21.2
       - run: npm ci
       # npm ci does not fetch the Electron binary here (the package downloads it on first use), and the phone-layout
       # tests need it. Cached by lockfile so the ~100 MB download happens once per Electron version.
