@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-18
+
 ### Fixed
 
 - `opdk scan` now reports a `createElement(` call on any object as `no-create-element` in the `code` step. `obsidianmd/prefer-create-el` skips `el.ownerDocument.createElement("span")`, because `obsidian.d.ts` types the document's window without Obsidian's DOM helpers, so a plugin passed the scan with 0 findings while its public scorecard reported "Uses document.createElement instead of Obsidian's createEl helpers" and its review grade dropped.
