@@ -17,6 +17,11 @@ updates:
     ignore:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # typescript-eslint supports TypeScript only below 6.1, and the kit's typescript
+      # peer range follows it (a test pins that). Bump TypeScript by hand once
+      # typescript-eslint widens its range.
+      - dependency-name: "typescript"
+        versions: [">=6.1.0"]
 
   - package-ecosystem: github-actions
     directory: /
