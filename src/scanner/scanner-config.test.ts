@@ -68,7 +68,7 @@ describe("the mirrored scanner configuration", () => {
         expect(obsidianmd.meta.version).toBe(MIRRORED_OBSIDIANMD_VERSION);
     });
 
-    it("keeps upstream's 48 ignore entries (0.5.1) except that eslint.config.* and the e2e folder are linted, as the live scanner does", () => {
+    it("keeps upstream's 48 ignore entries (0.5.1 and 0.6.0) except that eslint.config.* and the e2e folder are linted, as the live scanner does", () => {
         expect(SCANNER_IGNORES).toHaveLength(47);
         const configGroup = SCANNER_IGNORES.find((entry) => entry.includes("esbuild,"));
         expect(configGroup).toBeDefined();
