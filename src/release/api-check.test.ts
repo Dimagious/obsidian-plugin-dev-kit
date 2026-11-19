@@ -56,8 +56,9 @@ describe("checkApiUsage", () => {
         const [problem] = result.problems;
         expect(result.problems).toHaveLength(1);
         expect(problem?.severity).toBe("error");
-        expect(problem?.message).toMatch(/^src\/main\.ts:3 .*fresh.* requires Obsidian v1\.8\.0, but minAppVersion is 1\.5\.0\.$/);
-        expect(problem?.hint).toContain("requireApiVersion()");
+        expect(problem?.message).toMatch(/^src\/main\.ts:3 .*fresh.* requires Obsidian v1\.8\.0, but minAppVersion is 1\.5\.0\. /);
+        expect(problem?.message).toContain('Raise minAppVersion to 1.8.0, or guard this use with requireApiVersion("1.8.0").');
+        expect(problem?.hint).toContain("versions.json");
     });
 
     it("passes when minAppVersion covers the API, and for an older API", async () => {

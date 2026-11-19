@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- `opdk scan` runs `eslint-plugin-obsidianmd` 0.6.0 (was 0.5.1). Its recommended config adds two rules: `no-await-chainable` (an error in TypeScript files: `await` on a `Setting` or another UI component never settles) and `commands/check-callback-uses-checking` (a warning for a `checkCallback` or `editorCheckCallback` that never reads `checking`). Files named `worker.*` now count as worker code, as `*.worker.*` already did. Upstream's scanner configuration did not change between the two versions.
+- `opdk release check`: an API newer than `minAppVersion` now prints upstream's own fix in the message (raise `minAppVersion` to the named version or guard the call with `requireApiVersion("X.Y.Z")`). The kit's hint below it now says only to add the new version to `versions.json` when you raise `minAppVersion`.
+
 ## [0.4.1] - 2026-11-18
 
 ### Fixed

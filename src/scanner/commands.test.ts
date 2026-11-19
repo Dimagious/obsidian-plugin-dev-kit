@@ -52,7 +52,7 @@ describe("opdk scan", () => {
         expect(await scanCommand.run([], ctx)).toBe(0);
         const out = ctx.out.join("");
         expect(out).toContain("· scan    fixture-plugin: 4 tracked files");
-        expect(out).toMatch(/✓ lint {4}0 findings \(\d+ files?, eslint-plugin-obsidianmd 0\.5\.1, typescript 6\.\d+\.\d+\)/);
+        expect(out).toMatch(/✓ lint {4}0 findings \(\d+ files?, eslint-plugin-obsidianmd 0\.6\.0, typescript 6\.\d+\.\d+\)/);
         expect(out).toContain("✓ css     0 findings (1 file)");
         expect(out).toContain("✓ code    0 findings (1 file)");
         expect(out).toContain("✓ meta    0 findings (manifest.json)");
@@ -71,7 +71,7 @@ describe("opdk scan", () => {
         expect(await scanCommand.run([], ctx)).toBe(1);
 
         const err = ctx.err.join("");
-        expect(err).toMatch(/✗ lint {4}\d+ finding \(\d+ files, eslint-plugin-obsidianmd 0\.5\.1, typescript 6\.\d+\.\d+, 1 outside every tsconfig, advisory\):/);
+        expect(err).toMatch(/✗ lint {4}\d+ finding \(\d+ files, eslint-plugin-obsidianmd 0\.6\.0, typescript 6\.\d+\.\d+, 1 outside every tsconfig, advisory\):/);
         expect(err).toContain("src/main.ts:2  obsidianmd/prefer-window-timers  Use 'window.setTimeout()' instead of 'setTimeout()'");
         // A script no tsconfig covers is not on the scorecard: it prints as a `!` line and does not count.
         expect(ctx.out.join("")).toContain("! lint    site/page.js:1  outside-tsconfig  1 lint finding in a file no tsconfig covers (first: obsidianmd/prefer-active-doc)");

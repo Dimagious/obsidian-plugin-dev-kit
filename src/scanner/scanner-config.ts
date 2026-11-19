@@ -6,7 +6,8 @@
  *
  * Mirrors "Full scanner-equivalent configuration" in the section "Community plugin scanner configuration" of
  * eslint-plugin-obsidianmd's docs/configuration.md (https://github.com/obsidianmd/eslint-plugin), version
- * 0.5.1, diffed on 2026-11-10 against the tag's file. Re-diff it on every bump of that package: a test pins the
+ * 0.6.0, diffed on 2026-11-19 against the tag's file (0.6.0 changed only prose there, not the configuration).
+ * Re-diff it on every bump of that package: a test pins the
  * version so a bump cannot go unnoticed.
  *
  * What differs from the upstream text, each on purpose:
@@ -20,8 +21,8 @@
  * - The ignore list is upstream's `globalIgnores` (48 entries) with two changes. First, `eslint` is removed from the
  *   `**\/{astro,babel,...}.config.*` group, so the plugin's `eslint.config.js` and `.ts` are linted (`.mjs`, `.cjs`,
  *   `.mts` and `.cts` stay ignored by their extension globs), with type information
- *   (`allowDefaultProject`, above). 0.5.1's text ignores it, but the live scanner lints it: one plugin's public
- *   scorecard reports four `no-unsafe-*` warnings in its `eslint.config.js`. The kit follows the live scanner
+ *   (`allowDefaultProject`, above). Upstream's text (0.5.1 and 0.6.0) ignores it, but the live scanner lints
+ *   it: one plugin's public scorecard reports four `no-unsafe-*` warnings in its `eslint.config.js`. The kit follows the live scanner
  *   (owner decision, 2026-11-11). Re-check this on every bump of the package. Second, `**\/e2e/**` is removed: see
  *   the next entry. Of upstream's list, its first three, `main.js`,
  *   `**\/*.min.js` and `**\/{dist,build,out,release}/**`, are upstream's stand-ins for bundled and minified
@@ -64,7 +65,7 @@ import obsidianmd from "eslint-plugin-obsidianmd";
 import tseslint from "typescript-eslint";
 
 /** The eslint-plugin-obsidianmd version this configuration was diffed against. */
-export const MIRRORED_OBSIDIANMD_VERSION = "0.5.1";
+export const MIRRORED_OBSIDIANMD_VERSION = "0.6.0";
 
 const CODE_FILES = ["**/*.{ts,cts,mts,tsx,js,cjs,mjs,jsx}"];
 
@@ -234,7 +235,7 @@ export function createScannerConfig({ cwd, typeAware, allowDefaultProject = true
                 "import/no-unresolved": "off",
 
                 // Newest layer: turns these back on at `warn` (upstream's docs, "Rule severity
-                // adjustments"), and the public scorecard of a real plugin lists them. In 0.5.1's recommended config
+                // adjustments"), and the public scorecard of a real plugin lists them. In the recommended config (0.5.1 and 0.6.0)
                 // the five `no-unsafe-*` rules are `error` for TypeScript files only (off under package.json,
                 // manifest.json and LICENSE, absent for JavaScript), so they are set here at `warn`: TypeScript and
                 // JavaScript (`eslint.config.js` included) both get them as warnings, as the newest layer does. The

@@ -116,7 +116,7 @@ export async function checkApiUsage({ cwd, minAppVersion, build }: ApiCheckInput
         for (const message of result.messages) {
             const where = `${file}:${String(message.line)}`;
             if (message.ruleId === RULE) {
-                problems.push(errorProblem("api", `${where} ${message.message}`, "Raise minAppVersion in manifest.json (and versions.json for a new version), or guard the call with requireApiVersion()."));
+                problems.push(errorProblem("api", `${where} ${message.message}`, "If you raise minAppVersion in manifest.json, add the new version to versions.json too."));
             } else {
                 problems.push(errorProblem("api", `${where} could not be analysed: ${message.message}`, "Fix the error; a file that does not parse cannot be checked."));
             }
