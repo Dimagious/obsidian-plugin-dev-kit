@@ -170,6 +170,26 @@ Claude picks a skill by its description, so you can also just ask ("film a demo 
 
 The plugin version follows the kit version, and installed copies update when it changes (`/plugin marketplace update obsidian-plugin-dev-kit`, then update the plugin). A fresh install takes `main` as it is then, which can be ahead of the latest tag. The plugin files live in `plugins/opdk/`. A copy of the skills matching the kit version you installed is in `node_modules/obsidian-plugin-dev-kit/plugins/opdk/skills/`; Claude Code loads them only through the plugin.
 
+### Rules for Claude Code
+
+Skills load when a task asks for them. The scorecard rules are needed on every edit, so the kit also ships them as Claude Code rules in `claude/rules/`, each scoped to the files it is about:
+
+| File | Loads when Claude reads or writes | What it says |
+| --- | --- | --- |
+| `source.md` | `src/**/*.{ts,mts,cts,js,mjs,cjs}` | `activeDocument`, timers on `window`, `createDiv`/`createSpan` instead of `createElement`, URLs as one literal, Node modules behind `Platform.isDesktop`, no `any` |
+| `css.md` | `**/*.css` | no `!important`, no `:has()`, Chrome 142 features only, edit `src/styles/` when `styles.css` is built |
+| `manifest.md` | `manifest.json`, `versions.json`, `package.json`, `package-lock.json` | description without the plugin name, versions belong to `opdk release`, `minAppVersion` |
+| `lint-config.md` | `eslint.config.*`, `tsconfig*.json`, `e2e/**/*` | `eslint.config.mjs`, a root `tsconfig.e2e.json`, TypeScript 6 |
+
+Link them into your plugin once:
+
+```sh
+mkdir -p .claude/rules
+ln -s ../../node_modules/obsidian-plugin-dev-kit/claude/rules .claude/rules/opdk
+```
+
+The link points into `node_modules`, so the rules follow the kit version the plugin pins. Commit the link if you commit `.claude/`; on a fresh clone it works after `npm install`. The rules only tell the agent what `opdk scan` reports; the scan is still the check.
+
 ## Roadmap
 
 - [ ] Wave 1: build, scanner and lint, end-to-end harness, demo films
