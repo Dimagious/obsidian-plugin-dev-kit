@@ -60,6 +60,7 @@
     "bin",
     "dist",
     "docs/*.md",
+    "claude/agents",
     "claude/rules",
     "plugins/opdk/skills"
   ],

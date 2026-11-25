@@ -13,6 +13,8 @@ Each item below is a finding in `opdk scan` and a warning on the plugin's public
 - No static import of a Node module: the plugin must load on mobile. Use a dynamic `import()` guarded by `Platform.isDesktop` (`obsidianmd/no-nodejs-modules`).
 - No `any` may reach a call, member access, assignment or return: type the value (`@typescript-eslint/no-unsafe-*`). `moment(...)` imported from `obsidian` is untyped under TypeScript 6: cast `moment` to a small typed function, see "esModuleInterop and moment" in the scanner doc.
 - Do not `await` a `Setting` or another UI component: it never settles (`obsidianmd/no-await-chainable`). A `checkCallback` or `editorCheckCallback` must read `checking`.
+- No regex lookbehind (`(?<=`, `(?<!`): iOS before 16.4 cannot parse it, and the plugin fails to load there (`obsidianmd/regex-lookbehind`).
+- No style set in code with a fixed value (`el.style.color = "red"`, `setCssProps({ color: "red" })`): put it in a CSS class. A value computed at runtime goes through `el.setCssProps({...})` or `el.setCssStyles({...})` (`obsidianmd/no-static-styles-assignment`).
 - `@ts-ignore`, `@ts-expect-error` and `@ts-nocheck` print as an advisory line. Type the code instead.
 
 The plugin's own `npm run lint` (`obsidianPlugin()` from the kit) adds rules the scorecard does not have:

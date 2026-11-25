@@ -190,6 +190,22 @@ ln -s ../../node_modules/obsidian-plugin-dev-kit/claude/rules .claude/rules/opdk
 
 The link points into `node_modules`, so the rules follow the kit version the plugin pins. Commit the link if you commit `.claude/`; on a fresh clone it works after `npm install`. The rules only tell the agent what `opdk scan` reports; the scan is still the check.
 
+### Maker and checker agents
+
+`claude/agents/` holds two Claude Code subagents for a maker/checker workflow, the same in every plugin:
+
+- `maker` implements an agreed task, runs the gates and reports; it never commits, pushes or edits versions.
+- `checker` reviews the working-tree diff read-only: it runs `npm run typecheck`, `npm run lint`, `npm test`, `opdk scan` and `opdk release check` itself, checks for scanner drift, and returns APPROVE, NEEDS CHANGES or REJECT with findings.
+
+What differs between plugins goes into the plugin's `CLAUDE.md`, under a heading `## Maker and checker`: its layering and conventions, extra gates (a generated file that must stay in sync, say), and review lenses (a security invariant, translations that must stay in step). Keep the section short and point it to files where the details are long, such as the plugin's own path-scoped rules in `.claude/rules/`: subagents load `CLAUDE.md` and those rules like the main session does, and both agents treat the files the section names as binding. Link the agents next to the rules:
+
+```sh
+mkdir -p .claude/agents
+ln -s ../../node_modules/obsidian-plugin-dev-kit/claude/agents .claude/agents/opdk
+```
+
+A plugin that has its own `maker.md` or `checker.md` in `.claude/agents/` should move what is specific in them into `CLAUDE.md` and remove them in the same change as the link: with two agents of one name, Claude Code ran the linked one in every try, so the local one stops running without any message.
+
 ## Roadmap
 
 - [ ] Wave 1: build, scanner and lint, end-to-end harness, demo films

@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- `maker` and `checker` subagents for Claude Code in `claude/agents/`, shipped in the package. The checker runs the five gates every plugin on the kit has (`typecheck`, `lint`, `test`, `opdk scan`, `opdk release check`) plus the extra gates the plugin's `CLAUDE.md` lists under `## Maker and checker`, and reports scanner drift without installing anything. Link the folder with `ln -s ../../node_modules/obsidian-plugin-dev-kit/claude/agents .claude/agents/opdk`; see "Maker and checker agents" in the README.
+- `claude/rules/source.md` names two more scanner rules: no regex lookbehind (`obsidianmd/regex-lookbehind`) and no style set in code with a fixed value (`obsidianmd/no-static-styles-assignment`).
+
 ## [0.5.0] - 2026-11-25
 
 ### Added
