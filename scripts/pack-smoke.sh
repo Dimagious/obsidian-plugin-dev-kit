@@ -27,9 +27,9 @@ vitest_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.j
 coverage_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies['@vitest/coverage-v8']")"
 jsdom_version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).devDependencies.jsdom")"
 
-# The agent skills and the Claude Code rules ship in the tarball at the same path as in the repository.
+# The agent skills and the Claude Code rules and agents ship in the tarball at the same path as in the repository.
 tarball_files="$(tar -tzf "$tmp/$tarball")"
-for skill_file in plugins/opdk/skills/*/SKILL.md claude/rules/*.md; do
+for skill_file in plugins/opdk/skills/*/SKILL.md claude/rules/*.md claude/agents/*.md; do
     if ! grep -qx "package/$skill_file" <<<"$tarball_files"; then
         echo "smoke: the tarball has no $skill_file" >&2
         exit 1
