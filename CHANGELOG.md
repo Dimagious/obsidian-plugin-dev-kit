@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- Rules for Claude Code in `claude/rules/`, shipped in the package: `source.md`, `css.md`, `manifest.md` and `lint-config.md` state what `opdk scan` and the public scorecard report, each scoped with `paths:` to the files it is about. Link the folder into a plugin with `ln -s ../../node_modules/obsidian-plugin-dev-kit/claude/rules .claude/rules/opdk`; see "Rules for Claude Code" in the README.
+
 ### Changed
 
 - `opdk scan` runs `eslint-plugin-obsidianmd` 0.6.0 (was 0.5.1). Its recommended config adds two rules: `no-await-chainable` (an error in TypeScript files: `await` on a `Setting` or another UI component never settles) and `commands/check-callback-uses-checking` (a warning for a `checkCallback` or `editorCheckCallback` that never reads `checking`). Files named `worker.*` now count as worker code, as `*.worker.*` already did. Upstream's scanner configuration did not change between the two versions.

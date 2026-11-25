@@ -197,7 +197,7 @@ An advisory finding prints as a `!` line and leaves the exit code alone. So does
 - `outside-tsconfig` (a `!` line) is a file no tsconfig covers; the scorecard compared lists none of its findings (an inference from one scorecard) and they do not fail the scan.
 - `css-syntax` means PostCSS could not parse a stylesheet.
 
-When `eslint-plugin-obsidianmd` is bumped, the mirrored configuration has to be diffed again: a test pins the version it was taken from, so a bump fails the kit's tests until someone does.
+When `eslint-plugin-obsidianmd` is bumped, the mirrored configuration has to be diffed again: a test pins the version it was taken from, so a bump fails the kit's tests until someone does. The rules for Claude Code in `claude/rules/` repeat the scanner's findings in short form; check them in the same pass.
 
 ## Origin
 
