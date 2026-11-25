@@ -1,6 +1,6 @@
 {
   "name": "obsidian-plugin-dev-kit",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Build, lint, release, test and film Obsidian plugins from one shared dev dependency.",
   "keywords": [
     "obsidian",
