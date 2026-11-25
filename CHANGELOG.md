@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-25
+
 ### Added
 
 - Rules for Claude Code in `claude/rules/`, shipped in the package: `source.md`, `css.md`, `manifest.md` and `lint-config.md` state what `opdk scan` and the public scorecard report, each scoped with `paths:` to the files it is about. Link the folder into a plugin with `ln -s ../../node_modules/obsidian-plugin-dev-kit/claude/rules .claude/rules/opdk`; see "Rules for Claude Code" in the README.
